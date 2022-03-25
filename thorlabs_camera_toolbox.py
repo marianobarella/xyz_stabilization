@@ -28,6 +28,12 @@ from thorlabs_tsi_sdk.tl_camera import TLCameraSDK, TLCamera
 from thorlabs_tsi_sdk.tl_camera_enums import SENSOR_TYPE
 from thorlabs_tsi_sdk.tl_mono_to_color_processor import MonoToColorProcessorSDK
 
+#=====================================
+
+# Function Definitions
+
+#=====================================
+
 def init_thorlabs_cameras():
     # create SDK object. Important: only call it once!
     camera_constructor = TLCameraSDK()
@@ -198,6 +204,12 @@ def dispose_all(mono_cam_flag, mono_cam, color_cam_flag, color_cam, \
     dispose_sdk(camera_constructor)
     return
 
+#=====================================
+
+# Main program
+
+#=====================================
+
 if __name__ == '__main__':
         
     camera_constructor = init_thorlabs_cameras()
@@ -219,22 +231,25 @@ if __name__ == '__main__':
         dispose_sdk(camera_constructor)
         sys.exit()
         
-    exposure_time_ms = 53.05 # in ms
-    set_camera_continuous_mode(camera)
-    frame_time = set_exp_time(camera, exposure_time_ms)
-    
+    exposure_time_ms = 53.05 # in ms   
     number_of_frames = 10 
 
     # print(mono_cam.roi_range)
     print('\nGetting images...')
 
-    if mono_cam_flag:    
+    if mono_cam_flag:
+        print('\nTaking pictures with MONO camera')
+        set_camera_continuous_mode(mono_cam)
+        frame_time = set_exp_time(mono_cam, exposure_time_ms)
         for i in range(number_of_frames):
-            mono_image, _ = get_mono_image(mono_cam, mono_to_color_processor)
+            mono_image, _ = get_image(mono_cam, mono_to_color_processor, 'mono')
 
     if color_cam_flag:
+        print('\nTaking pictures with COLOR camera')
+        set_camera_continuous_mode(color_cam)
+        frame_time = set_exp_time(color_cam, exposure_time_ms)
         for i in range(number_of_frames):
-            color_image_np, _ = get_color_image(color_cam, mono_to_color_processor)
+            color_image_np, _ = get_image(color_cam, mono_to_color_processor, 'color')
 
     stop_camera(camera)
     # camera.roi = old_roi  # reset the roi back to the original roi

@@ -20,6 +20,12 @@ from PIL import Image
 from tkinter import filedialog
 import tkinter as tk
 
+#=====================================
+
+# Initialize cameras
+
+#=====================================
+
 # initialize Thorlabs cameras
 # get Thorlabs camera parameters
 camera_constructor = tl_cam.init_thorlabs_cameras()
@@ -62,7 +68,13 @@ else:
     print('mono_color_string is:', mono_color_string)
     print('Allowed values are: mono OR color')
     pixel_size = 0
-    
+   
+#=====================================
+
+# GUI / Frontend definition
+
+#=====================================
+   
 class Frontend(QtGui.QFrame):
 
     liveViewSignal = pyqtSignal(bool, float)
@@ -347,6 +359,12 @@ class Frontend(QtGui.QFrame):
         backend.datacursorSignal.connect(self.get_cursor_values)
         backend.filePathSignal.connect(self.get_file_path)
 
+#=====================================
+
+# Controls / Backend definition
+
+#=====================================
+
 class Backend(QtCore.QObject):
 
     imageSignal = pyqtSignal(np.ndarray)
@@ -459,18 +477,24 @@ class Backend(QtCore.QObject):
         frontend.fixcursorSignal.connect(self.fix_cursor_reference)
         frontend.saveSignal.connect(self.save_picture)
         frontend.setWorkDirSignal.connect(self.set_working_folder)
-               
+
+#=====================================
+
+#  Main program
+
+#=====================================        
+
 if __name__ == '__main__':
-
+    # make application
     app = QtGui.QApplication([])
-
+    
+    # connect both classes
     gui = Frontend()
     worker = Backend()
     
+    # connect both classes 
     worker.make_connections(gui)
     gui.make_connections(worker)
     
     gui.show()
-    
-    
-    
+    app.exec()
