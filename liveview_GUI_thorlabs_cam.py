@@ -112,6 +112,7 @@ class Frontend(QtGui.QFrame):
         # 'cyclic', 'greyclip', 'grey'
         self.hist.vb.setLimits(yMin=0, yMax=1024) # 10-bit camera
         imageWidget.addItem(self.hist, row=0, col=1)
+        # TODO: if performance is an issue, try scaleToImage
 
         self.autolevel_tickbox = QtGui.QCheckBox('Autolevel')
         self.initial_autolevel_state = True

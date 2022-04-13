@@ -188,18 +188,20 @@ class Frontend(QtGui.QFrame):
         # widget for the data
         self.traceWidget = pg.GraphicsLayoutWidget()
         self.signal_plot = self.traceWidget.addPlot(row = 1, col = 1, title = 'APD signal')
-        self.signal_plot.setXRange(0, 10)
-        self.signal_plot.setAutoPan(x = 1, y = None)
-        # self.signal_plot.enableAutoRange()
-        # self.focusGraph.setAntialiasing(True)
-
+        self.signal_plot.setAutoPan(x = True, y = None)
+        self.signal_plot.enableAutoRange(axis = 'y', enable = True)
+        # self.signal_plot.setXRange(0, 10)
         self.signal_plot.showGrid(x = True, y = True)
         self.signal_plot.setLabel('left', 'Voltage (V)')
         self.signal_plot.setLabel('bottom', 'Time (s)')
-        self.raw_data_curve = self.signal_plot.plot(open = 'y')
-        self.mean_curve = self.signal_plot.plot(open = 'y')
-        self.sd_plus_curve = self.signal_plot.plot(open = 'y')
-        self.sd_minus_curve = self.signal_plot.plot(open = 'y')
+        self.raw_data_curve = self.signal_plot.PlotCurveItem(skipFiniteCheck = True, \
+                                                    pen = pg.mkPen('w'))
+        self.mean_curve = self.signal_plot.PlotCurveItem(skipFiniteCheck = True, \
+                                                pen = pg.mkPen('b'))
+        self.sd_plus_curve = self.signal_plot.PlotCurveItem(skipFiniteCheck = True, \
+                                                   pen = pg.mkPen('g'))
+        self.sd_minus_curve = self.signal_plot.PlotCurveItem(skipFiniteCheck = True, \
+                                                    pen = pg.mkPen('g'))
         
         # Docks
         hbox = QtGui.QHBoxLayout(self)
@@ -276,20 +278,26 @@ class Frontend(QtGui.QFrame):
     
     @pyqtSlot(np.ndarray, np.ndarray, np.ndarray, np.ndarray)
     def get_data(self, time_array, data_array, mean_array, sd_array): 
-
         # plot raw
-        self.raw_data_curve.setData(time_array, data_array, \
-                                    pen = pg.mkPen('w', width = 1))
+        self.raw_data_curve.setData(time_array, data_array)
         # plot mean
-        self.mean_curve.setData(time_array, mean_array, \
-                                pen = pg.mkPen('b', width = 1))
+        self.mean_curve.setData(time_array, mean_array)
         # plot sd
         sd_plus_array = mean_array + sd_array
-        self.sd_plus_curve.setData(time_array, sd_plus_array, \
-                                   pen = pg.mkPen('g', width = 1))
+        self.sd_plus_curve.setData(time_array, sd_plus_array)
         sd_minus_array = mean_array - sd_array        
-        self.sd_minus_curve.setData(time_array, sd_minus_array, \
-                                    pen = pg.mkPen('g', width = 1))
+        self.sd_minus_curve.setData(time_array, sd_minus_array)
+        
+        
+        # path_raw_data_curve = pg.arrayToQPath(time_array, data_array, connect = 'all', finiteCheck = False)
+        # path_raw_mean_curve = pg.arrayToQPath(time_array, mean_array, connect = 'all', finiteCheck = False)
+        # path_raw_sd_plus_curve = pg.arrayToQPath(time_array, sd_plus_array, connect = 'all', finiteCheck = False)
+        # path_raw_sd_minus_curve = pg.arrayToQPath(time_array, sd_minus_array, connect = 'all', finiteCheck = False)
+        
+        # item = QtGui.QGraphicsPathItem(path)
+        # item.setPen(pg.mkPen('w'))
+        # plt.addItem(item)
+        
         # update value labels
         mean = mean_array[-1]
         sd = sd_array[-1]
@@ -408,8 +416,6 @@ class Backend(QtCore.QObject):
         self.updateTimer.stop()
         # flush DAQ buffer
         self.data_array.flush()
-        # check if all data has been written correctly
-        assert np.all(self.data_array > -1000)
         # reset counter
         self.i = 0
         if not self.APD_task.is_task_done():
@@ -473,6 +479,10 @@ class Backend(QtCore.QObject):
         else:
             # stop timer
             self.updateTimer.stop()
+            # flush DAQ buffer
+            self.data_array.flush()
+            # check if all data has been written correctly
+            assert np.all(self.data_array > -1000)
             print('\nAcquisition finished at {}'.format(timer()))
             self.stop_trace()
         return
