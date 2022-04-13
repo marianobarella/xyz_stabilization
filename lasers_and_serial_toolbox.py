@@ -211,7 +211,7 @@ class toptica_laser(object):
     def __init__(self, debug_mode):
         # Parameters for Toptica 488 blue laser
         self.baudRate = 115200
-        self.serialPort = 'COM3'
+        self.serialPort = 'COM6'
         self.serialInstance = initSerial(self.serialPort, self.baudRate)
         self.debug_mode = debug_mode
         self.initialize()

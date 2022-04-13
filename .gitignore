@@ -2,3 +2,5 @@
 thorlabs_tsi_sdk/__pycache__/
 
 __pycache__/
+
+.pylint.d/

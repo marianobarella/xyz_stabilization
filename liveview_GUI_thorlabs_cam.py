@@ -19,6 +19,7 @@ import thorlabs_camera_toolbox as tl_cam
 from PIL import Image
 from tkinter import filedialog
 import tkinter as tk
+import time as tm
 
 #=====================================
 
@@ -124,24 +125,27 @@ class Frontend(QtGui.QFrame):
         self.take_picture_button.setCheckable(False)
         self.take_picture_button.clicked.connect(self.take_picture_button_check)
         self.take_picture_button.setStyleSheet(
-                "QPushButton:pressed { background-color: red; }")
+            "QPushButton { background-color: lightgray; }"
+            "QPushButton:pressed { background-color: red; }")
         
         self.save_picture_button = QtGui.QPushButton('Save picture')
         self.save_picture_button.clicked.connect(self.save_button_check)
         self.save_picture_button.setStyleSheet(
-                "QPushButton:pressed { background-color: blue; }")
+            "QPushButton { background-color: lightgray; }"
+            "QPushButton:pressed { background-color: blue; }")
         
         self.live_view_button = QtGui.QPushButton('Live view')
         self.live_view_button.setCheckable(True)
         self.live_view_button.clicked.connect(self.liveview_button_check)
         self.live_view_button.setStyleSheet(
-                "QPushButton { background-color: yellow; }"
-                "QPushButton:pressed { background-color: red; }"
-                "QPushButton::checked { background-color: red; }")
+            "QPushButton { background-color: yellow; }"
+            "QPushButton:pressed { background-color: red; }"
+            "QPushButton::checked { background-color: red; }")
 
         # Exposure time
         exp_time_label = QtGui.QLabel('Exposure time (ms):')
         self.exp_time_edit = QtGui.QLineEdit('100')
+        self.exp_time_edit_previous = float(self.exp_time_edit.text())
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
         self.exp_time_edit.setValidator(QtGui.QIntValidator(1, 26843))
         
@@ -152,7 +156,8 @@ class Frontend(QtGui.QFrame):
         self.working_dir_button = QtGui.QPushButton('Select directory')
         self.working_dir_button.clicked.connect(self.set_working_dir)
         self.working_dir_button.setStyleSheet(
-                "QPushButton:pressed { background-color: green; }")
+            "QPushButton { background-color: lightgray; }"
+            "QPushButton:pressed { background-color: palegreen; }")
         self.file_path = ''
         self.working_dir_label = QtGui.QLineEdit(self.file_path)
         self.working_dir_label.setReadOnly(True)
@@ -257,11 +262,13 @@ class Frontend(QtGui.QFrame):
 
     def exposure_changed_check(self):
         exposure_time_ms = float(self.exp_time_edit.text()) # in ms
-        print('\nExposure time changed to', exposure_time_ms, 'ms')
-        if self.live_view_button.isChecked():
-            self.exposureChangedSignal.emit(True, exposure_time_ms)
-        else:
-            self.exposureChangedSignal.emit(False, exposure_time_ms)
+        if exposure_time_ms != self.exp_time_edit_previous:
+            print('\nExposure time changed to', exposure_time_ms, 'ms')
+            self.exp_time_edit_previous = exposure_time_ms
+            if self.live_view_button.isChecked():
+                self.exposureChangedSignal.emit(True, exposure_time_ms)
+            else:
+                self.exposureChangedSignal.emit(False, exposure_time_ms)
 
     def take_picture_button_check(self):
         exposure_time_ms = float(self.exp_time_edit.text()) # in ms
@@ -346,10 +353,12 @@ class Frontend(QtGui.QFrame):
             tl_cam.dispose_all(mono_cam_flag, mono_cam, color_cam_flag, color_cam, \
                         mono_to_color_processor, mono_to_color_constructor, \
                         camera_constructor)
-            # self.closeSignal.emit()
             event.accept()
-            self.close()          
             print('Closing GUI...')
+            self.close()
+            # self.closeSignal.emit()
+            tm.sleep(1)
+            app.quit()
         else:
             event.ignore()
             print('Back in business...')    

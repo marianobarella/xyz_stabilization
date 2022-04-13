@@ -11,6 +11,7 @@ Fribourg, Switzerland
 from pyqtgraph.Qt import QtCore, QtGui
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
 import lasers_and_serial_toolbox as laserTool
+import time as tm
 
 #=====================================
 
@@ -167,10 +168,12 @@ class Frontend(QtGui.QFrame):
                                            QtGui.QMessageBox.No |
                                            QtGui.QMessageBox.Yes)
         if reply == QtGui.QMessageBox.Yes:
-            self.closeSignal.emit()
             event.accept()
-            self.close()
             print('Closing GUI...')
+            self.close()
+            self.closeSignal.emit()
+            tm.sleep(1)
+            app.quit()
         else:
             event.ignore()
             print('Back in business...')
@@ -190,6 +193,7 @@ class Backend(QtCore.QObject):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # set tiimer to update lasers status
         self.updateTimer = QtCore.QTimer()
         self.updateTimer.timeout.connect(self.update_params) 
         self.updateTimer.setInterval(updateParams_period) # in ms
