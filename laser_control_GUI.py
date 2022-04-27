@@ -26,6 +26,7 @@ laser532 = laserTool.oxxius_laser(debug_mode = False)
 laser488 = laserTool.toptica_laser(debug_mode = False)
 flipperMirror = laserTool.motorized_flipper(debug_mode = False)
 updateParams_period = 5000 # in ms
+initial_blue_power = 1.4 # in mW
 
 #=====================================
 
@@ -80,7 +81,7 @@ class Frontend(QtGui.QFrame):
         
         # 488 power
         power488_label = QtGui.QLabel('Power 488 (mW):')
-        self.power488_edit = QtGui.QLineEdit('1.4')
+        self.power488_edit = QtGui.QLineEdit(str(initial_blue_power))
         self.power488_edit_previous = float(self.power488_edit.text())
         self.power488_edit.editingFinished.connect(self.power488_changed_check)
         self.power488_edit.setValidator(QtGui.QDoubleValidator(0.00, 200.00, 2))
@@ -197,20 +198,24 @@ class Backend(QtCore.QObject):
         self.updateTimer = QtCore.QTimer()
         self.updateTimer.timeout.connect(self.update_params) 
         self.updateTimer.setInterval(updateParams_period) # in ms
-        
+        self.change_power(initial_blue_power)
+        return
+    
     @pyqtSlot(bool)
     def shutter488(self, shutterbool):
         if shutterbool:
             laser488.shutter('open')
         else:
             laser488.shutter('close')
-
+        return
+        
     @pyqtSlot(bool)
     def shutter532(self, shutterbool):
         if shutterbool:
             laser532.shutter('open')
         else:
             laser532.shutter('close')
+        return
             
     @pyqtSlot(bool)
     def flipper_inspec_cam(self, flipperbool):
@@ -219,12 +224,14 @@ class Backend(QtCore.QObject):
         else:
             flipperMirror.set_inspect_cam_up() # inspection camera OFF
         print('Flipper status:', flipperMirror.get_state())
-        
+        return
+    
     @pyqtSlot(float)    
     def change_power(self, power488_mW):
         self.power488_mW = power488_mW # in mW, is float
         laser488.set_power(self.power488_mW)
-      
+        return
+    
     @pyqtSlot(bool)    
     def start_updating_params(self, updatebool):
         if updatebool:
@@ -233,6 +240,7 @@ class Backend(QtCore.QObject):
         else:
             print('Stopping updater (QtTimer)...')
             self.updateTimer.stop()
+        return
         
     def update_params(self):
         # Parameters of 488 nm laser
@@ -252,6 +260,7 @@ class Backend(QtCore.QObject):
         
         # send parameters to GUI
         self.paramSignal.emit(param_list488, param_list532)
+        return
 
     @pyqtSlot()
     def closeBackend(self):
@@ -262,7 +271,8 @@ class Backend(QtCore.QObject):
         self.updateTimer.stop()
         print('Exiting thread...')
         workerThread.exit()
-           
+        return
+       
     def make_connections(self, frontend):
         frontend.shutter488_signal.connect(self.shutter488)
         frontend.shutter532_signal.connect(self.shutter532)
@@ -270,7 +280,8 @@ class Backend(QtCore.QObject):
         frontend.powerChangedSignal.connect(self.change_power)
         frontend.closeSignal.connect(self.closeBackend)
         frontend.updateParams_signal.connect(self.start_updating_params)
-
+        return
+    
 #=====================================
 
 #  Main program
@@ -281,7 +292,7 @@ if __name__ == '__main__':
     # make application
     app = QtGui.QApplication([])
 
-    # connect both classes
+    # create both classes
     gui = Frontend()
     worker = Backend()
     

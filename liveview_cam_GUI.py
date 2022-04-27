@@ -27,49 +27,56 @@ import time as tm
 
 #=====================================
 
-# initialize Thorlabs cameras
-# get Thorlabs camera parameters
-camera_constructor = tl_cam.init_thorlabs_cameras()
-mono_cam, mono_cam_flag, color_cam, color_cam_flag = tl_cam.list_cameras(camera_constructor)
-if mono_cam_flag:
-    mono_cam_sensor_width_pixels, mono_cam_sensor_height_pixels, \
-    mono_cam_sensor_pixel_width_um, mono_cam_sensor_pixel_height_um = tl_cam.get_camera_param(mono_cam)
-    mono_to_color_processor = None
-    mono_to_color_constructor = None
-if color_cam_flag:
-    color_cam_sensor_width_pixels, color_cam_sensor_height_pixels, \
-    color_cam_sensor_pixel_width_um, color_cam_sensor_pixel_height_um = tl_cam.get_camera_param(color_cam)
-    mono_to_color_constructor, mono_to_color_processor = tl_cam.init_thorlabs_color_cameras(color_cam)
-
+def init_Thorlabs_cameras():
+    # initialize Thorlabs cameras
+    # get Thorlabs camera parameters
+    camera_constructor = tl_cam.init_thorlabs_cameras()
+    mono_cam, mono_cam_flag, color_cam, color_cam_flag = tl_cam.list_cameras(camera_constructor)
+    if mono_cam_flag:
+        mono_cam_sensor_width_pixels, mono_cam_sensor_height_pixels, \
+        mono_cam_sensor_pixel_width_um, mono_cam_sensor_pixel_height_um = tl_cam.get_camera_param(mono_cam)
+        mono_to_color_constructor = None
+        mono_to_color_processor = None
+    if color_cam_flag:
+        color_cam_sensor_width_pixels, color_cam_sensor_height_pixels, \
+        color_cam_sensor_pixel_width_um, color_cam_sensor_pixel_height_um = tl_cam.get_camera_param(color_cam)
+        mono_to_color_constructor, mono_to_color_processor = tl_cam.init_thorlabs_color_cameras(color_cam)
+    return camera_constructor, \
+        mono_cam, \
+        mono_cam_flag, \
+        color_cam, \
+        color_cam_flag, \
+        mono_cam_sensor_width_pixels, \
+        mono_cam_sensor_height_pixels, \
+        mono_cam_sensor_pixel_width_um, \
+        mono_cam_sensor_pixel_height_um, \
+        color_cam_sensor_width_pixels, \
+        color_cam_sensor_height_pixels, \
+        color_cam_sensor_pixel_width_um, \
+        color_cam_sensor_pixel_height_um, \
+        mono_to_color_constructor, \
+        mono_to_color_processor
+        
+camera_constructor, \
+    mono_cam, \
+    mono_cam_flag, \
+    color_cam, \
+    color_cam_flag, \
+    mono_cam_sensor_width_pixels, \
+    mono_cam_sensor_height_pixels, \
+    mono_cam_sensor_pixel_width_um, \
+    mono_cam_sensor_pixel_height_um, \
+    color_cam_sensor_width_pixels, \
+    color_cam_sensor_height_pixels, \
+    color_cam_sensor_pixel_width_um, \
+    color_cam_sensor_pixel_height_um, \
+    mono_to_color_constructor, \
+    mono_to_color_processor = init_Thorlabs_cameras()
 
 mono_color_string = 'color'
 camera = color_cam
+pixel_size = color_cam_sensor_pixel_width_um
 
-# mono_color_string = 'mono'
-# camera = mono_cam
-
-if mono_color_string == 'color':
-    pixel_size = color_cam_sensor_pixel_width_um
-    cam_sensor_width_pixels = color_cam_sensor_width_pixels
-    cam_sensor_height_pixels = color_cam_sensor_height_pixels
-    level_mode = 'rgba'
-    if color_cam_sensor_pixel_width_um != color_cam_sensor_pixel_height_um:
-        print('Pixel is not a square. Width and height are different. Pixel size set to pixel width.')
-        pixel_size = color_cam_sensor_pixel_width_um
-elif mono_color_string == 'mono':
-    pixel_size = mono_cam_sensor_pixel_width_um
-    cam_sensor_width_pixels = mono_cam_sensor_width_pixels
-    cam_sensor_height_pixels = mono_cam_sensor_height_pixels
-    level_mode = 'mono'
-    if mono_cam_sensor_pixel_width_um != mono_cam_sensor_pixel_height_um:
-        print('Pixel is not a square. Width and height are different. Pixel size set to pixel width.')
-        pixel_size = mono_cam_sensor_pixel_width_um
-else:
-    print('\nWARNING! Select properly mono_color_string.')
-    print('mono_color_string is:', mono_color_string)
-    print('Allowed values are: mono OR color')
-    pixel_size = 0
-   
 #=====================================
 
 # GUI / Frontend definition
@@ -95,23 +102,22 @@ class Frontend(QtGui.QFrame):
         self.setWindowTitle(title)
             
     def setUpGUI(self):
-        
-        max_y_cursor = cam_sensor_width_pixels
-        max_x_cursor = cam_sensor_height_pixels
-        optical_format = cam_sensor_width_pixels/cam_sensor_height_pixels
+        max_y_cursor = color_cam_sensor_width_pixels
+        max_x_cursor = color_cam_sensor_height_pixels
+        optical_format = color_cam_sensor_width_pixels/color_cam_sensor_height_pixels
 
         # Image
         imageWidget = pg.GraphicsLayoutWidget()
         self.vb = imageWidget.addPlot()
         self.img = pg.ImageItem()
-        self.img.setOpts(axisOrder='row-major')
+        self.img.setOpts(axisOrder = 'row-major')
         self.vb.addItem(self.img)
-        self.hist = pg.HistogramLUTItem(image = self.img, levelMode = level_mode)
+        self.hist = pg.HistogramLUTItem(image = self.img, levelMode = 'rgba')
         self.hist.gradient.loadPreset('grey')
         # 'thermal', 'flame', 'yellowy', 'bipolar', 'spectrum',
         # 'cyclic', 'greyclip', 'grey'
-        self.hist.vb.setLimits(yMin=0, yMax=1024) # 10-bit camera
-        imageWidget.addItem(self.hist, row=0, col=1)
+        self.hist.vb.setLimits(yMin = 0, yMax = 1024) # 10-bit camera
+        imageWidget.addItem(self.hist, row = 0, col = 1)
         # TODO: if performance is an issue, try scaleToImage
 
         self.autolevel_tickbox = QtGui.QCheckBox('Autolevel')
@@ -357,7 +363,6 @@ class Frontend(QtGui.QFrame):
             event.accept()
             print('Closing GUI...')
             self.close()
-            # self.closeSignal.emit()
             tm.sleep(1)
             app.quit()
         else:
@@ -431,7 +436,8 @@ class Backend(QtCore.QObject):
             self.image_np = image_np # assign to class to be able to save it later
             tl_cam.stop_camera(camera)
             self.imageSignal.emit(image_np)            
-        
+        return
+    
     @pyqtSlot(bool, float)
     def liveview(self, livebool, exposure_time_ms):
         self.exposure_time_ms = exposure_time_ms # in ms, is float
@@ -439,7 +445,8 @@ class Backend(QtCore.QObject):
             self.start_liveview(self.exposure_time_ms)
         else:
             self.stop_liveview()
-
+        return
+    
     def start_liveview(self, exposure_time_ms):
         print('\nLive view started at', datetime.now())
         tl_cam.set_camera_continuous_mode(camera)
@@ -448,17 +455,20 @@ class Backend(QtCore.QObject):
         image_np, _ = tl_cam.get_image(camera, mono_to_color_processor, mono_color_string)
         self.imageSignal.emit(image_np) 
         self.viewTimer.start(round(self.frame_time)) # ms
-                
+        return
+            
     def update_view(self):
         # Image update while in Live view mode
         image_np, _ = tl_cam.get_image(camera, mono_to_color_processor, mono_color_string)
         self.imageSignal.emit(image_np)
-        
+        return
+    
     def stop_liveview(self):
         print('\nLive view stopped at', datetime.now())
         tl_cam.stop_camera(camera)
         self.viewTimer.stop()
-
+        return
+    
     @pyqtSlot()    
     def save_picture(self):
         timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
@@ -467,7 +477,8 @@ class Backend(QtCore.QObject):
         image_to_save = Image.fromarray(self.image_np)
         image_to_save.save(full_filename) 
         print('Image %s saved' % filename)
-        
+        return
+    
     @pyqtSlot()    
     def set_working_folder(self):
         root = tk.Tk()
@@ -477,8 +488,9 @@ class Backend(QtCore.QObject):
             print('No folder selected!')
         else:
             self.file_path = file_path
-            self.filePathSignal.emit(self.file_path) # TODO Lo reciben los módulos de traza, confocal y printing
-
+            self.filePathSignal.emit(self.file_path)
+        return
+    
     def make_connections(self, frontend):
         frontend.exposureChangedSignal.connect(self.change_exposure)
         frontend.liveViewSignal.connect(self.liveview) 
@@ -487,7 +499,8 @@ class Backend(QtCore.QObject):
         frontend.fixcursorSignal.connect(self.fix_cursor_reference)
         frontend.saveSignal.connect(self.save_picture)
         frontend.setWorkDirSignal.connect(self.set_working_folder)
-
+        return
+    
 #=====================================
 
 #  Main program
@@ -498,13 +511,21 @@ if __name__ == '__main__':
     # make application
     app = QtGui.QApplication([])
     
-    # connect both classes
+    # create both classes
     gui = Frontend()
     worker = Backend()
+    
+    # thread that run in background
+    workerThread = QtCore.QThread()
+    worker.moveToThread(workerThread)
+    worker.viewTimer.moveToThread(workerThread)
     
     # connect both classes 
     worker.make_connections(gui)
     gui.make_connections(worker)
+    
+    # start worker in a different thread (avoids GUI freezing)
+    workerThread.start()
     
     gui.show()
     app.exec()

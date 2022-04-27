@@ -11,10 +11,10 @@ Fribourg, Switzerland
 import numpy as np
 from timeit import default_timer as timer
 import os
-import sys
+# import sys
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
-import pyqtgraph.ptime as ptime
+# import pyqtgraph.ptime as ptime
 from pyqtgraph.dockarea import Dock, DockArea
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
 import daq_board_toolbox as daq
@@ -30,8 +30,8 @@ import time as tm
 
 print('\nInitializing DAQ board...')
 daq_board = daq.init_daq()
-# set update trace plot period
-updateTrace_period = 20 # in ms
+# set measure and update trace plot period
+updateTrace_period = 30 # in ms
 # set measurement range
 initial_voltage_range = 2.0
 daq.check_voltage_range(daq_board, initial_voltage_range)
@@ -39,16 +39,48 @@ daq.check_voltage_range(daq_board, initial_voltage_range)
 max_sampling_rate = daq_board.ai_max_single_chan_rate # set to maximum, here 2 MS/s    
 initial_sampling_rate = 1e3 # in S/s
 # duration of the traces in s
-initial_duration = 20
+initial_duration = 5
 # set acquisition mode to measure continuosly
 acquisition_mode = 'continuous'
+
 # function that calculates the number of datapoins to be measured
 def calculate_num_of_points(duration, sampling_rate):
     number_of_points = int(duration*sampling_rate)
-    print('At {:.3f} MS/s sampling rate, a duration of {} s means:'.format(sampling_rate*1e-6, \
+    print('\nAt {:.3f} MS/s sampling rate, a duration of {} s means:'.format(sampling_rate*1e-6, \
                                                                        duration))
     print('{} datapoints per trace'.format(number_of_points))  
     return number_of_points
+
+# define a fixed length (in s) for the time axis of viewbox signal vs time
+initial_viewbox_length = 2 # in s
+# define a downsampling period for visualization purposes
+initial_downsampling_period = 5
+# initial Y range
+initial_min_y_range = -0.01
+initial_max_y_range = 0.03
+initial_mean_value = 0
+initial_sd_value = 0.2
+# initial filepath and filename
+initial_filepath = 'D:\\daily_data' # save in SSD for fast and daily use
+initial_filename = 'test'
+
+#=====================================
+
+# Fast Plot Class definition
+
+#=====================================
+
+class FastLine(pg.QtGui.QGraphicsPathItem):
+    def __init__(self, x, y, color = 'w'):
+        # from https://stackoverflow.com/questions/17103698/plotting-large-arrays-in-pyqtgraph?rq=1
+        """x and y are 1D arrays"""
+        self.path = pg.arrayToQPath(x, y, connect = 'all', finiteCheck = False)
+        pg.QtGui.QGraphicsPathItem.__init__(self, self.path)
+        self.setPen(pg.mkPen(color))
+    def shape(self): # override because QGraphicsPathItem.shape is too expensive.
+        return pg.QtGui.QGraphicsItem.shape(self)
+    def boundingRect(self):
+        return self.path.boundingRect()
 
 #=====================================
 
@@ -59,15 +91,16 @@ def calculate_num_of_points(duration, sampling_rate):
 class Frontend(QtGui.QFrame):
 
     traceSignal = pyqtSignal(bool)
-    traceContSignal = pyqtSignal(bool)
-    # stopSignal = pyqtSignal()
-    # playSignal = pyqtSignal()
-    # saveSignal = pyqtSignal()
-    setVoltageRange = pyqtSignal(float)
-    setSamplingRate = pyqtSignal(int)
-    setDuration = pyqtSignal(float)
+    makeTraceContSignal = pyqtSignal(bool)
+    saveTraceContSignal = pyqtSignal(bool)
+    setVoltageRangeSignal = pyqtSignal(float)
+    setSamplingRateSignal = pyqtSignal(int)
+    setDurationSignal = pyqtSignal(float)
+    saveSignal = pyqtSignal()
     closeSignal = pyqtSignal()
     setWorkDirSignal = pyqtSignal()
+    filenameSignal = pyqtSignal(str)
+    commentSignal = pyqtSignal(str)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -75,6 +108,12 @@ class Frontend(QtGui.QFrame):
         # set the title of thw window
         title = "APD signal module"
         self.setWindowTitle(title)
+        self.set_y_range()
+        self.mean_value = initial_mean_value # in V
+        self.sd_value = initial_sd_value # in V
+        self.set_working_dir()
+        self.set_filename()
+        self.sampling_rate_changed()
 
     def setUpGUI(self):
 
@@ -82,28 +121,31 @@ class Frontend(QtGui.QFrame):
         self.traceButton = QtGui.QPushButton('► Acquire single / ◘ Stop')
         self.traceButton.setCheckable(True)
         self.traceButton.clicked.connect(self.get_trace)
-        self.traceButton.setToolTip('Play or Stop a single APD signal acquisition')
+        self.traceButton.setToolTip('Play or Stop a single APD signal acquisition.')
         self.traceButton.setStyleSheet(
             "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: red; }"
             "QPushButton::checked { background-color: lightcoral; }")
 
-        # Continuous acquisition button
-        self.traceContinuouslyButton = QtGui.QPushButton('► Acquire continuously / ◘ Stop')
-        self.traceContinuouslyButton.setCheckable(True)
-        self.traceContinuouslyButton.clicked.connect(self.get_trace_continuously)
-        self.traceContinuouslyButton.setToolTip('Play or Stop continuously APD signal acquisition')
-        self.traceContinuouslyButton.setStyleSheet(
-            "QPushButton { background-color: sandybrown; }"
-            "QPushButton:pressed { background-color: red; }"
-            "QPushButton::checked { background-color: lightcoral; }")
+        # Continuous acquisition tick box
+        self.traceContinuouslyBox = QtGui.QCheckBox('Acquire continuously?')
+        self.traceContinuouslyBox.setChecked(False)
+        self.traceContinuouslyBox.stateChanged.connect(self.set_trace_continuously)
+        self.traceContinuouslyBox.setToolTip('Set/Tick to acquire continuously APD signal.')
 
         # Save data button
-        self.saveButton = QtGui.QPushButton('Save trace')
+        self.saveButton = QtGui.QPushButton('Save last trace')
         self.saveButton.clicked.connect(self.get_save_trace)
         self.saveButton.setStyleSheet(
             "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: cornflowerblue; }")
+        self.saveButton.setToolTip('Save the trace that was <b>fully</b> acquired in the last seconds (defined by <b>duration</b> variable).')
+        
+        # Save continuously tick box
+        self.saveContinuouslyBox = QtGui.QCheckBox('Save automatically?')
+        self.saveContinuouslyBox.setChecked(False)
+        self.saveContinuouslyBox.stateChanged.connect(self.set_save_continuously)
+        self.saveContinuouslyBox.setToolTip('Set/Tick to save data continuously. Filenames will be sequential.')
         
         # Working folder
         self.working_dir_button = QtGui.QPushButton('Select directory')
@@ -112,19 +154,23 @@ class Frontend(QtGui.QFrame):
             "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: palegreen; }")
         self.working_dir_label = QtGui.QLabel('Working directory')
-        self.file_path = ''
-        self.working_dir_path = QtGui.QLineEdit(self.file_path)
+        self.filepath = initial_filepath
+        self.working_dir_path = QtGui.QLineEdit(self.filepath)
         self.working_dir_path.setReadOnly(True)
-        self.filename_label = QtGui.QLabel('Filename (.dat)')
-        self.filename = ''
+        self.filename_label = QtGui.QLabel('Filename (.npy)')
+        self.filename = initial_filename
+        self.filename_previous = self.filename
         self.filename_name = QtGui.QLineEdit(self.filename)
+        self.filename_name.editingFinished.connect(self.set_filename)
         
         # Comments box
         self.comments_label = QtGui.QLabel('Comments:')
         self.comment = ''
+        self.comment_previous = self.comment
         self.comments = QtGui.QLineEdit(self.comment)
         self.comments.setPlaceholderText('Enter your comments here. They will be saved with the trace data.')
-
+        self.comments.editingFinished.connect(self.transmit_comments)
+        
         # Voltage range
         voltage_ranges_option = ['0.1', '0.2', '0.5', '1.0', '2.0', '5.0', '10.0']
         self.maxVoltageRangeLabel = QtGui.QLabel('Max voltage range (V): ')
@@ -137,16 +183,43 @@ class Frontend(QtGui.QFrame):
         self.samplingRateLabel = QtGui.QLabel('Sampling rate (kS/s): ')
         self.samplingRateValue = QtGui.QLineEdit(str(int(initial_sampling_rate/1e3)))
         self.samplingRateValue_previous = int(self.samplingRateValue.text())
+        self.time_base = 1/initial_sampling_rate
         self.samplingRateValue.editingFinished.connect(self.sampling_rate_changed)
         self.samplingRateValue.setValidator(QtGui.QIntValidator(1, 2000))
         
+        # Downsampling
+        self.downsamplingLabel = QtGui.QLabel('Downsampling/averaging (int): ')
+        self.downsamplingValue = QtGui.QLineEdit(str(int(initial_downsampling_period)))
+        self.downsamplingValue.setToolTip('For displaying purposes. Number of points to average. The higher the better the performance. Advice: use only for Sampling rates higher than 100 kS/s.')
+        self.downsampling_period = initial_downsampling_period
+        self.downsamplingValue_previous = int(self.downsamplingValue.text())
+        self.downsamplingValue.editingFinished.connect(self.downsampling_changed)
+        self.downsamplingValue.setValidator(QtGui.QIntValidator(1, 1000))
+        
+        # Displaying effective sampling rate a.k.a. display rate
+        fontsize = 14
+        font_family = 'Serif'
+        self.display_rate = self.samplingRateValue_previous/self.downsampling_period
+        display_rate_text = 'Display rate: {:.3f} kS/s (display period: {:.3f} ms)'.format(self.display_rate, 1/self.display_rate)
+        self.displayRateLabel = QtGui.QLabel(display_rate_text)
+        self.displayRateLabel.setFont(QtGui.QFont(font_family, fontsize))
+        
         # Duration of the measurement
-        self.durationValue_initial = initial_duration
+        self.duration = initial_duration
         self.durationLabel = QtGui.QLabel('Duration (s): ')
-        self.durationValue = QtGui.QLineEdit(str(self.durationValue_initial))
+        self.durationValue = QtGui.QLineEdit(str(self.duration))
+        self.durationValue.setValidator(QtGui.QDoubleValidator(1.0, 60.0, 1))
         self.durationValue_previous = float(self.durationValue.text())
         self.durationValue.editingFinished.connect(self.duration_value_changed)
-        # self.durationValue.setValidator(QtGui.QIntValidator(1, 2000))
+        
+        # Time window length
+        self.viewbox_length = initial_viewbox_length
+        self.timeViewboxLength_label = QtGui.QLabel('Time window length (s): ')
+        self.timeViewboxLength_value = QtGui.QLineEdit(str(self.viewbox_length))
+        self.timeViewboxLength_value.setValidator(QtGui.QDoubleValidator(1.0, 10.0, 1))
+        self.timeViewboxLength_value.setToolTip('For displaying purposes. Set the time length of the viewbox in seconds.')
+        self.timeViewboxLength_previous = float(self.timeViewboxLength_value.text())
+        self.timeViewboxLength_value.editingFinished.connect(self.time_viewbox_length_changed)
         
         # display mean and std of the signal using labels
         fontsize = 20
@@ -160,59 +233,90 @@ class Frontend(QtGui.QFrame):
         self.signalStdValue = QtGui.QLabel('0.000')
         self.signalStdValue.setFont(QtGui.QFont(font_family, fontsize))
         
-        # Layout
-        self.paramWidget = QtGui.QWidget()
-        subgrid_layout = QtGui.QGridLayout()
-        self.paramWidget.setLayout(subgrid_layout)
-        subgrid_layout.addWidget(self.traceButton, 0, 0)
-        subgrid_layout.addWidget(self.traceContinuouslyButton, 0, 1)
-        subgrid_layout.addWidget(self.saveButton, 0, 2)
-        subgrid_layout.addWidget(self.working_dir_button, 0, 3)
-        subgrid_layout.addWidget(self.working_dir_label, 1, 0, 1, 3)
-        subgrid_layout.addWidget(self.working_dir_path, 1, 1, 1, 3)
-        subgrid_layout.addWidget(self.filename_label, 2, 0, 1, 3)
-        subgrid_layout.addWidget(self.filename_name, 2, 1, 1, 3)
-        subgrid_layout.addWidget(self.maxVoltageRangeLabel, 3, 0)
-        subgrid_layout.addWidget(self.maxVoltageRangeList, 3, 1)
-        subgrid_layout.addWidget(self.samplingRateLabel, 4, 0)
-        subgrid_layout.addWidget(self.samplingRateValue, 4, 1)
-        subgrid_layout.addWidget(self.durationLabel, 5, 0)
-        subgrid_layout.addWidget(self.durationValue, 5, 1)
-        subgrid_layout.addWidget(self.MeanValueLabel, 6, 0)
-        subgrid_layout.addWidget(self.signalMeanValue, 6, 1)
-        subgrid_layout.addWidget(self.StdValueLabel, 6, 2)
-        subgrid_layout.addWidget(self.signalStdValue, 6, 3)
-        subgrid_layout.addWidget(self.comments_label, 7, 0)
-        subgrid_layout.addWidget(self.comments, 8, 0, 1, 3)
-          
+        # Y range 
+        self.min_y_range = initial_min_y_range
+        self.max_y_range = initial_max_y_range
+        self.minYRangeLabel = QtGui.QLabel('Min Y range (V): ')
+        self.maxYRangeLabel = QtGui.QLabel('Max Y range (V): ')
+        self.minYRangeValue = QtGui.QLineEdit(str(self.min_y_range))
+        self.minYRangeValue.setValidator(QtGui.QDoubleValidator(-10, 0, 6))
+        self.maxYRangeValue = QtGui.QLineEdit(str(self.max_y_range))
+        self.maxYRangeValue.setValidator(QtGui.QDoubleValidator(0, 10, 6))
+        self.minYRangeValue.editingFinished.connect(self.set_y_range)
+        self.maxYRangeValue.editingFinished.connect(self.set_y_range)
+        
+        # center-on-the-mean-value-of-the-signal button
+        self.centerOnMeanButton = QtGui.QPushButton('Center signal')
+        self.centerOnMeanButton.clicked.connect(self.center_signal)
+        self.centerOnMeanButton.setStyleSheet(
+            "QPushButton { background-color: lightgray; }"
+            "QPushButton:pressed { background-color: plum; }")
+        self.centerOnMeanButton.setToolTip('For displaying purposes. Center Y axis over the mean of the signal ±5 std dev.')
+        
+        # Layout for the acquisition widget
+        self.paramAcqWidget = QtGui.QWidget()
+        subgridAcq_layout = QtGui.QGridLayout()
+        self.paramAcqWidget.setLayout(subgridAcq_layout)
+        subgridAcq_layout.addWidget(self.traceButton, 0, 0)
+        subgridAcq_layout.addWidget(self.traceContinuouslyBox, 0, 1)
+        subgridAcq_layout.addWidget(self.saveButton, 0, 2)
+        subgridAcq_layout.addWidget(self.saveContinuouslyBox, 0, 3)
+        subgridAcq_layout.addWidget(self.working_dir_label, 1, 0)
+        subgridAcq_layout.addWidget(self.working_dir_path, 1, 1, 1, 3)
+        subgridAcq_layout.addWidget(self.working_dir_button, 1, 4)
+        subgridAcq_layout.addWidget(self.filename_label, 2, 0)
+        subgridAcq_layout.addWidget(self.filename_name, 2, 1, 1, 3)
+        subgridAcq_layout.addWidget(self.maxVoltageRangeLabel, 3, 0)
+        subgridAcq_layout.addWidget(self.maxVoltageRangeList, 3, 1)
+        subgridAcq_layout.addWidget(self.samplingRateLabel, 4, 0)
+        subgridAcq_layout.addWidget(self.samplingRateValue, 4, 1)
+        subgridAcq_layout.addWidget(self.durationLabel, 5, 0)
+        subgridAcq_layout.addWidget(self.durationValue, 5, 1)
+        subgridAcq_layout.addWidget(self.comments_label, 6, 0)
+        subgridAcq_layout.addWidget(self.comments, 7, 0, 1, 5)
+         
+        # Layout for display controls widget
+        self.paramDisplayWidget = QtGui.QWidget()
+        subgridDisp_layout = QtGui.QGridLayout()
+        self.paramDisplayWidget.setLayout(subgridDisp_layout)
+        subgridDisp_layout.addWidget(self.MeanValueLabel, 0, 0)
+        subgridDisp_layout.addWidget(self.signalMeanValue, 0, 1)
+        subgridDisp_layout.addWidget(self.StdValueLabel, 0, 2)
+        subgridDisp_layout.addWidget(self.signalStdValue, 0, 3)
+        subgridDisp_layout.addWidget(self.maxYRangeLabel, 1, 0)
+        subgridDisp_layout.addWidget(self.maxYRangeValue, 1, 1)
+        subgridDisp_layout.addWidget(self.minYRangeLabel, 2, 0)
+        subgridDisp_layout.addWidget(self.minYRangeValue, 2, 1)
+        subgridDisp_layout.addWidget(self.centerOnMeanButton, 1, 2, 2, 1)
+        subgridDisp_layout.addWidget(self.downsamplingLabel, 3, 0)
+        subgridDisp_layout.addWidget(self.downsamplingValue, 3, 1)
+        subgridDisp_layout.addWidget(self.timeViewboxLength_label, 4, 0)
+        subgridDisp_layout.addWidget(self.timeViewboxLength_value, 4, 1)
+        subgridDisp_layout.addWidget(self.displayRateLabel, 5, 0, 1, 3)
+        
         # widget for the data
-        self.traceWidget = pg.GraphicsLayoutWidget()
-        self.signal_plot = self.traceWidget.addPlot(row = 1, col = 1, title = 'APD signal')
-        self.signal_plot.setAutoPan(x = True, y = None)
-        self.signal_plot.enableAutoRange(axis = 'y', enable = True)
-        # self.signal_plot.setXRange(0, 10)
+        self.viewTraceWidget = pg.GraphicsLayoutWidget()
+        self.signal_plot = self.viewTraceWidget.addPlot(row = 1, col = 1, title = 'APD signal')
+        self.signal_plot.enableAutoRange(False, False)
         self.signal_plot.showGrid(x = True, y = True)
         self.signal_plot.setLabel('left', 'Voltage (V)')
         self.signal_plot.setLabel('bottom', 'Time (s)')
-        # self.raw_data_curve = self.signal_plot.PlotCurveItem(skipFiniteCheck = True, \
-        #                                             pen = pg.mkPen('w'))
-        # self.mean_curve = self.signal_plot.PlotCurveItem(skipFiniteCheck = True, \
-        #                                         pen = pg.mkPen('b'))
-        # self.sd_plus_curve = self.signal_plot.PlotCurveItem(skipFiniteCheck = True, \
-        #                                            pen = pg.mkPen('g'))
-        # self.sd_minus_curve = self.signal_plot.PlotCurveItem(skipFiniteCheck = True, \
-        #                                             pen = pg.mkPen('g'))
         
         # Docks
         hbox = QtGui.QHBoxLayout(self)
         dockArea = DockArea()
-        traceDock = Dock('Acquisition controls', size = (100,1))
-        traceDock.addWidget(self.paramWidget)
-        dockArea.addDock(traceDock)
-      
-        viewDock = Dock('Trace viewbox', size = (100,4))
-        viewDock.addWidget(self.traceWidget)
-        dockArea.addDock(viewDock, 'bottom', traceDock)
+        
+        acqTraceDock = Dock('Acquisition controls', size = (10,1))
+        acqTraceDock.addWidget(self.paramAcqWidget)
+        dockArea.addDock(acqTraceDock)
+
+        displayCtrlDock = Dock('Display controls', size = (10,1))
+        displayCtrlDock.addWidget(self.paramDisplayWidget)
+        dockArea.addDock(displayCtrlDock, 'bottom', acqTraceDock)        
+
+        viewTraceDock = Dock('Trace viewbox', size = (10,10))
+        viewTraceDock.addWidget(self.viewTraceWidget)
+        dockArea.addDock(viewTraceDock, 'bottom', displayCtrlDock)
 
         hbox.addWidget(dockArea) 
         self.setLayout(hbox)
@@ -223,52 +327,78 @@ class Frontend(QtGui.QFrame):
         return
     
     @pyqtSlot(str)
-    def get_file_path(self, file_path):
-        self.file_path = file_path
-        self.working_dir_path.setText(self.file_path)
+    def get_filepath(self, filepath):
+        self.filepath = filepath
+        self.working_dir_path.setText(self.filepath)
         return
     
     def voltage_range_changed(self, selected_range):
         # Note that changing the QtComboBox option
         # will emit a signal that contains the selected option
         self.voltage_range = float(selected_range)
-        self.setVoltageRange.emit(self.voltage_range)
+        self.setVoltageRangeSignal.emit(self.voltage_range)
         return
     
     def sampling_rate_changed(self):
-        self.selected_rate = int(self.samplingRateValue.text())
-        if self.selected_rate != self.samplingRateValue_previous:
-            self.samplingRateValue_previous = self.selected_rate
-            self.setSamplingRate.emit(self.selected_rate)
+        selected_rate = int(self.samplingRateValue.text())
+        if selected_rate != self.samplingRateValue_previous:
+            self.samplingRateValue_previous = selected_rate
+            self.time_base = 1/(selected_rate*1e3)
+            self.setSamplingRateSignal.emit(selected_rate)
+            self.change_downsampling(self.downsampling_period)
         return
     
     def duration_value_changed(self):
         self.duration = float(self.durationValue.text())
         if self.duration != self.durationValue_previous:
             self.durationValue_previous = self.duration
-            self.setDuration.emit(self.duration)
+            self.setDurationSignal.emit(self.duration)
+        return
+    
+    def time_viewbox_length_changed(self):
+        time_viewbox_length = float(self.timeViewboxLength_value.text())
+        if time_viewbox_length != self.timeViewboxLength_previous:
+            print('Time length of the viewbox changed to {:.1f} s'.format(time_viewbox_length))
+            self.viewbox_length = time_viewbox_length
+            self.timeViewboxLength_previous = self.viewbox_length
         return
     
     def get_trace(self):
         if self.traceButton.isChecked():
+            self.signal_plot.clear()
             self.traceSignal.emit(True)
         else:
             self.traceSignal.emit(False) 
         return
     
-    def get_trace_continuously(self):
-        if self.traceContinuouslyButton.isChecked():
-            self.traceContSignal.emit(True)
+    def set_trace_continuously(self):
+        if self.traceContinuouslyBox.isChecked():
+            self.makeTraceContSignal.emit(True)
         else:
-            self.traceContSignal.emit(False) 
+            self.makeTraceContSignal.emit(False) 
         return
     
-    def get_play(self):
-        self.playSignal.emit()
+    def set_save_continuously(self):
+        if self.saveContinuouslyBox.isChecked():
+            self.saveTraceContSignal.emit(True)
+        else:
+            self.saveTraceContSignal.emit(False) 
         return
     
-    def get_stop(self):
-        self.stopSignal.emit()
+    def downsampling_changed(self):
+        downsampling_period = int(self.downsamplingValue.text())
+        if downsampling_period != self.downsamplingValue_previous:
+            print('Downsampling has changed to {} points'.format(downsampling_period))
+            self.change_downsampling(downsampling_period)            
+        return
+
+    def change_downsampling(self, downsampling_period):
+        self.display_rate = self.samplingRateValue_previous/downsampling_period
+        print('\nDisplaying at {} kS/s'.format(self.display_rate))
+        new_text = 'Display rate: {:.3f} kS/s (display period: {:.3f} ms)'.format(self.display_rate, 1/self.display_rate)
+        self.displayRateLabel.setText(new_text)
+        self.downsampling_period = downsampling_period
+        self.downsamplingValue_previous = self.downsampling_period
         return
     
     def get_save_trace(self):
@@ -276,34 +406,90 @@ class Frontend(QtGui.QFrame):
             self.saveSignal.emit()
         return
     
-    @pyqtSlot(np.ndarray, np.ndarray, np.ndarray, np.ndarray)
-    def get_data(self, time_array, data_array, mean_array, sd_array): 
-        # plot raw
-        self.raw_data_curve.setData(time_array, data_array)
-        # plot mean
-        self.mean_curve.setData(time_array, mean_array)
-        # plot sd
-        sd_plus_array = mean_array + sd_array
-        self.sd_plus_curve.setData(time_array, sd_plus_array)
-        sd_minus_array = mean_array - sd_array        
-        self.sd_minus_curve.setData(time_array, sd_minus_array)
-        
-        
-        # path_raw_data_curve = pg.arrayToQPath(time_array, data_array, connect = 'all', finiteCheck = False)
-        # path_raw_mean_curve = pg.arrayToQPath(time_array, mean_array, connect = 'all', finiteCheck = False)
-        # path_raw_sd_plus_curve = pg.arrayToQPath(time_array, sd_plus_array, connect = 'all', finiteCheck = False)
-        # path_raw_sd_minus_curve = pg.arrayToQPath(time_array, sd_minus_array, connect = 'all', finiteCheck = False)
-        
-        # item = QtGui.QGraphicsPathItem(path)
-        # item.setPen(pg.mkPen('w'))
-        # plt.addItem(item)
-        
+    def transmit_comments(self):
+        new_comment = self.comments.text()
+        if new_comment != self.comment_previous:
+            self.comment = new_comment
+            self.commentSignal.emit(self.comment)    
+            self.comment_previous = self.comment
+        return
+    
+    def set_filename(self):
+        filename = self.filename_name.text()
+        if filename != self.filename_previous:
+            self.filename = filename
+            self.filenameSignal.emit(self.filename)    
+            self.filename_previous = self.filename
+        return
+    
+    def set_y_range(self):
+        self.signal_plot.setYRange(float(self.minYRangeValue.text()), 
+                                   float(self.maxYRangeValue.text()))
+        return
+    
+    def center_signal(self):
+        self.signal_plot.setYRange(self.mean_value - 5*self.sd_value, 
+                                   self.mean_value + 5*self.sd_value)
+        return
+    
+    @pyqtSlot(np.ndarray, int, int)
+    def get_data(self, data_array, i, n_read):
+        # do some minor stats
+        self.mean_value = np.mean(data_array)
+        self.sd_value = np.std(data_array, ddof = 1)
         # update value labels
-        mean = mean_array[-1]
-        sd = sd_array[-1]
-        sd_mV = sd*1000 # to mV
-        self.signalMeanValue.setText('{:.3f}'.format(mean))
+        sd_mV = self.sd_value*1000 # to mV
+        self.signalMeanValue.setText('{:.3f}'.format(self.mean_value))
         self.signalStdValue.setText('{:.3f}'.format(sd_mV))
+
+        # prepare time array
+        start = i
+        end = i + n_read
+        time_array = np.arange(start, end)*self.time_base
+        # for visualizing purposes
+        if self.downsampling_period != 1:
+            # crop and resize data for later averaging as downsampling method
+            data_array_length = data_array.size
+            remainder = np.mod(data_array_length, self.downsampling_period)
+            round_size = data_array_length - remainder
+            # crop
+            data_array = data_array[:round_size]
+            time_array = time_array[:round_size]
+            # reshape
+            new_size = int(round_size/self.downsampling_period)
+            data_array = data_array.reshape([self.downsampling_period, new_size], order = 'F')
+            time_array = time_array.reshape([self.downsampling_period, new_size], order = 'F')
+            # average
+            data_array = np.mean(data_array, axis = 0)
+            time_array = np.mean(time_array, axis = 0)
+            
+        # plot raw data (with or without downsampling)
+        time_array_to_plot = time_array
+        data_array_to_plot = data_array
+        item_raw_data_curve = FastLine(time_array_to_plot, data_array_to_plot, 'w')
+        
+        # plot mean of data (using previous arrays)
+        mean_array_to_plot = np.copy(data_array_to_plot)
+        mean_array_to_plot[:] = self.mean_value
+        item_mean_data_curve = FastLine(time_array_to_plot, mean_array_to_plot, 'b')
+        
+        # plot std dev of the data (using previous arrays)
+        std_plus_array_to_plot = np.copy(data_array_to_plot)
+        std_minus_array_to_plot = np.copy(data_array_to_plot)
+        std_plus_array_to_plot[:] = self.mean_value + 3*self.sd_value # 3 sigma means 99.73%
+        std_minus_array_to_plot[:] = self.mean_value - 3*self.sd_value # 3 sigma means 99.73%
+        item_std_plus_data_curve = FastLine(time_array_to_plot, std_plus_array_to_plot, 'g')
+        item_std_minus_data_curve = FastLine(time_array_to_plot, std_minus_array_to_plot, 'g')
+        
+        # add plots
+        self.signal_plot.addItem(item_raw_data_curve, skipFiniteCheck = True)
+        self.signal_plot.addItem(item_mean_data_curve, skipFiniteCheck = True)
+        self.signal_plot.addItem(item_std_plus_data_curve, skipFiniteCheck = True)
+        self.signal_plot.addItem(item_std_minus_data_curve, skipFiniteCheck = True)
+        
+        # set range and fix rolling window length
+        x_viewbox = time_array[-1]
+        self.signal_plot.setXRange(x_viewbox - self.viewbox_length, x_viewbox)
         return
         
     @pyqtSlot()
@@ -330,11 +516,10 @@ class Frontend(QtGui.QFrame):
             event.ignore()
             print('Back in business...')    
         return
-    
 
     def make_connections(self, backend):
         backend.dataSignal.connect(self.get_data)
-        backend.filePathSignal.connect(self.get_file_path)
+        backend.filepathSignal.connect(self.get_filepath)
         backend.acqStopped.connect(self.acquisition_stopped)
         return
     
@@ -346,11 +531,9 @@ class Frontend(QtGui.QFrame):
        
 class Backend(QtCore.QObject):
 
-    dataSignal = pyqtSignal(np.ndarray, np.ndarray, np.ndarray, np.ndarray)
-    filePathSignal = pyqtSignal(str)
+    dataSignal = pyqtSignal(np.ndarray, int, int)
+    filepathSignal = pyqtSignal(str)
     acqStopped = pyqtSignal()
-    # data_printingSignal = pyqtSignal(list)
-    # data_printingSignal_dimers = pyqtSignal(list)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -358,19 +541,25 @@ class Backend(QtCore.QObject):
         self.updateTimer = QtCore.QTimer()
         self.updateTimer.timeout.connect(self.trace_update) 
         self.updateTimer.setInterval(updateTrace_period) # in ms
-        self.trace_state = False
         # set APD acquisition channel
         self.sampling_rate = initial_sampling_rate
         self.time_base = 1/self.sampling_rate
         self.duration = initial_duration
         self.number_of_points = calculate_num_of_points(self.duration, self.sampling_rate)
         self.voltage_range = initial_voltage_range
+        print('Setting up task...')
         self.APD_task, self.time_to_finish = daq.set_ch_APD(self.sampling_rate, \
                                                             self.number_of_points, \
                                                             -self.voltage_range, \
                                                             +self.voltage_range, \
                                                             acquisition_mode, \
                                                             debug = True)
+        self.acquire_continuously_bool = False
+        self.save_continuously_bool = False
+        self.filepath = initial_filepath
+        self.filename = initial_filename
+        self.params_to_be_saved = ''
+        self.comment = ''
         return
 
     @pyqtSlot(bool)
@@ -381,34 +570,41 @@ class Backend(QtCore.QObject):
             self.stop_trace()
         return 
     
+    @pyqtSlot(bool)
+    def acquire_continuously_check(self, acq_cont_bool):
+        if acq_cont_bool:
+            print('Signal acquisition will run continuously.')
+            self.acquire_continuously_bool = True
+        else:
+            print('Signal acquisition will run only once.')
+            self.acquire_continuously_bool = False
+        return
+    
+    @pyqtSlot(bool)
+    def save_continuously_check(self, save_bool):
+        if save_bool:
+            print('Signal will be save automatically.')
+            self.save_continuously_bool = True
+        else:
+            print('Signal will not be save automatically.')
+            self.save_continuously_bool = False
+        return
+    
     def start_trace(self):
         print('\nAcquisition started at {}'.format(timer()))
         # allocate arrays
         self.data_array_filepath, self.data_array = daq.allocate_datafile(self.number_of_points)
         self.time_array_filepath, self.time_array = daq.allocate_datafile(self.number_of_points)
-        self.mean_array_filepath, self.mean_array = daq.allocate_datafile(self.number_of_points)
-        self.sd_array_filepath, self.sd_array = daq.allocate_datafile(self.number_of_points)
         # counter to account for the number of points already measured
         self.i = 0
+        self.i_to_send = 0
+        self.trace_number = 0
         # prepare stream reader
         self.APD_stream_reader = daq.arm_measurement_in_loop(self.APD_task)
         # start task
         self.APD_task.start()
         # start timer to retrieve data periodically
         self.updateTimer.start()
-        # perform the measurement 
-        # self.meas_cont_array = daq.measure_data_continuously(self.APD_task, \
-        #                                                      self.number_of_points, \
-        #                                                      self.data_array, \
-        #                                                      debug = True)
-        # self.meas_cont_array = daq.measure_in_loop_continuously(self.APD_task, \
-        #                                                         self.APD_stream_reader, \
-        #                                                         self.number_of_points, \
-        #                                                         self.data_array)
-        # # emit signal acquisition has ended
-        # self.APD_task.stop()
-        # print('\nAcquisition finished at {}'.format(timer()))
-        # self.acqStopped.emit()
         return
     
     def stop_trace(self):
@@ -416,40 +612,12 @@ class Backend(QtCore.QObject):
         self.updateTimer.stop()
         # flush DAQ buffer
         self.data_array.flush()
-        # reset counter
-        self.i = 0
         if not self.APD_task.is_task_done():
             print('\nStopping acquisition at {}'.format(timer()))
             self.APD_task.stop()
         # emit signal acquisition has ended
         self.acqStopped.emit()
-        # closeShutter(self.laser)
-        # self.timer_real = round(self.timer_end- self.timer_inicio, 2)
-        #print(self.timer_real, self.ptr1*self.time, 'tiempo')         
-        # print('Time trace', self.timer_real, 'tiempo no real', round(self.timeaxis[-1], 2))
-        # self.save_trace()
         return
-
-    # @pyqtSlot(bool)    
-    # def play_continuously(self, tracebool):
-    #     print('\nAcquisition started')
-    #     # start timer to retrieve data periodically
-    #     self.updateTimer.start()
-    #     # allocate array
-    #     self.data_array_filepath, self.data_array = daq.allocate_datafile(self.number_of_points)
-    #     # prepare stream reader
-    #     self.APD_stream_reader = daq.arm_measurement_in_loop(self.APD_task)
-    #     # start task
-    #     self.APD_task.start()
-    #     # perform the measurement 
-    #     while self.trace_state:
-    #         self.meas_cont_array = daq.measure_in_loop_continuously(self.APD_task, \
-    #                                                                 self.APD_stream_reader, \
-    #                                                                 self.number_of_points, \
-    #                                                                 self.data_array)
-    #         print('Continuous measurement of {} points ended.'.format(self.number_of_points))
-    #         print('Done.')
-    #     return
                     
     def trace_update(self):
         # perform the measurement 
@@ -458,64 +626,57 @@ class Backend(QtCore.QObject):
             n_available, data = daq.measure_one_loop(self.APD_stream_reader, \
                                                      self.number_of_points, \
                                                      self.i)
-            time = np.arange(self.i, self.i + n_available)*self.time_base
-            # do some minor stats
-            mean_value = np.mean(data)
-            sd_value = np.std(data, ddof = 1)
             # assign
             self.data_array[self.i:self.i + n_available] = data
-            self.time_array[self.i:self.i + n_available] = time
-            self.mean_array[self.i:self.i + n_available] = mean_value
-            self.sd_array[self.i:self.i + n_available] = sd_value
-            # preapre data to pass to frontend
-            data_array_to_pass = self.data_array[:self.i + n_available]
-            time_array_to_pass = self.time_array[:self.i + n_available]
-            mean_array_to_pass = self.mean_array[:self.i + n_available]
-            sd_array_to_pass = self.sd_array[:self.i + n_available]
-            self.i += n_available
             # send
-            self.dataSignal.emit(time_array_to_pass, data_array_to_pass, \
-                                 mean_array_to_pass, sd_array_to_pass)
+            self.dataSignal.emit(data, self.i_to_send, n_available)
+            self.i += n_available
+            self.i_to_send += n_available
         else:
-            # stop timer
-            self.updateTimer.stop()
-            # flush DAQ buffer
-            self.data_array.flush()
-            # check if all data has been written correctly
-            assert np.all(self.data_array > -1000)
-            print('\nAcquisition finished at {}'.format(timer()))
-            self.stop_trace()
+            if self.save_continuously_bool:
+                # flush array at buffer into the disk (because it was a memmap array)
+                self.data_array.flush()
+                self.save_trace()
+            if self.acquire_continuously_bool:
+                # reset counter
+                self.i = 0
+                self.trace_number += 1
+            else:
+                # stop timer
+                self.updateTimer.stop()
+                print('\nAcquisition finished at {}'.format(timer()))
+                self.stop_trace()
         return
-
-    # @pyqtSlot(str)        
-    # def direction(self, file_name):
-    #     self.file_path = file_name
-        
-    # @pyqtSlot()
-    # def save_trace(self):
-        
-    #     filepath = self.file_path
-    #     timestr = time.strftime("%Y%m%d-%H%M%S")
-    #     name = str(filepath + "/" + "timetrace-"  + timestr + ".txt")
-        
-    #     f = open(name, "w")
-            
-    #     time_real = list(np.linspace(0.01, self.timer_real, self.ptr))
-        
-    #     np.savetxt(name, np.transpose([time_real, self.data1]), fmt='%.3e')
-                       
-    #        # np.savetxt(name,
-    #                  #   np.transpose([self.timeaxis[:self.ptr1],
-    #                                  # self.data1[:self.ptr1]]))
-    
-    #     f.close()
-    #     print("\n Save the trace.")
+       
+    @pyqtSlot()
+    def save_trace(self):
+        # check if all data has been written correctly from DAQ board to RAM
+        assert np.all(self.data_array > -1000), 'data_array was not written correctly'
+        # prepare full filepath
+        filepath = self.filepath
+        filename = self.filename
+        if self.save_continuously_bool:
+            filename += '_{:03d}'.format(self.trace_number)
+        # add time string to the filename
+        timestr = tm.strftime("%Y%m%d_%H%M%S")
+        filename += timestr
+        # save data
+        full_filepath = os.path.join(filepath, filename)
+        np.save(full_filepath, np.transpose(self.data_array), allow_pickle = False)
+        # save measurement parameters and comments
+        full_filepath_params = os.path.join(filepath, filename + '_params.txt')
+        self.params_to_be_saved = self.get_params_to_be_saved()
+        with open(full_filepath_params, 'w') as f:
+            print(self.params_to_be_saved, file = f)
+        print('Data has been saved.')
+        return
     
     @pyqtSlot(float)    
     def change_voltage_range(self, voltage_range):
         if not self.APD_task.is_task_done():
             print('\nStopping task in progress...')
             self.APD_task.stop()
+            self.acqStopped.emit()
         print('\nClosing task...')
         self.APD_task.close()
         daq.check_voltage_range(daq_board, voltage_range)
@@ -535,6 +696,7 @@ class Backend(QtCore.QObject):
         if not self.APD_task.is_task_done():
             print('\nStopping task in progress...')
             self.APD_task.stop()
+            self.acqStopped.emit()
         print('\nClosing task...')
         self.APD_task.close()
         self.sampling_rate = sampling_rate*1e3 # in S/s, is int
@@ -555,6 +717,7 @@ class Backend(QtCore.QObject):
         if not self.APD_task.is_task_done():
             print('\nStopping task in progress...')
             self.APD_task.stop()
+            self.acqStopped.emit()
         print('\nClosing task...')
         self.APD_task.close()
         self.duration = duration
@@ -573,14 +736,36 @@ class Backend(QtCore.QObject):
     def set_working_folder(self):
         root = tk.Tk()
         root.withdraw()
-        file_path = filedialog.askdirectory()
-        if not file_path:
+        filepath = filedialog.askdirectory()
+        if not filepath:
             print('No folder selected!')
         else:
-            self.file_path = file_path
-            self.filePathSignal.emit(self.file_path) # TODO Lo reciben los módulos de traza, confocal y printing
+            self.filepath = filepath
+            print('New folder selected:', self.filepath)
+            self.filepathSignal.emit(self.filepath)
         return
-        
+    
+    def get_params_to_be_saved(self):
+        dict_to_be_saved = {}
+        dict_to_be_saved['Voltage range (V)'] = self.voltage_range
+        dict_to_be_saved['Sampling rate (S/s)'] = self.sampling_rate
+        dict_to_be_saved['Duration (s)'] = self.duration
+        dict_to_be_saved['Number of points'] = self.number_of_points
+        dict_to_be_saved['Comments'] = self.comment
+        return dict_to_be_saved
+    
+    @pyqtSlot(str)
+    def set_filename(self, new_filename):
+        self.filename = new_filename
+        print('New filename has been set:', self.filename)
+        return
+    
+    @pyqtSlot(str)
+    def set_comment(self, new_comment):
+        self.comment = new_comment
+        print('New comment written down.')
+        return
+    
     @pyqtSlot()
     def closeBackend(self):
         self.APD_task.close()
@@ -592,22 +777,23 @@ class Backend(QtCore.QObject):
     
     def make_connections(self, frontend):
         frontend.traceSignal.connect(self.play_pause)
-        frontend.traceContSignal.connect(self.play_pause)
-    #     frontend.stopSignal.connect(self.stop_trace)
-    #     frontend.playSignal.connect(self.start_trace)
-    #     frontend.saveSignal.connect(self.save_trace)
-        frontend.setSamplingRate.connect(self.change_sampling_rate) 
-        frontend.setDuration.connect(self.change_duration) 
-        frontend.setVoltageRange.connect(self.change_voltage_range)
+        frontend.makeTraceContSignal.connect(self.acquire_continuously_check)
+        frontend.saveTraceContSignal.connect(self.save_continuously_check)
+        frontend.setSamplingRateSignal.connect(self.change_sampling_rate) 
+        frontend.setDurationSignal.connect(self.change_duration) 
+        frontend.setVoltageRangeSignal.connect(self.change_voltage_range)
         frontend.closeSignal.connect(self.closeBackend)
+        frontend.saveSignal.connect(self.save_trace)
         frontend.setWorkDirSignal.connect(self.set_working_folder)
+        frontend.filenameSignal.connect(self.set_filename)
+        frontend.commentSignal.connect(self.set_comment)
         return
     
 if __name__ == '__main__':
     # make application
     app = QtGui.QApplication([])
     
-    # connect both classes
+    # create both classes
     gui = Frontend()
     worker = Backend()
     

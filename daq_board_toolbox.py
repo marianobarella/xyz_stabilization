@@ -25,7 +25,7 @@ from timeit import default_timer as timer
 import os.path as path
 from tempfile import mkdtemp
 import matplotlib.pyplot as plt
-import time
+# import time
 
 #=====================================
 
@@ -154,44 +154,10 @@ def measure_data_n_times(task, number_of_points, max_num_of_meas, timeout, debug
 def allocate_datafile(number_of_points):
     # pre-allocate array in a temporary file
     dummy_file_path = path.join(mkdtemp(), 'dummy.dat')    
-    array = np.memmap(dummy_file_path, dtype = 'float', mode = 'w+', \
+    array = np.memmap(dummy_file_path, dtype = 'float32', mode = 'w+', \
                            shape = (number_of_points) )
     array[:] = -1000 # set data array to an impossible output
     return dummy_file_path, array
-
-def measure_data_continuously(task, number_of_points, data_array, debug = False):
-    '''Measure continusouly and update data
-    number_of_points = how many points are going to be measured in total'''
-    # initiate the stream reader object and pass the in_stream object of the Task
-    task_st_reader = single_ch_st_reader(task.in_stream)
-    # start the task
-    i = 0
-    start_time = timer()
-    task.start()
-    while ( not task.is_task_done() and i < number_of_points ):
-        n_available = task_st_reader._in_stream.avail_samp_per_chan
-        if n_available == 0: 
-            continue
-        # prevent reading too many samples
-        n_available = min(n_available, number_of_points - i) 
-        # read directly into array using a view
-        i += task_st_reader.read_many_sample(data_array[i:i + n_available], 
-            number_of_samples_per_channel = n_available)
-        # print('Samples read {}, in total {}'.format(n_available, i)) # uncomment to debug
-    # stop and save/dump data (flush)
-    task.stop()
-    # estimate time difference
-    delta_time = timer() - start_time
-    data_array.flush()
-    # print time the measurement took
-    if debug:
-        print('Measurement took {:.9f} ms'.format(delta_time*1e3))
-    # check if all data has been written correctly
-    assert np.all(data_array > -1000)
-    print('Continuous measurement ended.')
-    print('Task {} has been stopped.'.format(task.name))
-    print('Done.')
-    return data_array
 
 def arm_measurement_in_loop(task):
     '''Prepare task to measure in loop continuosly'''
@@ -273,26 +239,6 @@ if __name__ == '__main__':
     #     plt.subplot(5, 2, i+1)
     #     plt.plot(meas_finite_array[i,:])
     # plt.show()
-    
-    ########################################################
-    
-    # measure continuosly number of samples several times
-    
-    ########################################################
-    mode = 'continuous'
-    number_of_points = max_num_of_meas*number_of_points_per_run
-    APD_task, time_to_finish = set_ch_APD(sampling_rate, number_of_points, \
-                                          min_range, max_range, mode)
-    # APD_ch = APD_task.ai_channels[0]
-    # ask_range(APD_ch)
-    
-    # allocate array
-    data_array_filepath, data_array = allocate_datafile(number_of_points)    
-    # perform the measurement
-    meas_cont_array = measure_data_continuously(APD_task, number_of_points, data_array, debug = True)
-
-    APD_task.close()
-    print('Task closed.\n')
     
     ########################################################
     

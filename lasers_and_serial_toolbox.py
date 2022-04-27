@@ -24,6 +24,10 @@ from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper
 # to read during serial communication (max length message received)
 # modify if it's not enoough
 bytesToRead = 200
+# COM ports
+COM_port_oxxius = 'COM4'
+COM_port_flipper_Thorlas = 'COM5'
+COM_port_toptica = 'COM6'
 
 def serial_ports():
     """ Lists serial port names
@@ -105,7 +109,7 @@ class oxxius_laser(object):
         # for this, mode "CDC 1" has to be set from Oxxius software. 
         # This has been done for the first time probably. Read User manual page 44.
         self.baudRate = 38400
-        self.serialPort = 'COM4'
+        self.serialPort = COM_port_oxxius
         self.serialInstance = initSerial(self.serialPort, self.baudRate)
         self.debug_mode = debug_mode
 
@@ -211,7 +215,7 @@ class toptica_laser(object):
     def __init__(self, debug_mode):
         # Parameters for Toptica 488 blue laser
         self.baudRate = 115200
-        self.serialPort = 'COM6'
+        self.serialPort = COM_port_toptica
         self.serialInstance = initSerial(self.serialPort, self.baudRate)
         self.debug_mode = debug_mode
         self.initialize()
@@ -337,7 +341,7 @@ class toptica_laser(object):
 class motorized_flipper(object):
     def __init__(self, debug_mode):
         # Parameters for Motorized Flipper
-        self.serialPort = 'COM5'
+        self.serialPort = COM_port_flipper_Thorlas
         self.debug_mode = debug_mode
         self.initialize()
         
