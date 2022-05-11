@@ -177,7 +177,7 @@ class Frontend(QtGui.QFrame):
         # Cursor pointer
         self.point_graph_cursor = pg.ScatterPlotItem(size = 25, 
                                              symbol = 'crosshair', 
-                                             pen = 'k',
+                                             pen = 'w',
                                              brush = None)
         self.point_graph_cursor.setData([0], [0])
         self.vb.addItem(self.point_graph_cursor)
@@ -212,7 +212,7 @@ class Frontend(QtGui.QFrame):
         # Live view parameters dock
         self.liveviewWidget = QtGui.QWidget()
         layout_liveview = QtGui.QGridLayout()
-        self.liveviewWidget.setLayout(layout_liveview) 
+        self.liveviewWidget.setLayout(layout_liveview)
 
         # place Live view button and Take a Picture button
         layout_liveview.addWidget(self.working_dir_button, 0, 0, 1, 2)
@@ -225,9 +225,8 @@ class Frontend(QtGui.QFrame):
         layout_liveview.addWidget(self.exp_time_edit,          4, 1)
         # auto level
         layout_liveview.addWidget(self.autolevel_tickbox,      5, 0)
-        # layout_liveview.addWidget(self.pixel_size,        5, 1)
         # pixel size
-        layout_liveview.addWidget(pixel_size_Label ,      6, 0)
+        layout_liveview.addWidget(pixel_size_Label,      6, 0)
         layout_liveview.addWidget(self.pixel_size,        6, 1)
 
         # Cursor dock
@@ -251,7 +250,7 @@ class Frontend(QtGui.QFrame):
         dockArea = DockArea()
         hbox = QtGui.QHBoxLayout(self)
 
-        viewDock = Dock('Camera', size = (200*optical_format, 200) )
+        viewDock = Dock('Camera', size = (200*optical_format, 200))
         viewDock.addWidget(imageWidget)
         # viewDock.hideTitleBar()
         dockArea.addDock(viewDock)

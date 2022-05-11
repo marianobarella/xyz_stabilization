@@ -178,6 +178,7 @@ class Frontend(QtGui.QFrame):
         else:
             event.ignore()
             print('Back in business...')
+        return
     
     def make_connections(self, backend):
         backend.paramSignal.connect(self.display_params)
@@ -194,7 +195,7 @@ class Backend(QtCore.QObject):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # set tiimer to update lasers status
+        # set timer to update lasers status
         self.updateTimer = QtCore.QTimer()
         self.updateTimer.timeout.connect(self.update_params) 
         self.updateTimer.setInterval(updateParams_period) # in ms

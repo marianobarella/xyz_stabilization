@@ -1,33 +1,58 @@
 ﻿# -*- coding: utf-8 -*-
+""" This module contains the BPC303 class and its related functions, which
+implement simultaneous initialization and control of the 3 channels of a
+Thorlabs BPC 303 Benchtop Piezo Controller.
+
+Classes, Exceptions and Functions:
+class BPC303 --     initialization and control of the 3 channels of a
+                    Thorlabs BPC 303 Benchtop Piezo Controller
+
+@author: 
+    (created by) Thibaud Ruelle, PhD student, Poggio Lab, Basel University
+    (modified by) Mariano Barella, Adolphe Merkle Institute, University of Fribourg
+    Fribourg, Switzerland
+    mariano.barella@unifr.ch
+
+
+===== NanoMax311D =====
+
+++ Piezos specs:
+Theoretical Resolution: 5 nm
+Bidirectional Repeatability: 50 nm
+Voltage Range: 0 - 75 V
+Travel: 20 µm
+
+++ Differential micrometer drives specs:
+Travel Range: 8 mm Coarse, 300 µm Fine
+Coarse Adjustment (with Vernier Scale): 500 µm/rev
+Fine Adjustment (with Vernier Scale): 50 µm/rev
+
 """
-Created on Wed April 27, 2022
 
-Toolbox for Thorlabs NanoMax 311D
-
-@author: Mariano Barella
-mariano.barella@unifr.ch
-Adolphe Merkle Institute - University of Fribourg
-Fribourg, Switzerland
-"""
-
-import nidaqmx
-from nidaqmx.stream_readers import AnalogSingleChannelReader as single_ch_st_reader
-import nidaqmx.constants as ctes
+import sys
+from time import sleep
 import numpy as np
-from timeit import default_timer as timer
-import os.path as path
-from tempfile import mkdtemp
 import matplotlib.pyplot as plt
-# import time
+import clr
+from timeit import default_timer as timer
 
-#=====================================
 
-# Parameters definitions
+clr.AddReference("System.Collections")
+clr.AddReference("System.Linq")
+from System.Collections.Generic import List #analysis:ignore
+import System.Collections.Generic #analysis:ignore
+from System import String, Decimal #analysis:ignore
+import System.Linq #analysis:ignore
+import System #analysis:ignore
 
-#=====================================
-
-# apd_ch = 0 # analog input (ai) for apd, where it's connected
-# plt.ioff()
+sys.path.append(r"C:\Program Files\Thorlabs\Kinesis")
+clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI")
+clr.AddReference("Thorlabs.MotionControl.GenericPiezoCLI")
+clr.AddReference("Thorlabs.MotionControl.Benchtop.PiezoCLI")
+from Thorlabs.MotionControl.DeviceManagerCLI import DeviceManagerCLI #analysis:ignore
+from Thorlabs.MotionControl.DeviceManagerCLI import DeviceNotReadyException #analysis:ignore
+import Thorlabs.MotionControl.GenericPiezoCLI.Piezo as Piezo #analysis:ignore
+from Thorlabs.MotionControl.Benchtop.PiezoCLI import BenchtopPiezo #analysis:ignore
 
 #=====================================
 
@@ -35,230 +60,374 @@ import matplotlib.pyplot as plt
 
 #=====================================
 
-# def init_daq():
-#     daq_board = nidaqmx.system.device.Device('Dev1')
-#     print('DAQ board model: {}'.format(daq_board.product_type))
-#     print('DAQ board serial number: {}'.format(daq_board.dev_serial_num))
-#     return daq_board
+# 37004922 deviceID is the flipper
+# 71260444 deviceID is the benchtop controller 
 
-# # configure APD channels (or other instruments connected to the DAQ board)
-# def set_ch_APD(sampling_rate, samples_per_ch, min_rng, max_rng, mode, debug = False):
-#     # define the task object
-#     APD_task = nidaqmx.task.Task(new_task_name = 'APD_task')
-#     # set voltage channel for "APD_task"
-#     APD_task.ai_channels.add_ai_voltage_chan(
-#         physical_channel = 'Dev1/ai{}'.format(apd_ch), \
-#         name_to_assign_to_channel = 'APD_ch{}'.format(apd_ch), \
-#         min_val = min_rng, \
-#         max_val = max_rng)
-#     # estimate timeout (time_to_finish) for the task
-#     time_to_finish = samples_per_ch/sampling_rate # in s
-#     if debug:
-#         print('Acquiring {} points at {} MS/s sampling rate would take:'.format(samples_per_ch, \
-#                                                                             sampling_rate*1e-6))
-#         print('{} ms'.format(time_to_finish*1e3))
-#     # determine acquisition mode
-#     if mode == 'continuous':
-#         acq_mode = ctes.AcquisitionType.CONTINUOUS
-#         if debug:
-#             print('Acquisition mode set to "continuous".')
-#     elif mode == 'finite':
-#         acq_mode = ctes.AcquisitionType.FINITE
-#         if debug:
-#             print('Acquisition mode set to "finite".')
-#     else:
-#         print('\nError in sampling mode. Select "finite" or "continuous".')
-#         print('Acquisition mode set to "continuous".')
-#         acq_mode = ctes.AcquisitionType.CONTINUOUS
-#     # set task timing characteristics
-#     APD_task.timing.cfg_samp_clk_timing(
-#         rate = sampling_rate, \
-#         sample_mode = acq_mode, \
-#         samps_per_chan = samples_per_ch)
-#     return APD_task, time_to_finish
+def list_devices():
+    """Return a list of Kinesis serial numbers"""
+    DeviceManagerCLI.BuildDeviceList()
+    return print(list(DeviceManagerCLI.GetDeviceList()))
 
-# def check_voltage_range(device, rng):
-#     if rng not in device.ai_voltage_rngs:
-#         print('Error! Voltage range can only be one of the following:')
-#         print(device.ai_voltage_rngs)
-#     else:
-#         print('Range OK.')
-#     return
+#=====================================
 
-# def ask_range(channel):
-#     print('High: {}'.format(channel.ai_rng_high))
-#     print('Low: {}'.format(channel.ai_rng_low))
-#     return
+# Piezo Stage class definition
 
-# # NIDAQmx driver version
-# def driver_version():
-#     system = nidaqmx.system.System.local()
-#     return system.driver_version
+#===================================== 
 
-# # find installed NI devices
-# def installed_devices():
-#     system = nidaqmx.system.System.local()
-#     for i in system.devices:
-#         print(i)
-#     return
+class BPC303:
+    """
+    Main class for the BPC303 3 channel Benchtop Piezo Controller. Wraps the
+    .NET base class from Thorlabs providing channel by channel control.
 
-# def measure_data_n_times(task, number_of_points, max_num_of_meas, timeout, debug = False):
-#     '''Measure a finite number of samples several times
-#     max_num_of_meas = how many measurement runs are going to be made
-#     number_of_points = how many points are going to be measured each run
-#     timeout = time to wait until a single measurement run is performed'''
-#     # pre-allocate data array
-#     data_array = np.zeros((max_num_of_meas, number_of_points), dtype = 'float')
-#     data_array[:] = -1000 # set data array to an impossible output
-#     # define an array to check how much time each run will take
-#     delta_time = np.zeros(max_num_of_meas)
-#     i = 0
-#     total_start_time = timer()
-#     while i < max_num_of_meas:
-#         # start time for each run
-#         start_time = timer()
-#         # start the task
-#         task.start()
-#         task.wait_until_done(timeout = timeout)
-#         if task.is_task_done():
-#             # read
-#             data_array[i,:] = task.read(number_of_points)
-#             task.stop()
-#             # estimate time difference
-#             delta_time[i] = timer() - start_time
-#             i += 1
-#     total_end_time = timer() - total_start_time
-#     # finish condition
-#     if i == max_num_of_meas:
-#         task.stop()
-#         print('{} finite measurement/s performed.'.format(i))
-#         # print time the measurement took
-#         if debug:
-#             # for i in range(len(delta_time)):
-#                 # print('Run {} took {:.9f} s'.format(i + 1, delta_time[i]))
-#             print('Mean run time {:.9f} ms'.format(np.mean(delta_time)*1e3))
-#             print('Std dev run time {:.9f} ms'.format(np.std(delta_time, ddof = 1)*1e3))
-#             print('Sum of times {:.9f} ms'.format(np.sum(delta_time)*1e3))
-#             print('Total time {:.9f} ms'.format(total_end_time*1e3))
-#         print('Task {} has been stopped.'.format(task.name))
-#         print('Done.')
-#     return data_array
+    Attributes and methods:
+    attribute deviceID -- stores the device ID of the physical instrument
+    attribute axis_chan_mapping -- stores the direction (x, y or z) which
+        each channel of the controller addresses
+    attribute isconnected -- boolean representing the state of the connection
+        to the physical instrument
+    attribute controller -- controller instance (from Thorlabs .NET dll)
+    attributes xchannel, ychannel and zchannel -- channel instances
+        (from Thorlabs .NET dll)
+    method __init__(self, deviceID, axis_chan_mappign) --
+    method __enter__(self) -- special class, see doc
+    method connect(self) -- initializes the physical instrument
+    """
+    def __init__(self, deviceID, axis_chan_mapping={'x': 1, 'y': 2, 'z': 3}):
+        """
+        Method creating a BPC303 instance and setting up the connection to the
+        device with device ID. Also creates the attributes self.deviceID,
+        self.isconnected and self.axis_chan_mapping
+        """
+        DeviceManagerCLI.BuildDeviceList()
+        self.deviceID = deviceID
+        self.isconnected = False
+        self.axis_chan_mapping = axis_chan_mapping
+        if (self.deviceID in DeviceManagerCLI.GetDeviceList().ToArray()):
+            self.controller = BenchtopPiezo.CreateBenchtopPiezo(self.deviceID)
+        else:
+            raise DeviceNotReadyException
+        for attrname in ("xchannel", "ychannel", "zchannel"):
+            setattr(self, attrname, None)
+        return 
+    
+    def __enter__(self):
+        return self
 
-# def allocate_datafile(number_of_points):
-#     # pre-allocate array in a temporary file
-#     dummy_file_path = path.join(mkdtemp(), 'dummy.dat')    
-#     array = np.memmap(dummy_file_path, dtype = 'float32', mode = 'w+', \
-#                            shape = (number_of_points) )
-#     array[:] = -1000 # set data array to an impossible output
-#     return dummy_file_path, array
+    def __get_chan(self, axis):
+        """
+        Internal method returning the channel corresponding to axis
+        """
+        attrname = axis + "channel"
+        channel = getattr(self, attrname)
+        return channel
 
-# def arm_measurement_in_loop(task):
-#     '''Prepare task to measure in loop continuosly'''
-#     # initiate the stream reader object and pass the in_stream object of the Task
-#     task_st_reader = single_ch_st_reader(task.in_stream)
-#     return task_st_reader
+    def connect(self):
+        """
+        Method initializing the physical instrument, first the main controller
+        unit and then each channel, which is linked to the corresponding axis
+        as defined in self.axis_chan_mapping
+        """
+        print("Connecting to BPC303:")
+        print("\t- connecting to controller %s -->" % self.deviceID, end="")
+        self.controller.Connect(self.deviceID)
+        self.isconnected = self.controller.IsConnected
+        print(" done" if self.controller.IsConnected else "failed")
+        for axis in ("x", "y", "z"):
+            channelno = self.axis_chan_mapping[axis]
+            attrname = axis + "channel"
+            print("\t- connecting channel %d (%s axis) -->" % (channelno, axis), end="")
+            setattr(self, attrname, self.controller.GetChannel(channelno))
+            channel = getattr(self, attrname)
+            if not channel.IsSettingsInitialized():
+                try:
+                    channel.WaitForSettingsInitialized(5000)
+                except:
+                    print('Timout: channel was not initialized.')
+                    raise
+            channel.StartPolling(100)
+            channel.EnableDevice()
+            print(" done" if channel.IsConnected else "failed")
+        return
+    
+    def identify(self, axis):
+        """
+        Method identifying the channel corresponding to axis by making the
+        controller blink.
+        """
+        if axis in ("x", "y", "z"):
+            channelno = self.axis_chan_mapping[axis]
+            print("Identifying BPC303 channel %d (%s axis) -->" % (channelno, axis), end="")
+            channel = self.__get_chan(axis)
+            channel.IdentifyDevice()
+            sleep(5)
+            print(" done")
+        else:
+            print("Cannot identify BPC303 channel (axis invalid)")
+        return
 
-# def measure_in_loop_continuously(task, task_stream_reader, number_of_points, \
-#                                  time_base, time_array, data_array):
-#     '''Measure continusouly and update data
-#     number_of_points = how many points are going to be measured in total'''
-#     i = 0
-#     while ( not task.is_task_done() and i < number_of_points ):
-#         # read a short stream
-#         n_available, data = measure_one_loop(task_stream_reader, number_of_points, i)
-#         data_array[i:i + n_available] = data
-#         time_array[i:i + n_available] = np.arange(i, i + n_available)*time_base
-#         i += n_available
-#     data_array.flush()
-#     # check if all data has been written correctly
-#     assert np.all(data_array > -1000)
-#     return data_array
+    def set_close_loop(self, yes):
+        """
+        Method setting all channels to closed loop or open loop control mode
+        """
+        print("Setting control mode to %s loop" % "closed" if yes else "open")
+        mode = Piezo.PiezoControlModeTypes.CloseLoop if yes else Piezo.PiezoControlModeTypes.OpenLoop
+        print(mode, '\n')
+        for axis in ("x", "y", "z"):
+            channel = self.__get_chan(axis)
+            channel.SetPositionControlMode(mode)
+        sleep(0.3)
+        return
+    
+    def zero(self, axis="all"):
+        """
+        Method performing a Set Zero operation on all channels or on a single
+        one
+        """
+        print("Performing Set Zero:")
+        if axis == "all":
+            for ax in ("x", "y", "z"):
+                self.__zero_axis(ax)
+        elif axis in ("x", "y", "z"):
+            self.__zero_axis(axis)
+        else:
+            print("\t- axis invalid)")
+        # time needed to zeroing is around 24 s
+        # avoid reading the position then
+        sleep(25)
+        print('Ready.')
+        return
+    
+    def __zero_axis(self, axis):
+        """
+        Internal method performing a Set Zero operation on a single channel
+        """
+        if axis in ("x", "y", "z"):
+            channelno = self.axis_chan_mapping[axis]
+            print("\t- zeroing channel %d (%s axis) -->" % (channelno, axis), end="")
+            channel = self.__get_chan(axis)
+            channel.SetZero()
+            print(" done")
+        else:
+            print("\t- axis invalid)")
+        return
+    
+    def set_position(self, x=None, y=None, z=None):  # define
+        """
+        Method setting the position in um if the channel is in
+        Closed Loop mode
+        """
+        print("Setting Position:")
+        pos = {"x": x, "y": y, "z": z}
+        for axis, pos in pos.items():
+            if pos is None:
+                pass
+            else:
+                self.__set_axis_position(axis, pos)
+        return
+        
+    def __set_axis_position(self, axis, pos):  # define
+        """
+        Internal method setting the position in um if the channel is in
+        Closed Loop mode
+        """
+        if axis in ("x", "y", "z"):
+            print("\t- moving %s axis piezo to %f um -->" % (axis, pos), end="")
+            channel = self.__get_chan(axis)
+            channel.SetPosition(Decimal(pos))
+            print(" done")
+        else:
+            print("\t- axis invalid)")
+        return
 
-# def measure_one_loop(task_stream_reader, number_of_points, i):
-#     n_available = task_stream_reader._in_stream.avail_samp_per_chan
-#     if n_available == 0: 
-#         return n_available, np.array([])
-#     # prevent reading too many samples
-#     n_available = min(n_available, number_of_points - i) 
-#     # read directly
-#     data = np.empty(n_available)
-#     task_stream_reader.read_many_sample(data, number_of_samples_per_channel = n_available)
-#     return n_available, data
+    def get_axis_position(self, axis):
+        """
+        Method returning the position (float, in µm) of an specific axis/channel
+        """
+        if axis in ("x", "y", "z"):
+            channel = self.__get_chan(axis)
+            position = channel.GetPosition() # in um
+            position_str = '{}'.format(position)
+            position_float = float(position_str)
+        else:
+            print('Error! Axis {} doesn\'t exist. Axis can only be x, y or z.'.format(axis))
+            position_float = None
+        return position_float
+    
+    def move_relative(self, axis, step):
+        """
+        Method setting the relative position in µm if the channel is in
+        Closed Loop mode
+        """
+        actual_position = self.get_axis_position(axis)
+        new_position = actual_position + step
+        self.__set_axis_position(axis, new_position)
+        return 
+    
+    def get_info(self):
+        """
+        Method returning a string containing the info on the controller and
+        channels
+        """
+        print("Getting info...")
+        info = "Controller:\n%s\n" % self.controller.GetDeviceInfo().BuildDeviceDescription()
+        # TODO: needs to be debugged
+        # Warning! The following lines don't work
+        # Error is: "Device configuration is not initialized".
 
+        # sortedMap = sorted(self.axis_chan_mapping.items(), key=operator.itemgetter(1))
+        # for axis, channelno in sortedMap:
+            # channel = self.__get_chan(axis)
+            # chaninfo = channel.GetDeviceInfo().BuildDeviceDescription()
+            # piezoConfig = channel.GetPiezoConfiguration(self.deviceID)
+            # curDevSet = channel.PiezoDeviceSettings
+            # piezoInfo = "Piezo Configuration Name: %s, Piezo Max Voltage: %s" % (
+            #     piezoConfig.DeviceSettingsName,
+            #     curDevSet.OutputVoltageRange.MaxOutputVoltage.ToString())
+            # info += "Channel %d (%s axis):\n%s%s\n\n" % (channelno,
+            #                                              axis,
+            #                                              chaninfo,
+            #                                              piezoInfo)
+        return info
+
+    def estimate_precision(self, position_array, number_of_measurements = 1000, delay = 0.1):
+        """
+        Method to estimate the position precision in a close loop operation 
+        at a particular position. Method returns average position and standard 
+        deviation for the number of measurements using delay as time interval
+        """
+        # set position
+        x_pos, y_pos, z_pos = position_array
+        self.set_position(x_pos, y_pos, z_pos)
+        sleep(5) # for settling time
+        # allocate
+        x_read_pos = np.zeros(number_of_measurements)
+        y_read_pos = np.zeros(number_of_measurements)
+        z_read_pos = np.zeros(number_of_measurements)
+        # read position several times
+        print('Starting feedback close loop position precision routine...')
+        for i in range(number_of_measurements):
+            x_read_pos[i] = self.get_axis_position('x')
+            y_read_pos[i] = self.get_axis_position('y')
+            z_read_pos[i] = self.get_axis_position('z')
+            # print(x_read_pos[i], y_read_pos[i], z_read_pos[i])
+            sleep(delay)
+        # calculate stats
+        x_mean = np.mean(x_read_pos)
+        y_mean = np.mean(y_read_pos)
+        z_mean = np.mean(z_read_pos)
+        x_std = np.std(x_read_pos, ddof = 1)
+        y_std = np.std(y_read_pos, ddof = 1)
+        z_std = np.std(z_read_pos, ddof = 1)
+        print('Average position:\nx = {:.4f} µm\ny = {:.4f} µm\nz = {:.4f} µm'.format(x_mean, y_mean, z_mean))
+        print('Std dev :\nσx = {:.6f} µm\nσy = {:.6f} µm\nσz = {:.6f} µm'.format(x_std, y_std, z_std))
+        print('Done.')
+        return x_mean, y_mean, z_mean, x_std, y_std, z_std
+
+    def response_time(self, axis, step):
+        """
+        Method to estimate the settling time of the axis' piezo in a close loop 
+        operation. The method plots position vs time.
+        After testing all axis with different step sizes, 0.5 s seems a reasonable
+        settling time for step by step operation.
+        """
+        number_of_measurements = 100
+        # allocate
+        read_pos = np.zeros(number_of_measurements)
+        t = np.zeros(number_of_measurements)
+        # read position several times
+        print('Testing response time...')
+        # set position
+        start_time = timer()
+        self.move_relative(axis, step)
+        for i in range(number_of_measurements):
+            t[i] = timer()
+            read_pos[i] = self.get_axis_position(axis)
+            sleep(0.0001)
+        t = t - start_time
+        plt.close('all')
+        plt.figure()
+        plt.plot(t, read_pos, 'o-')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Position (µm)')
+        plt.show()
+        return
+
+    def shutdown(self):
+        """
+        Method for shutting down the connection to the physical instrument
+        cleanly. The polling of the connected channels is stopped and the
+        controller is disconnected.
+        """
+        print("Shutting BPC303 down:")
+        if self.controller.IsConnected:
+            for axis in ("x", "y", "z"):
+                channelno = self.axis_chan_mapping[axis]
+                print("\t- disconnecting channel %d (%s axis) -->" % (channelno, axis), end="")
+                channel = self.__get_chan(axis)
+                channel.StopPolling()
+                channel.DisableDevice()
+                print(" done")
+            print("\t- disconnecting controller %s -->" % self.deviceID, end="")
+            self.controller.Disconnect()
+            print(" done")
+        print("\t- done\n")
+        return
+    
+    def __del__(self):
+        self.shutdown()
+        return
+    
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.shutdown()
+        return True if exc_type is None else False
 
 #=====================================
 
 # Main program
 
 #=====================================
+#%%
+if __name__ == "__main__":
+    print("\n")
+    # list IDs of Thorlabs Kinesis devices
+    list_devices()
+    # Id of the benchtop controller
+    deviceID = '71260444'
+    # assign device
+    piezo_stage = BPC303(deviceID)
+    piezo_stage.deviceID
+    # initialize (connect)
+    piezo_stage.connect()
+    # method to check if it's connected
+    piezo_stage.controller.IsConnected
+    # get info
+    print(piezo_stage.get_info())
+    # set ON closed-loop operation
+    piezo_stage.set_close_loop(True)
+    # perform zero routine for all axis
+    piezo_stage.zero('all')
+    
+    # piezo_stage.set_position(0, 0, 0)
+    # piezo_stage.response_time('x', 1)
+    
+    # print(piezo_stage.get_axis_position('x'))
 
-if __name__ == '__main__':
+    start = timer()
+    piezo_stage.estimate_precision([10,10,10])
+    print(timer()-start)
+    
+    # piezo_stage.move_relative('x', 0.100)
+    # pos = piezo_stage.get_axis_position('x')
+    # print(pos)
+    
+        
 
-    # print('\nDAQ board toolbox test')
+#%%
+    # identify each axis
+    for axis in ("x", "y", "z"):
+        piezo_stage.identify(axis)
     
-    # daq_board = init_daq()
+#%%
+    # disconnect        
+    piezo_stage.shutdown()
     
-    # # set measurement range
-    # min_range = -2.0
-    # check_voltage_range(daq_board, min_range)
-    # max_range = +5.0
-    # check_voltage_range(daq_board, max_range)
-    
-    # # set sampling rate
-    # sampling_rate = daq_board.ai_max_single_chan_rate # set to maximum, here 2 MS/s    
-    # # sampling_rate = 1000e3 # in S/s
-    
-    # ########################################################
-    
-    # # measure a finite number of samples several times
-    
-    # ########################################################
-    # mode = 'finite'
-    # number_of_points_per_run = 100
-    # APD_task, time_to_finish = set_ch_APD(sampling_rate, number_of_points_per_run, \
-    #                                       min_range, max_range, mode)
-    # # APD_ch = APD_task.ai_channels[0]
-    # # ask_range(APD_ch)
-    
-    # # perform the measurements
-    # max_num_of_meas = 2000
-    # meas_finite_array = measure_data_n_times(APD_task, number_of_points_per_run, max_num_of_meas, \
-    #                                   time_to_finish, debug = True)
-    # APD_task.close()
-    # print('Task closed.') 
-    
-    # # fig, ax = plt.subplots(5, 2, sharex = 'col', sharey = 'row')
-    # # for i in range(max_num_of_meas):
-    # #     plt.subplot(5, 2, i+1)
-    # #     plt.plot(meas_finite_array[i,:])
-    # # plt.show()
-    
-    # ########################################################
-    
-    # # measure continuosly number of samples several times
-    # # with a different code structure
-    
-    # ########################################################
-    # mode = 'continuous'
-    # number_of_points = max_num_of_meas*number_of_points_per_run
-    # time_base = 1/sampling_rate
-    # APD_task, time_to_finish = set_ch_APD(sampling_rate, number_of_points, \
-    #                                       min_range, max_range, mode)
-    
-    # # allocate array
-    # data_array_filepath, data_array = allocate_datafile(number_of_points)
-    # time_array_filepath, time_array = allocate_datafile(number_of_points)
-    # # perform the measurement
-    # APD_stream_reader = arm_measurement_in_loop(APD_task)
-    # APD_task.start()
-    # meas_cont_array = measure_in_loop_continuously(APD_task, \
-    #                                                     APD_stream_reader, \
-    #                                                     number_of_points, \
-    #                                                     time_base, \
-    #                                                     time_array, \
-    #                                                     data_array)
-
-    # APD_task.close()
-    # print('Task closed.')   
-
-    # plt.close('all')

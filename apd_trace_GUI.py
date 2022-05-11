@@ -239,9 +239,9 @@ class Frontend(QtGui.QFrame):
         self.minYRangeLabel = QtGui.QLabel('Min Y range (V): ')
         self.maxYRangeLabel = QtGui.QLabel('Max Y range (V): ')
         self.minYRangeValue = QtGui.QLineEdit(str(self.min_y_range))
-        self.minYRangeValue.setValidator(QtGui.QDoubleValidator(-10, 0, 6))
+        self.minYRangeValue.setValidator(QtGui.QDoubleValidator(-10, 10, 6))
         self.maxYRangeValue = QtGui.QLineEdit(str(self.max_y_range))
-        self.maxYRangeValue.setValidator(QtGui.QDoubleValidator(0, 10, 6))
+        self.maxYRangeValue.setValidator(QtGui.QDoubleValidator(-10, 10, 6))
         self.minYRangeValue.editingFinished.connect(self.set_y_range)
         self.maxYRangeValue.editingFinished.connect(self.set_y_range)
         

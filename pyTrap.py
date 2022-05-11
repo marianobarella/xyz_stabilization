@@ -26,6 +26,7 @@ from PyQt5.QtCore import pyqtSignal, pyqtSlot
 import apd_trace_GUI
 import laser_control_GUI
 import liveview_cam_GUI
+import piezo_stage_GUI
 import thorlabs_camera_toolbox as tl_cam
 
 # #=====================================
@@ -171,6 +172,12 @@ class Frontend(QtGui.QMainWindow):
         self.lasersWidget = laser_control_GUI.Frontend()
         lasersDock.addWidget(self.lasersWidget)
         self.dockArea.addDock(lasersDock , 'bottom', liveviewDock)
+
+        ## Add Piezo stage GUI module
+        piezoDock = Dock('Piezo stage')
+        self.piezoWidget = piezo_stage_GUI.Frontend()
+        piezoDock.addWidget(self.piezoWidget)
+        self.dockArea.addDock(piezoDock , 'right', lasersDock)
               
     # def get_openDir(self):
     #     self.openDirSignal.emit()
@@ -233,6 +240,7 @@ class Frontend(QtGui.QMainWindow):
         backend.apdWorker.make_connections(self.apdWidget)
         backend.lasersWorker.make_connections(self.lasersWidget)
         backend.livewviewWorker.make_connections(self.liveviewWidget)
+        backend.piezoWorker.make_connections(self.piezoWidget)
         return
             
 #=====================================
@@ -248,11 +256,11 @@ class Backend(QtCore.QObject):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # self.pi_device = pi_device     
+        self.piezo_stage = piezo_stage_GUI.piezo_stage     
         self.livewviewWorker = liveview_cam_GUI.Backend()
         self.lasersWorker = laser_control_GUI.Backend()
         self.apdWorker = apd_trace_GUI.Backend()
-        # self.traceWorker = Trace.Backend(task_nidaqmx)
+        self.piezoWorker = piezo_stage_GUI.Backend(self.piezo_stage)
         # self.confocalWorker = Confocal.Backend(pi_device, task_nidaqmx)
         # self.printingWorker = Printing.Backend(pi_device, task_nidaqmx)
         # self.dimersWorker = Dimers.Backend(pi_device, task_nidaqmx)
@@ -315,6 +323,8 @@ class Backend(QtCore.QObject):
             
     @pyqtSlot()
     def close_all_backends(self):
+        print('Shutting down piezo stage...')
+        self.piezo_stage.shutdown()
         laser_control_GUI.laser488.close()
         laser_control_GUI.laser532.close()
         laser_control_GUI.flipperMirror.close()
@@ -324,6 +334,7 @@ class Backend(QtCore.QObject):
         print('Stopping timers...')
         self.lasersWorker.updateTimer.stop()
         self.apdWorker.updateTimer.stop()
+        self.piezoWorker.updateTimer.stop()
         print('Exiting threads...')
         lasersThread.exit()
         livewviewThread.exit()
@@ -336,6 +347,7 @@ class Backend(QtCore.QObject):
         frontend.apdWidget.make_connections(self.apdWorker)
         frontend.lasersWidget.make_connections(self.lasersWorker)
         frontend.liveviewWidget.make_connections(self.livewviewWorker)
+        frontend.piezoWidget.make_connections(self.piezoWorker)
         return
       
 if __name__ == '__main__':
@@ -364,6 +376,11 @@ if __name__ == '__main__':
     worker.apdWorker.moveToThread(apdThread)
     worker.apdWorker.updateTimer.moveToThread(apdThread)
 
+    # for piezo stage position update
+    piezoThread = QtCore.QThread()
+    worker.piezoWorker.moveToThread(piezoThread)
+    worker.piezoWorker.updateTimer.moveToThread(piezoThread)
+
     ###################################
 
     # connect both classes 
@@ -374,6 +391,7 @@ if __name__ == '__main__':
     lasersThread.start()
     livewviewThread.start()
     apdThread.start()
+    piezoThread.start()
     
     gui.show()
     app.exec()
