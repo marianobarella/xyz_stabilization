@@ -18,6 +18,7 @@ import numpy as np
 #=====================================
 
 def fancy_print(dictionary):
+    # print dictionaries in a fancy way
     for key in dictionary.keys():
         print('{}: {}'.format(key, dictionary[key]))
     return
@@ -54,7 +55,7 @@ class pco_camera(object):
             status = False
         return status        
     
-    def get_camera_temp(self):
+    def get_temp(self):
         dict_temp = self.camera.sdk.get_temperature()
         fancy_print(dict_temp)
         self.sensor_temp = dict_temp['sensor temperature']
@@ -112,28 +113,41 @@ class pco_camera(object):
         return
     
     def set_binning(self, n):
+        # restricted to squared binning for symmetry and resolution purposes
+        if n > 4:
+            print('Binning options are 1x1, 2x2 and 4x4. Binning has not been set.')
+            return
+        if n < 1:
+            print('Binning options are 1x1, 2x2 and 4x4. Binning has not been set.')
+            return
         print('Setting squared binning to {}x{} pixels...'.format(n, n))
-        self.camera.configuration = {'binning': (n, n)}
+        self.camera.sdk.set_binning(n, n)
         print(self.camera.sdk.get_binning())
         return
     
-    def set_roi(self, starting_row, starting_col, final_row, final_col):
-        self.roi_height = final_row - starting_row
-        self.roi_width = final_col - starting_col
-        if self.roi_height < 64:
-            print('Minimum possible ROI height is 64. ROI has not been set.')
-            return
+    def set_roi(self, starting_col, starting_row, final_col, final_row):
+        self.roi_height = final_row - starting_row + 1
+        self.roi_width = final_col - starting_col + 1
         if self.roi_width < 16:
             print('Minimum possible ROI width is 16. ROI has not been set.')
             return
-        if not np.mod(self.roi_height, 32) == 0:
-            print('ROI height must be multiple of 32. ROI has not been set.')
+        if self.roi_height < 64:
+            print('Minimum possible ROI height is 64. ROI has not been set.')
+            return
+        if not np.mod(self.roi_width, 32) == 0:
+            print('ROI width must be multiple of 32. ROI has not been set.')
             return
         if not np.mod(self.roi_height, 8) == 0:
-            print('ROI width must be multiple of 8. ROI has not been set.')
+            print('ROI height must be multiple of 8. ROI has not been set.')
             return
-        print('Setting roi to {}x{} pixels...'.format(self.roi_height, self.roi_width))
-        self.camera.sdk.set_roi(starting_row, starting_col, final_row, final_col)
+        if not np.mod(starting_row - 1, 8) == 0:
+            print('Starting row - 1 must be multiple of 8. ROI has not been set.')
+            return
+        if not np.mod(starting_col - 1, 32) == 0:
+            print('starting col -1 must be multiple of 32. ROI has not been set.')
+            return
+        print('Setting ROI to {}x{} pixels...'.format(self.roi_height, self.roi_width))
+        self.camera.sdk.set_roi(starting_col, starting_row, final_col, final_row)
         self.get_roi()
         return
     
@@ -154,6 +168,7 @@ class pco_camera(object):
         print('Setting recorder parameters...')
         self.camera.record(number_of_images = num_of_images, mode = rec_mode)
         self.recorder_set = True
+        self.camera.wait_for_first_image()
         return
 
     def reboot(self):
