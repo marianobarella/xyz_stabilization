@@ -57,7 +57,8 @@ class pco_camera(object):
     
     def get_temp(self):
         dict_temp = self.camera.sdk.get_temperature()
-        fancy_print(dict_temp)
+        if self.debug_mode == 'on':
+            fancy_print(dict_temp)
         self.sensor_temp = dict_temp['sensor temperature']
         self.cam_temp = dict_temp['camera temperature']
         self.power_temp = dict_temp['power temperature']

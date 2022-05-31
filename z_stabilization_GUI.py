@@ -1,6 +1,6 @@
 ﻿# -*- coding: utf-8 -*-
 """
-Created on Tue March 1, 2022
+Created on mon May 16, 2022
 
 @author: Mariano Barella
 mariano.barella@unifr.ch
@@ -19,55 +19,36 @@ import thorlabs_camera_toolbox as tl_cam
 from PIL import Image
 from tkinter import filedialog
 import tkinter as tk
+import time as tm
 
 #=====================================
 
 # Initialize cameras
 
 #=====================================
-
-# initialize Thorlabs cameras
-# get Thorlabs camera parameters
-camera_constructor = tl_cam.init_thorlabs_cameras()
-mono_cam, mono_cam_flag, color_cam, color_cam_flag = tl_cam.list_cameras(camera_constructor)
-if mono_cam_flag:
-    mono_cam_sensor_width_pixels, mono_cam_sensor_height_pixels, \
-    mono_cam_sensor_pixel_width_um, mono_cam_sensor_pixel_height_um = tl_cam.get_camera_param(mono_cam)
-    mono_to_color_processor = None
-    mono_to_color_constructor = None
-if color_cam_flag:
-    color_cam_sensor_width_pixels, color_cam_sensor_height_pixels, \
-    color_cam_sensor_pixel_width_um, color_cam_sensor_pixel_height_um = tl_cam.get_camera_param(color_cam)
-    mono_to_color_constructor, mono_to_color_processor = tl_cam.init_thorlabs_color_cameras(color_cam)
-
-# mono_color_string = 'color'
-# camera = color_cam
+        
+camera_constructor, \
+    mono_cam, \
+    mono_cam_flag, \
+    color_cam, \
+    color_cam_flag, \
+    mono_cam_sensor_width_pixels, \
+    mono_cam_sensor_height_pixels, \
+    mono_cam_sensor_pixel_width_um, \
+    mono_cam_sensor_pixel_height_um, \
+    color_cam_sensor_width_pixels, \
+    color_cam_sensor_height_pixels, \
+    color_cam_sensor_pixel_width_um, \
+    color_cam_sensor_pixel_height_um, \
+    mono_to_color_constructor, \
+    mono_to_color_processor = tl_cam.init_Thorlabs_cameras()
 
 mono_color_string = 'mono'
 camera = mono_cam
+pixel_size = mono_cam_sensor_pixel_width_um
+initial_filepath = 'D:\\daily_data' # save in SSD for fast and daily use
+initial_filename = 'image_pco_test'
 
-if mono_color_string == 'color':
-    pixel_size = color_cam_sensor_pixel_width_um
-    cam_sensor_width_pixels = color_cam_sensor_width_pixels
-    cam_sensor_height_pixels = color_cam_sensor_height_pixels
-    level_mode = 'rgba'
-    if color_cam_sensor_pixel_width_um != color_cam_sensor_pixel_height_um:
-        print('Pixel is not a square. Width and height are different. Pixel size set to pixel width.')
-        pixel_size = color_cam_sensor_pixel_width_um
-elif mono_color_string == 'mono':
-    pixel_size = mono_cam_sensor_pixel_width_um
-    cam_sensor_width_pixels = mono_cam_sensor_width_pixels
-    cam_sensor_height_pixels = mono_cam_sensor_height_pixels
-    level_mode = 'mono'
-    if mono_cam_sensor_pixel_width_um != mono_cam_sensor_pixel_height_um:
-        print('Pixel is not a square. Width and height are different. Pixel size set to pixel width.')
-        pixel_size = mono_cam_sensor_pixel_width_um
-else:
-    print('\nWARNING! Select properly mono_color_string.')
-    print('mono_color_string is:', mono_color_string)
-    print('Allowed values are: mono OR color')
-    pixel_size = 0
-    
 #=====================================
 
 # GUI / Frontend definition
@@ -77,9 +58,6 @@ else:
 class Frontend(QtGui.QFrame):
 
     liveViewSignal = pyqtSignal(bool, float)
-    moveSignal = pyqtSignal(float, float, float, float)
-    fixcursorSignal = pyqtSignal(float, float)
-    # closeSignal = pyqtSignal()
     exposureChangedSignal = pyqtSignal(bool, float)
     takePictureSignal = pyqtSignal(bool, float)
     saveSignal = pyqtSignal()
@@ -89,27 +67,26 @@ class Frontend(QtGui.QFrame):
         super().__init__(*args, **kwargs)
         self.setUpGUI()
         # set the title of thw window
-        title = "Live view module"
+        title = "Z stabilization module"
         self.setWindowTitle(title)
             
     def setUpGUI(self):
         
-        max_y_cursor = cam_sensor_width_pixels
-        max_x_cursor = cam_sensor_height_pixels
-        optical_format = cam_sensor_width_pixels/cam_sensor_height_pixels
-
+        optical_format = mono_cam_sensor_width_pixels/mono_cam_sensor_height_pixels
+        
         # Image
         imageWidget = pg.GraphicsLayoutWidget()
         self.vb = imageWidget.addPlot()
         self.img = pg.ImageItem()
-        self.img.setOpts(axisOrder='row-major')
+        self.img.setOpts(axisOrder = 'row-major')
         self.vb.addItem(self.img)
-        self.hist = pg.HistogramLUTItem(image = self.img, levelMode = level_mode)
+        self.hist = pg.HistogramLUTItem(image = self.img, levelMode = 'mono')
         self.hist.gradient.loadPreset('grey')
+        self.hist.disableAutoHistogramRange()
         # 'thermal', 'flame', 'yellowy', 'bipolar', 'spectrum',
         # 'cyclic', 'greyclip', 'grey'
-        self.hist.vb.setLimits(yMin=0, yMax=1024) # 10-bit camera
-        imageWidget.addItem(self.hist, row=0, col=1)
+        self.hist.vb.setLimits(yMin = 0, yMax = 1024) # 10-bit camera
+        imageWidget.addItem(self.hist, row = 0, col = 1)
 
         self.autolevel_tickbox = QtGui.QCheckBox('Autolevel')
         self.initial_autolevel_state = True
@@ -144,101 +121,49 @@ class Frontend(QtGui.QFrame):
         self.exp_time_edit_previous = float(self.exp_time_edit.text())
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
         self.exp_time_edit.setValidator(QtGui.QIntValidator(1, 26843))
-        
-        pixel_size_Label = QtGui.QLabel('Pixel size (µm)')
+
+        # Pixel size       
+        pixel_size_Label = QtGui.QLabel('Pixel size (µm):')
         self.pixel_size = QtGui.QLabel(str(pixel_size))
+        self.pixel_size.setToolTip('Pixel size at sample plane.')
         
-        # Working folder
+        # Working folder and filename
         self.working_dir_button = QtGui.QPushButton('Select directory')
         self.working_dir_button.clicked.connect(self.set_working_dir)
         self.working_dir_button.setStyleSheet(
-                "QPushButton:pressed { background-color: green; }")
-        self.file_path = ''
-        self.working_dir_label = QtGui.QLineEdit(self.file_path)
-        self.working_dir_label.setReadOnly(True)
-
-        # Cursor controls
-        self.fix_cursor_button = QtGui.QPushButton('Fix cursor')
-        self.fix_cursor_button.setCheckable(True)
-        self.fix_cursor_button.clicked.connect(self.fix_cursor)
+            "QPushButton { background-color: lightgray; }"
+            "QPushButton:pressed { background-color: palegreen; }")
+        self.working_dir_label = QtGui.QLabel('Working directory:')
+        self.filepath = initial_filepath
+        self.working_dir_path = QtGui.QLineEdit(self.filepath)
+        self.working_dir_path.setReadOnly(True) 
         
-        # Cursor pointer
-        self.point_graph_cursor = pg.ScatterPlotItem(size = 25, 
-                                             symbol = 'crosshair', 
-                                             pen = 'k',
-                                             brush = None)
-        self.point_graph_cursor.setData([0], [0])
-        self.vb.addItem(self.point_graph_cursor)
-
-        self.mov_x_sl = QtGui.QSlider(QtCore.Qt.Horizontal)
-        self.mov_x_sl.setMinimum(1)
-        self.mov_x_sl.setMaximum(max_x_cursor)
-        self.mov_x_sl.setValue(int(max_x_cursor/2))
-        self.mov_x_sl.setTickPosition(QtGui.QSlider.TicksBelow)
-        self.mov_x_sl.setTickInterval(1)
-        self.mov_x_sl.valueChanged.connect(self.set_mov_x)
-
-        self.mov_y_sl = QtGui.QSlider(QtCore.Qt.Horizontal)
-        self.mov_y_sl.setMinimum(1)
-        self.mov_y_sl.setMaximum(max_y_cursor)
-        self.mov_y_sl.setValue(int(max_y_cursor/2))
-        self.mov_y_sl.setTickPosition(QtGui.QSlider.TicksBelow)
-        self.mov_y_sl.setTickInterval(1)
-        self.mov_y_sl.valueChanged.connect(self.set_mov_y)
-
-        cursor_x_label = QtGui.QLabel('Cursor X')
-        self.cursor_x = QtGui.QLabel('NaN')
-        cursor_y_label = QtGui.QLabel('Cursor Y')
-        self.cursor_y = QtGui.QLabel('NaN')
-
-        self.cursor_x.setText(format(int(self.mov_x_sl.value())))
-        self.cursor_y.setText(format(int(self.mov_y_sl.value())))
-
-        self.x_cursor = float(self.cursor_x.text())
-        self.y_cursor = float(self.cursor_y.text())
-
         # Live view parameters dock
         self.liveviewWidget = QtGui.QWidget()
         layout_liveview = QtGui.QGridLayout()
         self.liveviewWidget.setLayout(layout_liveview) 
 
-        # place Live view button and Take a Picture button
+        # folder and filename button
         layout_liveview.addWidget(self.working_dir_button, 0, 0, 1, 2)
         layout_liveview.addWidget(self.working_dir_label, 1, 0, 1, 2)
-        layout_liveview.addWidget(self.live_view_button, 2, 0)
-        layout_liveview.addWidget(self.take_picture_button, 2, 1)
-        layout_liveview.addWidget(self.save_picture_button, 3, 1)
+        layout_liveview.addWidget(self.working_dir_path, 2, 0, 1, 2)
+        # place Live view button and Take a Picture button
+        layout_liveview.addWidget(self.live_view_button, 5, 0, 1, 2)
+        layout_liveview.addWidget(self.take_picture_button, 6, 0, 1, 2)
+        layout_liveview.addWidget(self.save_picture_button, 7, 0, 1, 2)
         # Exposure time box
-        layout_liveview.addWidget(exp_time_label,              4, 0)
-        layout_liveview.addWidget(self.exp_time_edit,          4, 1)
+        layout_liveview.addWidget(exp_time_label,              8, 0)
+        layout_liveview.addWidget(self.exp_time_edit,          8, 1)
         # auto level
-        layout_liveview.addWidget(self.autolevel_tickbox,      5, 0)
-        # layout_liveview.addWidget(self.pixel_size,        5, 1)
+        layout_liveview.addWidget(self.autolevel_tickbox,      9, 0)
         # pixel size
-        layout_liveview.addWidget(pixel_size_Label ,      6, 0)
-        layout_liveview.addWidget(self.pixel_size,        6, 1)
-
-        # Cursor dock
-        self.cursorWidget = QtGui.QWidget()
-        layout_cursor = QtGui.QGridLayout()
-        self.cursorWidget.setLayout(layout_cursor) 
-
-        # place Fix reference button
-        layout_cursor.addWidget(self.fix_cursor_button, 0, 0)
-        # place sliders
-        # Cursor X
-        layout_cursor.addWidget(cursor_x_label, 1, 0)
-        layout_cursor.addWidget(self.cursor_x,  2, 0)
-        layout_cursor.addWidget(self.mov_x_sl, 2, 1)
-        # Cursor Y
-        layout_cursor.addWidget(cursor_y_label, 3, 0)
-        layout_cursor.addWidget(self.cursor_y,  4, 0)
-        layout_cursor.addWidget(self.mov_y_sl, 4, 1)             
+        layout_liveview.addWidget(pixel_size_Label ,      10, 0)
+        layout_liveview.addWidget(self.pixel_size,        10, 1)
 
         # Place layouts and boxes
         dockArea = DockArea()
         hbox = QtGui.QHBoxLayout(self)
-
+        
         viewDock = Dock('Camera', size = (200*optical_format, 200) )
         viewDock.addWidget(imageWidget)
         # viewDock.hideTitleBar()
@@ -247,10 +172,6 @@ class Frontend(QtGui.QFrame):
         liveview_paramDock = Dock('Live view parameters')
         liveview_paramDock.addWidget(self.liveviewWidget)
         dockArea.addDock(liveview_paramDock, 'right', viewDock)
-
-        cursorDock = Dock('Cursor')
-        cursorDock.addWidget(self.cursorWidget)
-        dockArea.addDock(cursorDock, 'bottom', liveview_paramDock)
         
         hbox.addWidget(dockArea)
         self.setLayout(hbox)
@@ -286,40 +207,6 @@ class Frontend(QtGui.QFrame):
     def set_working_dir(self):
         self.setWorkDirSignal.emit()
 
-    def fix_cursor(self):
-        if self.fix_cursor_button.isChecked():
-           x_cursor_reference = float(self.cursor_x.text())
-           y_cursor_reference = float(self.cursor_y.text())
-           self.fixcursorSignal.emit(x_cursor_reference, y_cursor_reference)
-           self.mov_x_sl.setEnabled(False)
-           self.mov_y_sl.setEnabled(False)
-        else:
-           self.mov_x_sl.setEnabled(True)
-           self.mov_y_sl.setEnabled(True)
-
-    def set_mov_y(self):
-        # move cursor
-        self.cursor_y.setText(format(int(self.mov_y_sl.value())))
-        self.y_cursor = float(self.cursor_y.text())
-        pixel_y = pixel_size
-        self.moveSignal.emit(self.x_cursor, self.y_cursor, 0, pixel_y)
-
-    def set_mov_x(self):
-        # move cursor
-        self.cursor_x.setText(format(int(self.mov_x_sl.value())))
-        self.x_cursor = float(self.cursor_x.text())
-        pixel_x = pixel_size
-        self.moveSignal.emit(self.x_cursor, self.y_cursor, pixel_x, 0)
-    
-    @pyqtSlot(list)
-    def get_cursor_values(self, data_cursor):
-        point_cursor_x = data_cursor[0]
-        point_cursor_y = data_cursor[1]
-        self.cursor_x.setText(format(point_cursor_x))
-        self.cursor_y.setText(format(point_cursor_y))
-        self.point_graph_cursor.setData([point_cursor_y], [point_cursor_x])
-        self.point_graph_cursor._updateView()
-
     def autolevel(self):
         if self.autolevel_tickbox.isChecked():
             self.autolevel_bool = True
@@ -348,17 +235,18 @@ class Frontend(QtGui.QFrame):
             tl_cam.dispose_all(mono_cam_flag, mono_cam, color_cam_flag, color_cam, \
                         mono_to_color_processor, mono_to_color_constructor, \
                         camera_constructor)
-            # self.closeSignal.emit()
             event.accept()
-            self.close()          
             print('Closing GUI...')
+            self.close()
+            tm.sleep(1)
+            app.quit()
         else:
             event.ignore()
             print('Back in business...')    
+        return
   
     def make_connections(self, backend):
         backend.imageSignal.connect(self.get_image)
-        backend.datacursorSignal.connect(self.get_cursor_values)
         backend.filePathSignal.connect(self.get_file_path)
 
 #=====================================
@@ -370,36 +258,13 @@ class Frontend(QtGui.QFrame):
 class Backend(QtCore.QObject):
 
     imageSignal = pyqtSignal(np.ndarray)
-    datacursorSignal = pyqtSignal(list)
     filePathSignal = pyqtSignal(str)
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.referencebool = False
-        self.x_pos_reference = 0
-        self.y_pos_reference = 0
-        self.x_cursor_reference = 0
-        self.y_cursor_reference = 0
         self.viewTimer = QtCore.QTimer()
         self.viewTimer.timeout.connect(self.update_view)   
         self.image_np = None
-
-    def go_initial_cursor(self):
-        x_cursor_initial = self.total_pixel_x/2
-        y_cursor_initial = self.total_pixel_y/2
-        self.datacursorSignal.emit([x_cursor_initial , y_cursor_initial])
-
-    @pyqtSlot(float, float, float, float)    
-    def cursor(self, x_cursor, y_cursor, pixel_x, pixel_y):
-        x_new_cursor = x_cursor
-        y_new_cursor = y_cursor
-        self.datacursorSignal.emit([x_new_cursor, y_new_cursor])
-
-    @pyqtSlot(float, float)
-    def fix_cursor_reference(self, x_cursor_reference, y_cursor_reference):
-        self.x_cursor_reference = x_cursor_reference 
-        self.y_cursor_reference = y_cursor_reference
-        self.referencebool = True
     
     @pyqtSlot(bool, float)    
     def change_exposure(self, livebool, exposure_time_ms):
@@ -475,8 +340,6 @@ class Backend(QtCore.QObject):
         frontend.exposureChangedSignal.connect(self.change_exposure)
         frontend.liveViewSignal.connect(self.liveview) 
         frontend.takePictureSignal.connect(self.take_picture) 
-        frontend.moveSignal.connect(self.cursor)
-        frontend.fixcursorSignal.connect(self.fix_cursor_reference)
         frontend.saveSignal.connect(self.save_picture)
         frontend.setWorkDirSignal.connect(self.set_working_folder)
       

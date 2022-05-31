@@ -26,36 +26,6 @@ import time as tm
 # Initialize cameras
 
 #=====================================
-
-def init_Thorlabs_cameras():
-    # initialize Thorlabs cameras
-    # get Thorlabs camera parameters
-    camera_constructor = tl_cam.init_thorlabs_cameras()
-    mono_cam, mono_cam_flag, color_cam, color_cam_flag = tl_cam.list_cameras(camera_constructor)
-    if mono_cam_flag:
-        mono_cam_sensor_width_pixels, mono_cam_sensor_height_pixels, \
-        mono_cam_sensor_pixel_width_um, mono_cam_sensor_pixel_height_um = tl_cam.get_camera_param(mono_cam)
-        mono_to_color_constructor = None
-        mono_to_color_processor = None
-    if color_cam_flag:
-        color_cam_sensor_width_pixels, color_cam_sensor_height_pixels, \
-        color_cam_sensor_pixel_width_um, color_cam_sensor_pixel_height_um = tl_cam.get_camera_param(color_cam)
-        mono_to_color_constructor, mono_to_color_processor = tl_cam.init_thorlabs_color_cameras(color_cam)
-    return camera_constructor, \
-        mono_cam, \
-        mono_cam_flag, \
-        color_cam, \
-        color_cam_flag, \
-        mono_cam_sensor_width_pixels, \
-        mono_cam_sensor_height_pixels, \
-        mono_cam_sensor_pixel_width_um, \
-        mono_cam_sensor_pixel_height_um, \
-        color_cam_sensor_width_pixels, \
-        color_cam_sensor_height_pixels, \
-        color_cam_sensor_pixel_width_um, \
-        color_cam_sensor_pixel_height_um, \
-        mono_to_color_constructor, \
-        mono_to_color_processor
         
 camera_constructor, \
     mono_cam, \
@@ -71,11 +41,13 @@ camera_constructor, \
     color_cam_sensor_pixel_width_um, \
     color_cam_sensor_pixel_height_um, \
     mono_to_color_constructor, \
-    mono_to_color_processor = init_Thorlabs_cameras()
+    mono_to_color_processor = tl_cam.init_Thorlabs_cameras()
 
 mono_color_string = 'color'
 camera = color_cam
 pixel_size = color_cam_sensor_pixel_width_um
+initial_filepath = 'D:\\daily_data' # save in SSD for fast and daily use
+initial_filename = 'image_pco_test'
 
 #=====================================
 
@@ -113,8 +85,9 @@ class Frontend(QtGui.QFrame):
         self.img = pg.ImageItem()
         self.img.setOpts(axisOrder = 'row-major')
         self.vb.addItem(self.img)
-        self.hist = pg.HistogramLUTItem(image = self.img, levelMode = 'rgba')
+        self.hist = pg.HistogramLUTItem(image = self.img, levelMode = 'mono')
         self.hist.gradient.loadPreset('grey')
+        self.hist.disableAutoHistogramRange()
         # 'thermal', 'flame', 'yellowy', 'bipolar', 'spectrum',
         # 'cyclic', 'greyclip', 'grey'
         self.hist.vb.setLimits(yMin = 0, yMax = 1024) # 10-bit camera
@@ -157,19 +130,20 @@ class Frontend(QtGui.QFrame):
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
         self.exp_time_edit.setValidator(QtGui.QIntValidator(1, 26843))
         
-        pixel_size_Label = QtGui.QLabel('Pixel size (µm)')
+        pixel_size_Label = QtGui.QLabel('Pixel size (µm):')
         self.pixel_size = QtGui.QLabel(str(pixel_size))
         
-        # Working folder
+        # Working folder and filename
         self.working_dir_button = QtGui.QPushButton('Select directory')
         self.working_dir_button.clicked.connect(self.set_working_dir)
         self.working_dir_button.setStyleSheet(
             "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: palegreen; }")
-        self.file_path = ''
-        self.working_dir_label = QtGui.QLineEdit(self.file_path)
-        self.working_dir_label.setReadOnly(True)
-
+        self.working_dir_label = QtGui.QLabel('Working directory:')
+        self.filepath = initial_filepath
+        self.working_dir_path = QtGui.QLineEdit(self.filepath)
+        self.working_dir_path.setReadOnly(True) 
+        
         # Cursor controls
         self.fix_cursor_button = QtGui.QPushButton('Fix cursor')
         self.fix_cursor_button.setCheckable(True)

@@ -34,12 +34,42 @@ from thorlabs_tsi_sdk.tl_mono_to_color_processor import MonoToColorProcessorSDK
 
 #=====================================
 
-def init_thorlabs_cameras():
+def load_Thorlabs_SDK_cameras():
     # create SDK object. Important: only call it once!
     camera_constructor = TLCameraSDK()
     return camera_constructor
 
-def init_thorlabs_color_cameras(color_cam):
+def init_Thorlabs_cameras():
+    # initialize Thorlabs cameras
+    # get Thorlabs camera parameters
+    camera_constructor = load_Thorlabs_SDK_cameras()
+    mono_cam, mono_cam_flag, color_cam, color_cam_flag = list_cameras(camera_constructor)
+    if mono_cam_flag:
+        mono_cam_sensor_width_pixels, mono_cam_sensor_height_pixels, \
+        mono_cam_sensor_pixel_width_um, mono_cam_sensor_pixel_height_um = get_camera_param(mono_cam)
+        mono_to_color_constructor = None
+        mono_to_color_processor = None
+    if color_cam_flag:
+        color_cam_sensor_width_pixels, color_cam_sensor_height_pixels, \
+        color_cam_sensor_pixel_width_um, color_cam_sensor_pixel_height_um = get_camera_param(color_cam)
+        mono_to_color_constructor, mono_to_color_processor = init_Thorlabs_color_cameras(color_cam)
+    return camera_constructor, \
+        mono_cam, \
+        mono_cam_flag, \
+        color_cam, \
+        color_cam_flag, \
+        mono_cam_sensor_width_pixels, \
+        mono_cam_sensor_height_pixels, \
+        mono_cam_sensor_pixel_width_um, \
+        mono_cam_sensor_pixel_height_um, \
+        color_cam_sensor_width_pixels, \
+        color_cam_sensor_height_pixels, \
+        color_cam_sensor_pixel_width_um, \
+        color_cam_sensor_pixel_height_um, \
+        mono_to_color_constructor, \
+        mono_to_color_processor
+
+def init_Thorlabs_color_cameras(color_cam):
     # create SDK object. Important: only call it once!
     mono_to_color_constructor = MonoToColorProcessorSDK()
     mono_to_color_processor = mono_to_color_constructor.create_mono_to_color_processor(
@@ -212,7 +242,7 @@ def dispose_all(mono_cam_flag, mono_cam, color_cam_flag, color_cam, \
 
 if __name__ == '__main__':
         
-    camera_constructor = init_thorlabs_cameras()
+    camera_constructor = load_Thorlabs_SDK_cameras()
     mono_cam, mono_cam_flag, color_cam, color_cam_flag = list_cameras(camera_constructor)
     if mono_cam_flag:
         mono_cam_sensor_width_pixels, mono_cam_sensor_height_pixels, \
@@ -223,7 +253,7 @@ if __name__ == '__main__':
     if color_cam_flag:
         color_cam_sensor_width_pixels, color_cam_sensor_height_pixels, \
         color_cam_sensor_pixel_width_um, color_cam_sensor_pixel_height_um = get_camera_param(color_cam)
-        mono_to_color_constructor, mono_to_color_processor = init_thorlabs_color_cameras(color_cam)
+        mono_to_color_constructor, mono_to_color_processor = init_Thorlabs_color_cameras(color_cam)
         camera = color_cam
     
     if not (color_cam_flag or mono_cam_flag):
