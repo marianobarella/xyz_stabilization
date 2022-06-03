@@ -24,9 +24,9 @@ def gaussian_2D(xy_tuple, amplitude, xo, yo, w0_x, w0_y, offset):
     return g.ravel()
 
 # definition of log-likelihood function (avoid using np.prod, could return 0.0)
-def log_likelihood(theta_param, data):
+def log_likelihood(theta_param, xy_data):
     amplitude, xo, yo, w0_x, w0_y, offset = theta_param
-    pdf_data = gaussian_2D(data, amplitude, xo, yo, w0_x, w0_y, offset)
+    pdf_data = gaussian_2D(xy_data, amplitude, xo, yo, w0_x, w0_y, offset)
     log_likelihood = -np.sum(np.log(pdf_data)) # use minus to minimize (instead of maximize)
     return log_likelihood
 
@@ -55,7 +55,7 @@ plt.ioff()
 VERBOSITY = False
 PLOT = False
 
-data_folder = 'C:\datos_mariano\posdoc\drift_correction_proposal\drift_estimation'
+data_folder = 'C:\\Users\\BarellaM\\Documents\\Python Scripts'
 filename = 'times_series_15sec_120frames_blue_ch_ROI.tif'
 
 # working_folder = os.path.join(local_folder, data_folder)

@@ -12,6 +12,9 @@ import numpy as np
 import scipy.optimize as opt
 import matplotlib.pyplot as plt
 import os
+from PIL import Image
+from timeit import default_timer as timer
+
 # import warnings
 # from scipy.optimize import OptimizeWarning
 # warnings.filterwarnings("ignore", message = 'Covariance not estimated', category = OptimizeWarning)
@@ -44,13 +47,20 @@ def fit_with_gaussian(frame_intensity, frame_coordinates, pixel_size_x_nm, pixel
     frame_norm = ( frame_intensity - frame_min ) / ( frame_max - frame_min )
     # reshape
     data = frame_norm.reshape(number_of_pixels_x*number_of_pixels_y)
-    # perform fitting
+    ############ perform fitting ############
+    # spatial coordinates are in term of pixels at this point
     # initial paramters to fit amplitude, xo, yo, wx, wy, offset
-    x_coord_max, y_coord_max = np.unravel_index(np.argmax(frame_intensity, axis=None), \
+    x_coord_max, y_coord_max = np.unravel_index(np.argmax(frame_intensity, axis = None), \
                                                 frame_intensity.shape)
-    print(x_coord_max, y_coord_max)
-    initial_guess = [1, x_coord_max, y_coord_max, 0.350/pixel_size_x, 0.350/pixel_size_y, 0.2]
-    popt, pcov = opt.curve_fit(gaussian_2D, (x, y), data, p0 = initial_guess, verbose = 1)
+    x_coord_max += np.min(x)
+    y_coord_max += np.min(y)
+    initial_guess = [0.9, x_coord_max, y_coord_max, 5, 5, 0.1]
+    # set bounds
+    all_bounds = ([0, np.min(x), np.min(y), 0, 0, 0], [1, np.max(x), np.max(y), 100, 100, 1])
+    # start_time = timer()
+    popt, pcov = opt.curve_fit(gaussian_2D, (x, y), data, p0 = initial_guess, bounds = all_bounds)
+    # end_time = timer()
+    # print(end_time - start_time)
     # retrieve parameters
     amplitude_fitted, \
         x_fitted, \
@@ -58,7 +68,6 @@ def fit_with_gaussian(frame_intensity, frame_coordinates, pixel_size_x_nm, pixel
         w0x_fitted, \
         w0y_fitted, \
         offset_fitted = popt
-    print(popt)
     # map to sample size
     x_fitted = x_fitted*pixel_size_x
     y_fitted = y_fitted*pixel_size_y
@@ -81,3 +90,21 @@ def fit_with_gaussian(frame_intensity, frame_coordinates, pixel_size_x_nm, pixel
         plt.close()
     
     return x_fitted, y_fitted, w0x_fitted, w0y_fitted
+
+if __name__ == '__main__':
+
+    filepath = 'D:\\daily_data\\image_pco_test2022-05-31_14-08-33.tiff'
+    img = Image.open(filepath)
+    imarray = np.array(img)
+    crop = imarray[640:670, 945:975]
+    number_of_pixels_x, number_of_pixels_y = crop.shape
+    x = np.arange(number_of_pixels_x)
+    y = np.arange(number_of_pixels_y)
+    xy_grid = np.array(np.meshgrid(x, y))
+    
+    fit_with_gaussian(crop, xy_grid, 65, 65)
+    
+    plt.figure()
+    plt.imshow(crop)
+    plt.show()
+    

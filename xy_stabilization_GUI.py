@@ -36,8 +36,8 @@ initial_filepath = 'D:\\daily_data' # save in SSD for fast and daily use
 initial_filename = 'image_pco_test'
 viewTimer_update = 25 # in ms (makes no sense to go lower than the refresh rate of the screen)
 tempTimer_update = 5000 # in ms
-initial_tracking_period = 2000 # in ms
-driftbox_length = 10.0 # in seconds
+initial_tracking_period = 500 # in ms
+driftbox_length = 30.0 # in seconds
 
 #=====================================
 
@@ -57,7 +57,8 @@ class Frontend(QtGui.QFrame):
     saveSignal = pyqtSignal()
     setWorkDirSignal = pyqtSignal()
     lockAndTrackSignal = pyqtSignal(bool)
-    fitFiducialsSignal = pyqtSignal(int, dict, dict)
+    dataFiducialsSignal = pyqtSignal(int, dict, bool)
+    savedriftSignal = pyqtSignal()
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -93,7 +94,8 @@ class Frontend(QtGui.QFrame):
                                          symbol = 'o', brush = pg.mkBrush('r'))
         self.xy_fiducials.setZValue(2) # Ensure scatterPlotItem is always at top
         self.vb.addItem(self.xy_fiducials)
-
+        
+        # autolevel of image instesity
         self.autolevel_tickbox = QtGui.QCheckBox('Autolevel')
         self.initial_autolevel_state = True
         self.autolevel_tickbox.setChecked(self.initial_autolevel_state)
@@ -193,7 +195,7 @@ class Frontend(QtGui.QFrame):
         number_of_fiducials_label = QtGui.QLabel('Number of fiducials:')
         self.number_of_fiducials_value = QtGui.QLineEdit('1')
         box_size_label = QtGui.QLabel('Box size (pixels):')
-        self.box_size_value = QtGui.QLineEdit('201')
+        self.box_size_value = QtGui.QLineEdit('17')
         self.box_size_value.setValidator(QtGui.QIntValidator(1, 999))
         self.box_size_value.setToolTip('Restricted to odd numbers. Good starting point is box_size ~ 1 µm (use pixel size).')
         self.create_ROIs_button = QtGui.QPushButton('Create ROIs')
@@ -212,11 +214,19 @@ class Frontend(QtGui.QFrame):
             "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: red; }"
             "QPushButton::checked { background-color: limegreen; }")
+        # tracking period
         self.tracking_period_label = QtGui.QLabel('Tracking period (s):')
         self.tracking_period_value = QtGui.QLineEdit(str(initial_tracking_period/1000))
         self.tracking_period = initial_tracking_period
         self.tracking_period_value.setToolTip('Period to measure fiducial markers\' position.')
         self.tracking_period_value.editingFinished.connect(self.tracking_period_changed_check)
+        # save drift trace button
+        self.savedrift_tickbox = QtGui.QCheckBox('Save drift curve')
+        self.initial_state_savedrift = False
+        self.savedrift_tickbox.setChecked(self.initial_state_savedrift)
+        self.savedrift_tickbox.setText('Save drift data when unlocking')
+        self.savedrift_tickbox.stateChanged.connect(self.save_drift_trace)
+        self.savedrift_bool = self.initial_state_savedrift
 
         # position vs time of fiducials
         driftWidget = pg.GraphicsLayoutWidget()
@@ -279,6 +289,8 @@ class Frontend(QtGui.QFrame):
         layout_fiducials.addWidget(self.lock_ROIs_button,         3, 0, 1, 2)
         layout_fiducials.addWidget(self.tracking_period_label,         4, 0)
         layout_fiducials.addWidget(self.tracking_period_value,         4, 1)
+        # save drift
+        layout_fiducials.addWidget(self.savedrift_tickbox,      5, 0)
         
         # Place layouts and boxes
         dockArea = DockArea()
@@ -335,7 +347,8 @@ class Frontend(QtGui.QFrame):
                 print('Warning! Lock and Track can only be used if fiducials\' ROIs have been created.')
         else:
             self.lockAndTrackSignal.emit(False)
-            self.driftPlot.clear()
+            if self.savedrift_bool:
+                self.savedriftSignal.emit()
             self.xy_fiducials.clear()
         return
     
@@ -346,26 +359,26 @@ class Frontend(QtGui.QFrame):
                                                             self.img, \
                                                             axis = (1, 0), \
                                                             returnMappedCoords = True)
-        self.fitFiducialsSignal.emit(self.number_of_fiducials, self.data_ROI, self.coord_ROI)
+        self.dataFiducialsSignal.emit(self.number_of_fiducials, self.coord_ROI, \
+                                      self.savedrift_bool)
         return
 
     @pyqtSlot(dict, dict)
     def receive_fitted_data(self, xy_pos, timestamp):
+        array_of_x_pos_pixels = []
+        array_of_y_pos_pixels = []
         for i in range(self.number_of_fiducials):
             # plot xy position of fiducials vs time
-            self.driftPlot.plot(x = [timestamp[i]], y = [xy_pos[i][1]], size = 8, \
-                                symbol = 'o', pen = pg.mkPen('w', width = 1))
-            self.driftPlot.plot(x = [timestamp[i]], y = [xy_pos[i][0]], size = 8, \
-                                symbol = 's', pen = pg.mkPen('w', width = 1))
+            self.driftPlot.plot(x = [timestamp[i]], y = [xy_pos[i][1]], size = 1, \
+                                symbol = 'o', pen = pg.mkPen('r', width = 1))
+            self.driftPlot.plot(x = [timestamp[i]], y = [xy_pos[i][0]], size = 1, \
+                                symbol = 's', pen = pg.mkPen('b', width = 1))
             self.driftPlot.setXRange(timestamp[i] - driftbox_length, timestamp[i])
-            # draw center of fiducials, xy are inverted and in um
-            xy_roi_origin = np.array([self.coord_ROI[i][0,0,0], self.coord_ROI[i][1,0,0]])
-            print('frontend', xy_roi_origin)
+            # draw center of fiducials, convert um to pixels
             pixel_size_um = self.pixel_size/1000
-            xy_pos_pixels = xy_pos[i]/pixel_size_um + xy_roi_origin
-            print('frontend', xy_pos[i][0], xy_pos[i][1], xy_pos[i]/pixel_size_um)
-            print('frontend', xy_pos_pixels)
-            self.xy_fiducials.setData(x = [xy_pos_pixels[1]], y = [xy_pos_pixels[0]])
+            array_of_x_pos_pixels.append(xy_pos[i][1]/pixel_size_um)
+            array_of_y_pos_pixels.append(xy_pos[i][0]/pixel_size_um)
+        self.xy_fiducials.setData(x = array_of_x_pos_pixels, y = array_of_y_pos_pixels)
         return
 
     def tracking_period_changed_check(self):
@@ -459,6 +472,15 @@ class Frontend(QtGui.QFrame):
             print('Autolevel off')
         return
     
+    def save_drift_trace(self):
+        if self.savedrift_tickbox.isChecked():
+            self.savedrift_bool = True
+            print('Drift cruve will be saved.')
+        else:
+            self.savedrift_bool = False
+            print('Drift cruve will not be saved.')
+        return
+    
     @pyqtSlot(np.ndarray)
     def get_image(self, image):
         self.image = image
@@ -535,7 +557,7 @@ class Backend(QtCore.QObject):
         self.exposure_time_ms = 100
         self.file_path = initial_filepath
         self.trackingTimer = QtCore.QTimer()
-        self.trackingTimer.timeout.connect(self.get_fiducials_data)
+        self.trackingTimer.timeout.connect(self.call_pid)
         self.tracking_period = initial_tracking_period
         self.pixel_size = initial_pixel_size
         return
@@ -588,11 +610,18 @@ class Backend(QtCore.QObject):
     
     @pyqtSlot(bool)
     def start_stop_tracking(self, trackbool):
-        self.center = {}
-        self.timeaxis = {}
         if trackbool:
             print('Locking and tracking fiducials...')
+            # initiating variables
+            self.centers = {}
+            self.timeaxis = {}
+            self.centers_to_save = []
+            self.timeaxis_to_save = []
+            # t0 initial time
             self.start_tracking_time = timer()
+            # ask for ROI data and coordinates
+            self.get_fiducials_data()
+            # start timer
             self.trackingTimer.start(self.tracking_period)
         else:
             self.trackingTimer.stop()
@@ -603,21 +632,66 @@ class Backend(QtCore.QObject):
         self.getFiducialsDataSignal.emit()
         return
     
-    @pyqtSlot(int, dict, dict)
-    def fit_fiducials(self, N, roi_intensity_dict, roi_coordinates_dict):
+    @pyqtSlot(int, dict, bool)
+    def receive_roi_fiducials(self, N, roi_coordinates_dict, append_drift_bool):
+        self.number_of_fiducials = N
+        self.save_drift_data = append_drift_bool
+        # set indexes for ROIs
+        self.x1 = {}
+        self.x2 = {}
+        self.y1 = {}
+        self.y2 = {}
+        self.frame_coordinates = {}
         for i in range(N):
-            frame_intensity = roi_intensity_dict[i]
-            frame_coordinates = roi_coordinates_dict[i]
-            x_fitted, y_fitted, w0x_fitted, w0y_fitted = drift.fit_with_gaussian(frame_intensity, \
-                                                                                 frame_coordinates, \
-                                                                                 self.pixel_size, \
-                                                                                 self.pixel_size)
-            self.center[i] = np.array([x_fitted, y_fitted])
-            self.timeaxis[i] = timer() - self.start_tracking_time
-            print('backend', x_fitted)
-            print('backend', y_fitted)
-        self.sendFittedDataSignal.emit(self.center, self.timeaxis)
+            self.frame_coordinates[i] = roi_coordinates_dict[i]
+            self.x1[i] = int(self.frame_coordinates[i][0,0,0])
+            self.x2[i] = int(self.frame_coordinates[i][0,-1,0]) + 1
+            self.y1[i] = int(self.frame_coordinates[i][1,0,0])
+            self.y2[i] = int(self.frame_coordinates[i][1,0,-1]) + 1
+            # then frame_intensity is self.image_np[x1:x2, y1:y2]
+        print('Finding initial coordinates...')
+        self.initial_centers, _ = self.fit_fiducials()
+        return  
+      
+    def call_pid(self):
+        error = {}
+        centers, timeaxis = self.fit_fiducials()
+        # print(self.centers_previous)
+        # print(centers)
+        for i in range(self.number_of_fiducials):
+            error_x = self.initial_centers[i][0] - centers[i][0]
+            error_y = self.initial_centers[i][1] - centers[i][1]
+            print(error_x, error_y)
+            error[i] = [error_x, error_y]
+        # send position of all fiducials to Frontend
+        self.sendFittedDataSignal.emit(error, timeaxis)
         return
+    
+    def fit_fiducials(self):
+        centers = {}
+        timeaxis = {}
+        # find centers for all fiducials
+        for i in range(self.number_of_fiducials):
+            x1 = self.x1[i]
+            x2 = self.x2[i]
+            y1 = self.y1[i]
+            y2 = self.y2[i]
+            frame_intensity = self.image_np[x1:x2, y1:y2]
+            x_fitted, \
+            y_fitted, \
+            w0x_fitted, \
+            w0y_fitted = drift.fit_with_gaussian(frame_intensity, \
+                                                 self.frame_coordinates[i], \
+                                                 self.pixel_size, \
+                                                 self.pixel_size)
+            centers[i] = np.array([x_fitted, y_fitted])
+            timeaxis[i] = timer() - self.start_tracking_time
+        # flatten data to save drift vs time when the Lock and Track option is released
+        if self.save_drift_data:
+            self.timeaxis_to_save.append(timeaxis[0])
+            centers_flattened = list(np.array(list(centers.values())).flatten())
+            self.centers_to_save.append(centers_flattened)
+        return centers, timeaxis
     
     @pyqtSlot(bool, float)
     def take_picture(self, livebool, exposure_time_ms):
@@ -627,11 +701,10 @@ class Backend(QtCore.QObject):
             self.stop_liveview()
         cam.set_exp_time(self.exposure_time_ms)
         cam.config_recorder()
-        image_np, metadata = cam.get_image()
-        if image_np is not None:
-            self.image_np = image_np # assign to class to be able to save it later
+        self.image_np, metadata = cam.get_image()
+        if self.image_np is not None:
             cam.stop()
-            self.imageSignal.emit(image_np)            
+            self.imageSignal.emit(self.image_np)            
         return
     
     @pyqtSlot(bool, float)
@@ -653,8 +726,8 @@ class Backend(QtCore.QObject):
             
     def update_view(self):
         # Image update while in Live view mode
-        image_np, metadata = cam.get_image()
-        self.imageSignal.emit(image_np)
+        self.image_np, metadata = cam.get_image()
+        self.imageSignal.emit(self.image_np)
         return
     
     def update_temp(self):
@@ -670,9 +743,31 @@ class Backend(QtCore.QObject):
         return
     
     @pyqtSlot()    
+    def save_drift_curve(self):
+        # prepare the array to be saved
+        # structure of the file will be
+        # first col = time, in s
+        # second and third col = x and y position of 1st NP, respectively, in um 
+        # fourth and fifth col = x and y position of 2nd NP, respectively, in um 
+        # etc...
+        M = np.array(self.timeaxis_to_save).shape[0]
+        N = np.array(self.centers_to_save).shape[1] + 1
+        data_to_save = np.zeros((M, N))
+        data_to_save[:, 0] = self.timeaxis_to_save
+        data_to_save[:, 1:] = self.centers_to_save
+        # create filename
+        timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
+        filename = "drift_curve_" + timestr + ".dat"
+        full_filename = os.path.join(self.file_path, filename)
+        # save
+        np.savetxt(full_filename, data_to_save, fmt='%.3e')
+        print('Drift curve %s saved' % filename)
+        return
+    
+    @pyqtSlot()    
     def save_picture(self):
         timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
-        filename = "image_pco_test" + timestr + ".tiff"
+        filename = "image_pco_" + timestr + ".tiff"
         full_filename = os.path.join(self.file_path, filename)
         image_to_save = Image.fromarray(self.image_np)
         image_to_save.save(full_filename) 
@@ -715,7 +810,8 @@ class Backend(QtCore.QObject):
         frontend.saveSignal.connect(self.save_picture)
         frontend.setWorkDirSignal.connect(self.set_working_folder)
         frontend.lockAndTrackSignal.connect(self.start_stop_tracking)
-        frontend.fitFiducialsSignal.connect(self.fit_fiducials)
+        frontend.dataFiducialsSignal.connect(self.receive_roi_fiducials)
+        frontend.savedriftSignal.connect(self.save_drift_curve)
         return
     
 #=====================================
