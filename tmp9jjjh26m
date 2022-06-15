@@ -23,7 +23,6 @@ from tkinter import filedialog
 import tkinter as tk
 import time as tm
 import viewbox_tools
-import piezo_stage_GUI
 
 #=====================================
 
@@ -33,7 +32,6 @@ import piezo_stage_GUI
 
 cam = pco.pco_camera()
 initial_pixel_size = 65 # in nm (with 1x1 binning)
-initial_exp_time = 20 # in ms
 initial_filepath = 'D:\\daily_data' # save in SSD for fast and daily use
 initial_filename = 'image_pco_test'
 
@@ -148,7 +146,7 @@ class Frontend(QtGui.QFrame):
 
         # Exposure time
         exp_time_label = QtGui.QLabel('Exposure time (ms):')
-        self.exp_time_edit = QtGui.QLineEdit(str(initial_exp_time))
+        self.exp_time_edit = QtGui.QLineEdit('100')
         self.exp_time_edit_previous = float(self.exp_time_edit.text())
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
         self.exp_time_edit.setValidator(QtGui.QDoubleValidator(0.01, 5000.00, 2))
@@ -251,7 +249,7 @@ class Frontend(QtGui.QFrame):
         self.pid_param_list = [initial_kp, initial_ki, initial_kd]
         # position vs time of fiducials
         driftWidget = pg.GraphicsLayoutWidget()
-        self.driftPlot = driftWidget.addPlot(title = "XY drift (blue X, red Y)")
+        self.driftPlot = driftWidget.addPlot(title = "XY drift")
         self.driftPlot.showGrid(x = True, y = True)
         self.driftPlot.setLabel('left', 'Shift (μm)')
         self.driftPlot.setLabel('bottom', 'Time (s)')
@@ -340,12 +338,6 @@ class Frontend(QtGui.QFrame):
         driftDock.addWidget(driftWidget)
         dockArea.addDock(driftDock, 'bottom', fiducialsDock)
         
-        ## Add Piezo stage GUI module
-        piezoDock = Dock('Piezo stage')
-        self.piezoWidget = piezo_stage_GUI.Frontend()
-        piezoDock.addWidget(self.piezoWidget)
-        dockArea.addDock(piezoDock , 'right', fiducialsDock)
-        
         hbox.addWidget(dockArea)
         self.setLayout(hbox)
         return
@@ -369,8 +361,8 @@ class Frontend(QtGui.QFrame):
         self.box_size = int(self.box_size_value.text())
         if self.create_ROIs_button.isChecked():
             for i in range(self.number_of_fiducials):
-                x_pos = round(self.roi_list_previous[2]/2)
-                y_pos = round(self.roi_list_previous[3]/2) + i*self.box_size
+                x_pos = round(self.roi_list_previous[2])
+                y_pos = round(self.roi_list_previous[3]) + i*self.box_size
                 ROIpos = (x_pos, y_pos) # (0.5*numberofPixels - 0.5*box_size, 0.5*numberofPixels - 0.5*box_size)
                 self.roi[i] = viewbox_tools.ROI_squared(self.box_size, self.vb, ROIpos,
                                                  handlePos = (1, 1),
@@ -391,11 +383,6 @@ class Frontend(QtGui.QFrame):
                 self.lockAndTrackSignal.emit(True)
                 self.data_ROI = {}
                 self.coord_ROI = {}
-                N = int(driftbox_length*1000/self.tracking_period)
-                self.error_to_plot = np.empty((N, 2))
-                self.error_to_plot[:] = np.nan
-                self.time_to_plot = np.empty(N)
-                self.time_to_plot[:] = np.nan
             else:
                 print('Warning! Lock and Track can only be used if fiducials\' ROIs have been created.')
         else:
@@ -416,21 +403,17 @@ class Frontend(QtGui.QFrame):
                                       self.savedrift_bool)
         return
 
-    @pyqtSlot(dict, np.ndarray, float)
+    @pyqtSlot(dict, np.ndarray, dict)
     def receive_fitted_data(self, xy_pos_pixel_relative, error, timestamp):
         array_of_x_pos_pixels = []
         array_of_y_pos_pixels = []
-        # plot xy position of fiducials vs time
-        self.error_to_plot = np.roll(self.error_to_plot, -1, axis = 0)
-        self.time_to_plot = np.roll(self.time_to_plot, -1)
-        self.error_to_plot[-1,:] = error
-        self.time_to_plot[-1] = timestamp
-        self.driftPlot.plot(x = self.time_to_plot, y = self.error_to_plot[:, 0], \
-                            pen = pg.mkPen('r'))
-        self.driftPlot.plot(x = self.time_to_plot, y = self.error_to_plot[:, 1], \
-                            pen = pg.mkPen('b'))
-        self.driftPlot.setXRange(timestamp - driftbox_length, timestamp)
         for i in range(self.number_of_fiducials):
+            # plot xy position of fiducials vs time
+            self.driftPlot.plot(x = [timestamp[i]], y = [error[1]], size = 1, \
+                                symbol = 'o', pen = pg.mkPen('r', width = 1))
+            self.driftPlot.plot(x = [timestamp[i]], y = [error[0]], size = 1, \
+                                symbol = 's', pen = pg.mkPen('b', width = 1))
+            self.driftPlot.setXRange(timestamp[i] - driftbox_length, timestamp[i])
             # draw center of fiducials, convert um to pixels
             pixel_size_um = self.pixel_size/1000
             array_of_x_pos_pixels.append(xy_pos_pixel_relative[i][1]/pixel_size_um)
@@ -585,7 +568,6 @@ class Frontend(QtGui.QFrame):
         backend.filePathSignal.connect(self.get_file_path)
         backend.getFiducialsDataSignal.connect(self.retrieve_fiducials_data)
         backend.sendFittedDataSignal.connect(self.receive_fitted_data)
-        backend.piezoWorker.make_connections(self.piezoWidget)
         return
     
 #=====================================
@@ -598,14 +580,12 @@ class Backend(QtCore.QObject):
 
     imageSignal = pyqtSignal(np.ndarray)
     getFiducialsDataSignal = pyqtSignal()
-    sendFittedDataSignal = pyqtSignal(dict, np.ndarray, float)
+    sendFittedDataSignal = pyqtSignal(dict, np.ndarray, dict)
     tempSignal = pyqtSignal(list)
     filePathSignal = pyqtSignal(str)
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.piezo_stage = piezo_stage_GUI.piezo_stage     
-        self.piezoWorker = piezo_stage_GUI.Backend(self.piezo_stage)
         self.viewTimer = QtCore.QTimer()
         self.viewTimer.timeout.connect(self.update_view)   
         self.tempTimer = QtCore.QTimer()
@@ -698,6 +678,9 @@ class Backend(QtCore.QObject):
                 self.pidParamChangedSignal.emit(False, pid_param_list)
         return     
     
+    
+    
+    
     @pyqtSlot(bool)
     def start_stop_tracking(self, trackbool):
         if trackbool:
@@ -705,7 +688,7 @@ class Backend(QtCore.QObject):
             # initiating variables
             self.centers = {}
             self.timeaxis = {}
-            self.errors_to_save = []
+            self.centers_to_save = []
             self.timeaxis_to_save = []
             # t0 initial time
             self.start_tracking_time = timer()
@@ -741,13 +724,11 @@ class Backend(QtCore.QObject):
             # then frame_intensity is self.image_np[x1:x2, y1:y2]
         print('Finding initial coordinates...')
         self.initial_centers, _ = self.fit_fiducials()
-        print('Done.')
         return  
       
     def call_pid(self):
         error = {}
         centers, timeaxis = self.fit_fiducials()
-        timestamp = timeaxis[0]
         # print(self.centers_previous)
         # print(centers)
         error_x_sum = 0
@@ -777,17 +758,12 @@ class Backend(QtCore.QObject):
         self.last_error_avg = error_avg
         # calculate correction in um
         correction = self.prop_correction + self.int_correction + self.dev_correction
-        # print(correction)
+        print(correction)
         # send position of all fiducials to Frontend
         # first line is to check that all fiducials drift in the same way
         # be aware that if uncommented you should change the signal type slot also
         # self.sendFittedDataSignal.emit(centers, error, timeaxis)
-        self.sendFittedDataSignal.emit(centers, error_avg, timestamp)
-        # flatten data to save drift vs time when the Lock and Track option is released
-        if self.save_drift_data:
-            self.timeaxis_to_save.append(timestamp)
-            # errors_flattened = list(np.array(list(error.values())).flatten())
-            self.errors_to_save.append(error_avg)
+        self.sendFittedDataSignal.emit(centers, error_avg, timeaxis)
         return
     
     def fit_fiducials(self):
@@ -809,6 +785,11 @@ class Backend(QtCore.QObject):
                                                  self.pixel_size)
             centers[i] = np.array([x_fitted, y_fitted])
             timeaxis[i] = timer() - self.start_tracking_time
+        # flatten data to save drift vs time when the Lock and Track option is released
+        if self.save_drift_data:
+            self.timeaxis_to_save.append(timeaxis[0])
+            centers_flattened = list(np.array(list(centers.values())).flatten())
+            self.centers_to_save.append(centers_flattened)
         return centers, timeaxis
     
     @pyqtSlot(bool, float)
@@ -865,17 +846,20 @@ class Backend(QtCore.QObject):
         # prepare the array to be saved
         # structure of the file will be
         # first col = time, in s
-        # second and third col = x and y average position error of all fiducials, in um
+        # second and third col = x and y position of 1st NP, respectively, in um 
+        # fourth and fifth col = x and y position of 2nd NP, respectively, in um 
+        # etc...
         M = np.array(self.timeaxis_to_save).shape[0]
-        data_to_save = np.zeros((M, 3))
+        N = np.array(self.centers_to_save).shape[1] + 1
+        data_to_save = np.zeros((M, N))
         data_to_save[:, 0] = self.timeaxis_to_save
-        data_to_save[:, 1:] = self.errors_to_save
+        data_to_save[:, 1:] = self.centers_to_save
         # create filename
         timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
         filename = "drift_curve_xy_" + timestr + ".dat"
         full_filename = os.path.join(self.file_path, filename)
         # save
-        np.savetxt(full_filename, data_to_save, fmt='%.6e')
+        np.savetxt(full_filename, data_to_save, fmt='%.3e')
         print('Drift curve %s saved' % filename)
         return
     
@@ -910,7 +894,6 @@ class Backend(QtCore.QObject):
         print('Stopping QtTimers...')
         self.viewTimer.stop()
         self.tempTimer.stop()
-        self.piezoWorker.updateTimer.stop()
         print('Exiting thread...')
         workerThread.exit()
         return
@@ -929,7 +912,6 @@ class Backend(QtCore.QObject):
         frontend.dataFiducialsSignal.connect(self.receive_roi_fiducials)
         frontend.savedriftSignal.connect(self.save_drift_curve)
         frontend.pidParamChangedSignal.connect(self.new_pid_params)
-        frontend.piezoWidget.make_connections(self.piezoWorker)
         return
     
 #=====================================
@@ -952,7 +934,6 @@ if __name__ == '__main__':
     worker.viewTimer.moveToThread(workerThread)
     worker.tempTimer.moveToThread(workerThread)
     worker.trackingTimer.moveToThread(workerThread)
-    worker.piezoWorker.updateTimer.moveToThread(workerThread)
     
     # connect both classes 
     worker.make_connections(gui)

@@ -169,7 +169,7 @@ class BPC303:
         """
         Method setting all channels to closed loop or open loop control mode
         """
-        print("Setting control mode to %s loop" % "closed" if yes else "open")
+        print("Setting control mode to %s loop\n" % ("closed" if yes else "open"))
         mode = Piezo.PiezoControlModeTypes.CloseLoop if yes else Piezo.PiezoControlModeTypes.OpenLoop
         print(mode, '\n')
         for axis in ("x", "y", "z"):

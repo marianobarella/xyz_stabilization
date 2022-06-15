@@ -34,9 +34,10 @@ def gaussian_2D(xy_tuple, amplitude, xo, yo, w0_x, w0_y, offset):
     return g.ravel()
 
 def fit_with_gaussian(frame_intensity, frame_coordinates, pixel_size_x_nm, pixel_size_y_nm):
-    # pixel_size should be in um
-    pixel_size_x = pixel_size_x_nm/1000
-    pixel_size_y = pixel_size_y_nm/1000
+    # pixel_size should be in nm
+    # now, convert to um
+    pixel_size_x_um = pixel_size_x_nm/1000
+    pixel_size_y_um = pixel_size_y_nm/1000
     # image parameters
     number_of_pixels_x, number_of_pixels_y = frame_intensity.shape
     x = frame_coordinates[0, :, :]
@@ -69,16 +70,16 @@ def fit_with_gaussian(frame_intensity, frame_coordinates, pixel_size_x_nm, pixel
         w0y_fitted, \
         offset_fitted = popt
     # map to sample size
-    x_fitted = x_fitted*pixel_size_x
-    y_fitted = y_fitted*pixel_size_y
-    w0x_fitted = w0x_fitted*pixel_size_x
-    w0y_fitted = w0y_fitted*pixel_size_y
+    x_fitted = x_fitted*pixel_size_x_um
+    y_fitted = y_fitted*pixel_size_y_um
+    w0x_fitted = w0x_fitted*pixel_size_x_um
+    w0y_fitted = w0y_fitted*pixel_size_y_um
     
     if DEBUG:
         plt.figure()
         ax = plt.gca()
-        image_size_x = number_of_pixels_x*pixel_size_x
-        image_size_y = number_of_pixels_y*pixel_size_y
+        image_size_x = number_of_pixels_x*pixel_size_x_um
+        image_size_y = number_of_pixels_y*pixel_size_y_um
         ax.imshow(frame_norm, origin = 'lower', extent=(0, image_size_x, 0, image_size_y))
         ax.plot(y_fitted, x_fitted, 'o', markersize = 6, markerfacecolor = 'w', markeredgecolor = 'k')
         plt.xlabel('Distance (µm)')
@@ -88,7 +89,7 @@ def fit_with_gaussian(frame_intensity, frame_coordinates, pixel_size_x_nm, pixel
         save_path = os.path.join(data_folder, saving_filename)
         plt.savefig(save_path)
         plt.close()
-    
+    # returning in um as it was multiplied by the pixel size
     return x_fitted, y_fitted, w0x_fitted, w0y_fitted
 
 if __name__ == '__main__':

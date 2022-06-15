@@ -32,8 +32,6 @@ else:
     print('Couldn\'t connect to piezo stage.')
 # get info
 print(piezo_stage.get_info())
-# set ON closed-loop operation
-piezo_stage.set_close_loop(True)
 print('Zeroing the piezo stage. This step takes 30 s. Please wait...\n')
 # perform zero routine for all axis
 piezo_stage.zero('all')
@@ -52,6 +50,7 @@ class Frontend(QtGui.QFrame):
     read_pos_button_signal = pyqtSignal()
     move_signal = pyqtSignal(str, float)
     go_to_pos_signal = pyqtSignal(list)
+    feedbackLoopSignal = pyqtSignal(bool)
     # set_reference_signal = pyqtSignal()
     closeSignal = pyqtSignal()
 
@@ -73,6 +72,13 @@ class Frontend(QtGui.QFrame):
         # self.set_ref_button = QtGui.QPushButton("Set reference")
         # self.set_ref_button.clicked.connect(self.set_reference)
         # self.set_ref_button.setToolTip('Set/lock the position')
+
+        # feedback loop mode
+        self.feedback_loop_mode_tickbox = QtGui.QCheckBox('Close-loop mode')
+        self.initial_state_feedback_loop_mode = True
+        self.feedback_loop_mode_tickbox.setChecked(self.initial_state_feedback_loop_mode)
+        self.feedback_loop_mode_tickbox.stateChanged.connect(self.feedback_loop_mode_changed)
+        self.feedback_loop_mode_tickbox.setToolTip('Tick = Close-loop mode / Untick = Open-loop mode.')
 
         # xyz position control
         self.StepEdit = QtGui.QLineEdit("1")
@@ -156,7 +162,8 @@ class Frontend(QtGui.QFrame):
         layout.addWidget(self.zDown2Button, 4, 9, 2, 1)
         layout.addWidget(QtGui.QLabel("Step z (µm)"), 4, 10)
         layout.addWidget(self.zStepEdit,   5, 10)
-        # layout.addWidget(self.set_ref_button,  5,0)
+        # feedback loop mode
+        layout.addWidget(self.feedback_loop_mode_tickbox,   6, 0, 1, 7)
 
         size = 40
         self.StepEdit.setFixedWidth(size)
@@ -291,6 +298,14 @@ class Frontend(QtGui.QFrame):
     #     self.zgotoLabel.setText(str(list_pos[2]))
     #     return
     
+    def feedback_loop_mode_changed(self):
+        # set ON closed-loop operation
+        if self.feedback_loop_mode_tickbox.isChecked():
+            self.feedbackLoopSignal.emit(True)
+        else:
+            self.feedbackLoopSignal.emit(False)
+        return
+    
     def go_to(self):
         if self.gotoButton.isChecked:
             self.go_to_action()
@@ -387,9 +402,17 @@ class Backend(QtCore.QObject):
         self.read_position() 
         return
     
+    @pyqtSlot(bool)
+    def switch_feedback_loop_mode(self, close_flag):
+        """ 
+        Set (True) or Unset (False) feedback loop mode
+        """
+        self.piezo_stage.set_close_loop(close_flag)
+        return
+    
     @pyqtSlot()
     def closeBackend(self):
-        print('shutting down piezo stage...')
+        print('Shutting down piezo stage...')
         self.piezo_stage.shutdown()
         print('Stopping updater (QtTimer)...')
         self.updateTimer.stop()
@@ -402,6 +425,7 @@ class Backend(QtCore.QObject):
         frontend.move_signal.connect(self.move_relative)
         # frontend.set_reference_signal.connect(self.set_reference)
         frontend.go_to_pos_signal.connect(self.move_absolute)
+        frontend.feedbackLoopSignal.connect(self.switch_feedback_loop_mode)
         frontend.closeSignal.connect(self.closeBackend)
         return
     
