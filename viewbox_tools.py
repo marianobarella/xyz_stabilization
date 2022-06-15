@@ -424,8 +424,8 @@ class Twolines_vertical():
         self.showed = False
 
 
-class ROI(pg.ROI):
-
+class ROI_squared(pg.ROI):
+    # shape is an integer
     def __init__(self, shape, vb, pos, handlePos, handleCenter, *args,
                  **kwargs):
 
@@ -454,6 +454,35 @@ class ROI(pg.ROI):
         super().hide(*args, **kwargs)
         self.label.hide()
 
+class ROI_rect(pg.ROI):
+    # shape is a tuple
+    def __init__(self, shape, vb, pos, handlePos, handleCenter, *args,
+                 **kwargs):
+
+        self.mainShape = shape
+
+        pg.ROI.__init__(self, pos, size=shape, pen='y', *args, **kwargs)
+        self.addScaleHandle(handlePos, handleCenter, lockAspect=True)
+        vb.addItem(self)
+
+        self.label = pg.TextItem()
+        self.label.setPos(self.pos()[0] + self.size()[0],
+                          self.pos()[1] + self.size()[1])
+        self.label.setText('{}x{}'.format(shape, shape))
+
+        self.sigRegionChanged.connect(self.updateText)
+
+        # vb.addItem(self.label)
+
+    def updateText(self):
+        self.label.setPos(self.pos()[0] + self.size()[0],
+                          self.pos()[1] + self.size()[1])
+        size = np.round(self.size()).astype(np.int)
+        self.label.setText('{}x{}'.format(size[0], size[0]))
+
+    def hide(self, *args, **kwargs):
+        super().hide(*args, **kwargs)
+        self.label.hide()
 
 class cropROI(pg.ROI):
 

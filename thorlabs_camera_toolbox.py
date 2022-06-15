@@ -39,52 +39,55 @@ def load_Thorlabs_SDK_cameras():
     camera_constructor = TLCameraSDK()
     return camera_constructor
 
-def init_Thorlabs_cameras():
-    # initialize Thorlabs cameras
+def init_Thorlabs_color_camera(camera_constructor):
+    # initialize Thorlabs color cameras
     # get Thorlabs camera parameters
-    camera_constructor = load_Thorlabs_SDK_cameras()
-    mono_cam, mono_cam_flag, color_cam, color_cam_flag = list_cameras(camera_constructor)
-    if mono_cam_flag:
-        mono_cam_sensor_width_pixels, mono_cam_sensor_height_pixels, \
-        mono_cam_sensor_pixel_width_um, mono_cam_sensor_pixel_height_um = get_camera_param(mono_cam)
-        mono_to_color_constructor = None
-        mono_to_color_processor = None
-    if color_cam_flag:
+    list_of_cameras = list_cameras(camera_constructor)
+    if not list_of_cameras == None:
+        color_cam, color_cam_flag = open_mono_camera(camera_constructor, list_of_cameras)
         color_cam_sensor_width_pixels, color_cam_sensor_height_pixels, \
         color_cam_sensor_pixel_width_um, color_cam_sensor_pixel_height_um = get_camera_param(color_cam)
-        mono_to_color_constructor, mono_to_color_processor = init_Thorlabs_color_cameras(color_cam)
-    return camera_constructor, \
-        mono_cam, \
-        mono_cam_flag, \
-        color_cam, \
+        # create SDK object. Important: only call it once!
+        mono_to_color_constructor = MonoToColorProcessorSDK()
+        mono_to_color_processor = mono_to_color_constructor.create_mono_to_color_processor(
+            SENSOR_TYPE.BAYER, 
+            color_cam.color_filter_array_phase, 
+            color_cam.get_color_correction_matrix(),
+            color_cam.get_default_white_balance_matrix(),
+            color_cam.bit_depth)
+    return color_cam, \
         color_cam_flag, \
-        mono_cam_sensor_width_pixels, \
-        mono_cam_sensor_height_pixels, \
-        mono_cam_sensor_pixel_width_um, \
-        mono_cam_sensor_pixel_height_um, \
         color_cam_sensor_width_pixels, \
         color_cam_sensor_height_pixels, \
         color_cam_sensor_pixel_width_um, \
         color_cam_sensor_pixel_height_um, \
         mono_to_color_constructor, \
         mono_to_color_processor
-
-def init_Thorlabs_color_cameras(color_cam):
-    # create SDK object. Important: only call it once!
-    mono_to_color_constructor = MonoToColorProcessorSDK()
-    mono_to_color_processor = mono_to_color_constructor.create_mono_to_color_processor(
-        SENSOR_TYPE.BAYER, 
-        color_cam.color_filter_array_phase, 
-        color_cam.get_color_correction_matrix(),
-        color_cam.get_default_white_balance_matrix(),
-        color_cam.bit_depth)
-    return mono_to_color_constructor, mono_to_color_processor
+        
+def init_Thorlabs_mono_camera(camera_constructor):
+    # initialize Thorlabs mono cameras
+    # get Thorlabs camera parameters
+    list_of_cameras = list_cameras(camera_constructor)
+    if not list_of_cameras == None:
+        mono_cam, mono_cam_flag = open_mono_camera(camera_constructor, list_of_cameras)
+        mono_cam_sensor_width_pixels, mono_cam_sensor_height_pixels, \
+        mono_cam_sensor_pixel_width_um, mono_cam_sensor_pixel_height_um = get_camera_param(mono_cam)
+    return mono_cam, \
+        mono_cam_flag, \
+        mono_cam_sensor_width_pixels, \
+        mono_cam_sensor_height_pixels, \
+        mono_cam_sensor_pixel_width_um, \
+        mono_cam_sensor_pixel_height_um
 
 def list_cameras(camera_constructor):
     # list available cameras
     list_of_cameras = camera_constructor.discover_available_cameras()
     if len(list_of_cameras) < 1:
         print("\nNo cameras detected.")
+        list_of_cameras = None
+    return list_of_cameras
+
+def open_mono_camera(camera_constructor, list_of_cameras):
     if mono_serial_number_str in list_of_cameras: 
         print('\nMonochrome Zelux camera found. S/N %s' % mono_serial_number_str) 
         mono_cam = camera_constructor.open_camera(mono_serial_number_str)
@@ -95,6 +98,9 @@ def list_cameras(camera_constructor):
         mono_cam_flag = False
         mono_cam = None
         print('\nMonochrome Zelux camera was NOT found. \nObject NOT created.') 
+    return mono_cam, mono_cam_flag
+
+def open_color_camera(camera_constructor, list_of_cameras):
     if color_serial_number_str in list_of_cameras: 
         print('\nColor Zelux camera found. S/N %s' % color_serial_number_str) 
         color_cam = camera_constructor.open_camera(color_serial_number_str)
@@ -105,8 +111,7 @@ def list_cameras(camera_constructor):
         color_cam_flag = False
         color_cam = None
         print('\nColor Zelux camera was NOT found. \nObject NOT created.')
-    
-    return mono_cam, mono_cam_flag, color_cam, color_cam_flag
+    return color_cam, color_cam_flag
 
 def set_camera_continuous_mode(camera):
     print('Setting camera continuous mode...')
@@ -150,7 +155,7 @@ def get_camera_param(camera):
     return camera.sensor_width_pixels, camera.sensor_height_pixels, \
        camera.sensor_pixel_width_um, camera.sensor_pixel_height_um
 
-def get_mono_image(camera, mono_to_color_processor):
+def get_mono_image(camera):
     frame = camera.get_pending_frame_or_null()
     if frame is not None:
         # print("Frame #{} received.".format(frame.frame_count))
@@ -187,7 +192,7 @@ def get_color_image(camera, mono_to_color_processor):
 
 def get_image(camera, mono_to_color_processor, mono_color_string):
     if mono_color_string == 'mono':
-        image_data, image_pil = get_mono_image(camera, mono_to_color_processor)
+        image_data, image_pil = get_mono_image(camera)
     elif mono_color_string == 'color':
         image_data, image_pil = get_color_image(camera, mono_to_color_processor)
     else:

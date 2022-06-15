@@ -20,34 +20,43 @@ from PIL import Image
 from tkinter import filedialog
 import tkinter as tk
 import time as tm
+from timeit import default_timer as timer
+import piezo_stage_GUI
+import viewbox_tools
+from scipy import ndimage
 
 #=====================================
 
 # Initialize cameras
 
 #=====================================
-        
-camera_constructor, \
-    mono_cam, \
-    mono_cam_flag, \
-    color_cam, \
-    color_cam_flag, \
-    mono_cam_sensor_width_pixels, \
-    mono_cam_sensor_height_pixels, \
-    mono_cam_sensor_pixel_width_um, \
-    mono_cam_sensor_pixel_height_um, \
-    color_cam_sensor_width_pixels, \
-    color_cam_sensor_height_pixels, \
-    color_cam_sensor_pixel_width_um, \
-    color_cam_sensor_pixel_height_um, \
-    mono_to_color_constructor, \
-    mono_to_color_processor = tl_cam.init_Thorlabs_cameras()
 
-mono_color_string = 'mono'
+camera_constructor = tl_cam.load_Thorlabs_SDK_cameras()
+mono_cam, \
+mono_cam_flag, \
+mono_cam_sensor_width_pixels, \
+mono_cam_sensor_height_pixels, \
+mono_cam_sensor_pixel_width_um, \
+mono_cam_sensor_pixel_height_um = tl_cam.init_Thorlabs_mono_camera(camera_constructor)
+
 camera = mono_cam
-pixel_size = mono_cam_sensor_pixel_width_um
+pixel_size_um = mono_cam_sensor_pixel_width_um
 initial_filepath = 'D:\\daily_data' # save in SSD for fast and daily use
-initial_filename = 'image_pco_test'
+initial_filename = 'image_z_drift_test'
+viewTimer_update = 25 # in ms (makes no sense to go lower than the refresh rate of the screen)
+initial_tracking_period = 500 # in ms
+driftbox_length = 30.0 # in seconds
+initial_exp_time = 10 # in ms
+driftbox_length = 30 # in s
+
+# inital ROI definition
+initial_vertical_pos = 410
+initial_horizontal_pos = 0
+initial_vertical_size = 175
+initial_horizontal_size = 1440
+
+# for center of mass estimation
+initial_threshold = 10
 
 #=====================================
 
@@ -62,6 +71,12 @@ class Frontend(QtGui.QFrame):
     takePictureSignal = pyqtSignal(bool, float)
     saveSignal = pyqtSignal()
     setWorkDirSignal = pyqtSignal()
+    trackingPeriodChangedSignal = pyqtSignal(bool, int)
+    lockAndTrackSignal = pyqtSignal(bool)
+    dataReflectionSignal = pyqtSignal(np.ndarray, bool)
+    savedriftSignal = pyqtSignal()
+    roiChangedSignal = pyqtSignal(bool, list)
+    thresholdChangedSignal = pyqtSignal(int)
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -69,6 +84,9 @@ class Frontend(QtGui.QFrame):
         # set the title of thw window
         title = "Z stabilization module"
         self.setWindowTitle(title)
+        self.roi = {}
+        self.image = np.array([])
+        return
             
     def setUpGUI(self):
         
@@ -87,6 +105,12 @@ class Frontend(QtGui.QFrame):
         # 'cyclic', 'greyclip', 'grey'
         self.hist.vb.setLimits(yMin = 0, yMax = 1024) # 10-bit camera
         imageWidget.addItem(self.hist, row = 0, col = 1)
+        # add center of reflection over camera image
+        self.z_reflection = pg.ScatterPlotItem(size = 5, pen = pg.mkPen('r', width = 1), 
+                                         symbol = 'o', brush = pg.mkBrush('r'))
+        self.z_reflection.setZValue(2) # Ensure scatterPlotItem is always at top
+        self.vb.addItem(self.z_reflection)
+        
 
         self.autolevel_tickbox = QtGui.QCheckBox('Autolevel')
         self.initial_autolevel_state = True
@@ -117,15 +141,10 @@ class Frontend(QtGui.QFrame):
 
         # Exposure time
         exp_time_label = QtGui.QLabel('Exposure time (ms):')
-        self.exp_time_edit = QtGui.QLineEdit('100')
+        self.exp_time_edit = QtGui.QLineEdit(str(initial_exp_time))
         self.exp_time_edit_previous = float(self.exp_time_edit.text())
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
         self.exp_time_edit.setValidator(QtGui.QIntValidator(1, 26843))
-
-        # Pixel size       
-        pixel_size_Label = QtGui.QLabel('Pixel size (µm):')
-        self.pixel_size = QtGui.QLabel(str(pixel_size))
-        self.pixel_size.setToolTip('Pixel size at sample plane.')
         
         # Working folder and filename
         self.working_dir_button = QtGui.QPushButton('Select directory')
@@ -138,11 +157,78 @@ class Frontend(QtGui.QFrame):
         self.working_dir_path = QtGui.QLineEdit(self.filepath)
         self.working_dir_path.setReadOnly(True) 
         
+        # lock and track the fiducials
+        self.lock_z_position_button = QtGui.QPushButton('Lock and Track')
+        self.lock_z_position_button.setToolTip('Lock ROI\' position and start to track the laser reflection.')
+        self.lock_z_position_button.setCheckable(True)
+        self.lock_z_position_button.clicked.connect(self.lock_and_track)
+        self.lock_z_position_button.setStyleSheet(
+            "QPushButton { background-color: lightgray; }"
+            "QPushButton:pressed { background-color: red; }"
+            "QPushButton::checked { background-color: limegreen; }")
+        # tracking period
+        self.tracking_period_label = QtGui.QLabel('Tracking period (s):')
+        self.tracking_period_value = QtGui.QLineEdit(str(initial_tracking_period/1000))
+        self.tracking_period = initial_tracking_period
+        self.tracking_period_value.setToolTip('Period to measure fiducial markers\' position.')
+        self.tracking_period_value.editingFinished.connect(self.tracking_period_changed_check)
+        # save drift trace button
+        self.savedrift_tickbox = QtGui.QCheckBox('Save drift curve')
+        self.initial_state_savedrift = False
+        self.savedrift_tickbox.setChecked(self.initial_state_savedrift)
+        self.savedrift_tickbox.setText('Save drift data when unlocking')
+        self.savedrift_tickbox.stateChanged.connect(self.save_drift_trace)
+        self.savedrift_bool = self.initial_state_savedrift
+        # set ROI for tracking position and size
+        self.ROIbox = QtGui.QLabel('ROI definition')
+        self.ROIbox_vertical_pos_label = QtGui.QLabel('Vertical position (px):')
+        self.ROIbox_vertical_pos = QtGui.QLineEdit(str(initial_vertical_pos))
+        self.ROIbox_vertical_pos.setValidator(QtGui.QIntValidator(1, 1080))
+        self.ROIbox_horizontal_pos_label = QtGui.QLabel('Horizontal position (px):')
+        self.ROIbox_horizontal_pos = QtGui.QLineEdit(str(initial_horizontal_pos))
+        self.ROIbox_horizontal_pos.setValidator(QtGui.QIntValidator(1, 1440))
+        self.ROIbox_vertical_size_label = QtGui.QLabel('Vertical size (px):')
+        self.ROIbox_vertical_size = QtGui.QLineEdit(str(initial_vertical_size))
+        self.ROIbox_vertical_size.setValidator(QtGui.QIntValidator(1, 1440))
+        self.ROIbox_horizontal_size_label = QtGui.QLabel('Horizontal size (px):')
+        self.ROIbox_horizontal_size = QtGui.QLineEdit(str(initial_horizontal_size))
+        self.ROIbox_horizontal_size.setValidator(QtGui.QIntValidator(1, 1080))
+        self.ROIbox_vertical_pos.editingFinished.connect(self.roi_changed_check)
+        self.ROIbox_horizontal_pos.editingFinished.connect(self.roi_changed_check)
+        self.ROIbox_vertical_size.editingFinished.connect(self.roi_changed_check)
+        self.ROIbox_horizontal_size.editingFinished.connect(self.roi_changed_check)
+        self.vertical_pos_previous = int(self.ROIbox_vertical_pos.text())
+        self.horizontal_pos_previous = int(self.ROIbox_horizontal_pos.text())
+        self.vertical_size_previous = int(self.ROIbox_vertical_size.text())
+        self.horizontal_size_previous = int(self.ROIbox_horizontal_size.text())
+        self.roi_list_previous = [self.vertical_pos_previous, self.horizontal_pos_previous, \
+                                  self.vertical_size_previous, self.horizontal_size_previous]
+        self.intensity_threshold_label = QtGui.QLabel('Intensity threshold:')
+        self.intensity_threshold_value = QtGui.QLineEdit(str(initial_threshold))
+        self.intensity_threshold_value.setValidator(QtGui.QIntValidator(1, 1024))
+        self.intensity_threshold_value.editingFinished.connect(self.threshold_changed_check)
+        self.threshold = initial_threshold
+            
+        # create ROI button
+        self.create_ROI_button = QtGui.QPushButton('Create ROI')
+        self.create_ROI_button.setCheckable(True)
+        self.create_ROI_button.clicked.connect(self.create_ROI)
+        self.create_ROI_button.setStyleSheet(
+            "QPushButton { background-color: lightgray; }"
+            "QPushButton:pressed { background-color: red; }"
+            "QPushButton::checked { background-color: steelblue; }")
+        
+        # position vs time of z position
+        driftWidget = pg.GraphicsLayoutWidget()
+        self.driftPlot = driftWidget.addPlot(title = "Z drift")
+        self.driftPlot.showGrid(x = True, y = True)
+        self.driftPlot.setLabel('left', 'Shift (px)')
+        self.driftPlot.setLabel('bottom', 'Time (s)')
+        
         # Live view parameters dock
         self.liveviewWidget = QtGui.QWidget()
         layout_liveview = QtGui.QGridLayout()
         self.liveviewWidget.setLayout(layout_liveview) 
-
         # folder and filename button
         layout_liveview.addWidget(self.working_dir_button, 0, 0, 1, 2)
         layout_liveview.addWidget(self.working_dir_label, 1, 0, 1, 2)
@@ -156,25 +242,111 @@ class Frontend(QtGui.QFrame):
         layout_liveview.addWidget(self.exp_time_edit,          8, 1)
         # auto level
         layout_liveview.addWidget(self.autolevel_tickbox,      9, 0)
-        # pixel size
-        layout_liveview.addWidget(pixel_size_Label ,      10, 0)
-        layout_liveview.addWidget(self.pixel_size,        10, 1)
 
+        # Z tracking selection dock
+        self.zLockWidget = QtGui.QWidget()
+        layout_zLock = QtGui.QGridLayout()
+        self.zLockWidget.setLayout(layout_zLock)
+        layout_zLock.addWidget(self.ROIbox,         0, 0)
+        layout_zLock.addWidget(self.ROIbox_vertical_pos_label,         1, 0)
+        layout_zLock.addWidget(self.ROIbox_vertical_pos,         1, 1)
+        layout_zLock.addWidget(self.ROIbox_horizontal_pos_label,         2, 0)
+        layout_zLock.addWidget(self.ROIbox_horizontal_pos,         2, 1)
+        layout_zLock.addWidget(self.ROIbox_vertical_size_label,         3, 0)
+        layout_zLock.addWidget(self.ROIbox_vertical_size,         3, 1)
+        layout_zLock.addWidget(self.ROIbox_horizontal_size_label,         4, 0)
+        layout_zLock.addWidget(self.ROIbox_horizontal_size,         4, 1)
+        layout_zLock.addWidget(self.create_ROI_button,         5, 0, 1, 2)
+        layout_zLock.addWidget(self.intensity_threshold_label,         6, 0)
+        layout_zLock.addWidget(self.intensity_threshold_value,         6, 1)
+        # lock and track buttons
+        layout_zLock.addWidget(self.lock_z_position_button,         7, 0, 1, 2)
+        layout_zLock.addWidget(self.tracking_period_label,         8, 0)
+        layout_zLock.addWidget(self.tracking_period_value,         8, 1)
+        # save drift
+        layout_zLock.addWidget(self.savedrift_tickbox,      9, 0)
+        
         # Place layouts and boxes
         dockArea = DockArea()
         hbox = QtGui.QHBoxLayout(self)
         
         viewDock = Dock('Camera', size = (200*optical_format, 200) )
         viewDock.addWidget(imageWidget)
-        # viewDock.hideTitleBar()
         dockArea.addDock(viewDock)
+        
+        driftDock = Dock('Drift vs time', size = (20, 20))
+        driftDock.addWidget(driftWidget)
+        dockArea.addDock(driftDock, 'right', viewDock)
         
         liveview_paramDock = Dock('Live view parameters')
         liveview_paramDock.addWidget(self.liveviewWidget)
-        dockArea.addDock(liveview_paramDock, 'right', viewDock)
+        dockArea.addDock(liveview_paramDock, 'bottom', driftDock)
+
+        zLockDock = Dock('Axial stabilization control', size = (20, 20))
+        zLockDock.addWidget(self.zLockWidget)
+        dockArea.addDock(zLockDock, 'right', liveview_paramDock)
+        
+        ## Add Piezo stage GUI module
+        piezoDock = Dock('Piezo stage')
+        self.piezoWidget = piezo_stage_GUI.Frontend()
+        piezoDock.addWidget(self.piezoWidget)
+        dockArea.addDock(piezoDock , 'right', zLockDock)
         
         hbox.addWidget(dockArea)
         self.setLayout(hbox)
+        return
+
+    def threshold_changed_check(self):
+        threshold = int(self.intensity_threshold_value.text())
+        if threshold != self.threshold:
+            self.threshold = threshold
+            self.thresholdChangedSignal.emit(self.threshold)
+        return
+
+    def roi_changed_check(self):
+        vertical_pos = int(self.ROIbox_vertical_pos.text())
+        horizontal_pos = int(self.ROIbox_horizontal_pos.text())
+        vertical_size = int(self.ROIbox_vertical_size.text())
+        horizontal_size = int(self.ROIbox_horizontal_size.text())
+        roi_list = [vertical_pos, horizontal_pos, vertical_size, horizontal_size]
+        if roi_list != self.roi_list_previous:
+            self.roi_list_previous = roi_list
+            print('ROI has been changed.')
+            # remove previous ROI if any
+            if self.create_ROI_button.isChecked():
+                self.vb.removeItem(self.roi)
+                self.roi.hide()
+                self.roi = {}
+                self.create_ROI()
+        return
+    
+    def create_ROI(self):
+        # create ROI for tracking z reflection
+        if self.create_ROI_button.isChecked():
+            x_pos = self.roi_list_previous[1]
+            y_pos = self.roi_list_previous[0]
+            box_size = (self.roi_list_previous[3], self.roi_list_previous[2])
+            ROIpos = (x_pos, y_pos) # (0.5*numberofPixels - 0.5*box_size, 0.5*numberofPixels - 0.5*box_size)
+            self.roi = viewbox_tools.ROI_rect(box_size, self.vb, ROIpos,
+                                              handlePos = (1, 1),
+                                              handleCenter = (0, 0),
+                                              movable = False, 
+                                              scaleSnap = False,
+                                              translateSnap = False)
+        else:
+            self.vb.removeItem(self.roi)
+            self.roi.hide()
+            self.roi = {}
+        return
+
+    def save_drift_trace(self):
+        if self.savedrift_tickbox.isChecked():
+            self.savedrift_bool = True
+            print('Drift cruve will be saved.')
+        else:
+            self.savedrift_bool = False
+            print('Drift cruve will not be saved.')
+        return
 
     def exposure_changed_check(self):
         exposure_time_ms = float(self.exp_time_edit.text()) # in ms
@@ -214,15 +386,65 @@ class Frontend(QtGui.QFrame):
         else:
             self.autolevel_bool = False
             print('Autolevel off')
+        return
+
+    def tracking_period_changed_check(self):
+        new_tracking_period = int(float(self.tracking_period_value.text())*1000)
+        if new_tracking_period != self.tracking_period:
+            self.tracking_period = new_tracking_period
+            if self.lock_z_position_button.isChecked():
+                self.trackingPeriodChangedSignal.emit(True, self.tracking_period)
+            else:
+                self.trackingPeriodChangedSignal.emit(False, self.tracking_period)
+        return
+    
+    def lock_and_track(self):
+        if self.lock_z_position_button.isChecked():
+            if self.create_ROI_button.isChecked():
+                self.driftPlot.clear()
+                self.lockAndTrackSignal.emit(True)
+            else:
+                print('Warning! Lock and Track can only be used if the ROI has been created.')
+        else:
+            self.lockAndTrackSignal.emit(False)
+            if self.savedrift_bool:
+                self.savedriftSignal.emit()
+            self.z_reflection.clear()
+        return
+    
+    def retrieve_reflection_data(self):
+        (self.data_ROI, \
+         self.coord_ROI) = self.roi.getArrayRegion(self.image, \
+                                                   self.img, \
+                                                   axis = (1, 0), \
+                                                   returnMappedCoords = True)
+        self.dataReflectionSignal.emit(self.coord_ROI, self.savedrift_bool)
+        return
+    
+    @pyqtSlot(np.ndarray, list, float)
+    def receive_cm_data(self, xy_pos_pixel_relative, error, timestamp):
+        # plot xy position of fiducials vs time
+        self.driftPlot.plot(x = [timestamp], y = [error[1]], size = 1, \
+                            symbol = 'o', pen = pg.mkPen('r', width = 1))
+        self.driftPlot.setXRange(timestamp - driftbox_length, timestamp)
+        # draw center of fiducials, convert um to pixels
+        # xy_pos = xy_pos_pixel_relative/pixel_size_um
+        xy_pos_absolute = xy_pos_pixel_relative + (self.roi_list_previous[1], 
+                                                   self.roi_list_previous[0])
+        self.z_reflection.setData(x = [xy_pos_absolute[0]], y = [xy_pos_absolute[1]])        
+        return
             
     @pyqtSlot(np.ndarray)
     def get_image(self, image):
-        self.img.setImage(image, autoLevels = self.autolevel_bool)
+        self.image = image
+        self.img.setImage(self.image, autoLevels = self.autolevel_bool)
+        return
     
     @pyqtSlot(str)
     def get_file_path(self, file_path):
         self.file_path = file_path
         self.working_dir_label.setText(self.file_path)
+        return
         
     # re-define the closeEvent to execute an specific command
     def closeEvent(self, event, *args, **kwargs):
@@ -232,9 +454,8 @@ class Frontend(QtGui.QFrame):
                                            QtGui.QMessageBox.No |
                                            QtGui.QMessageBox.Yes)
         if reply == QtGui.QMessageBox.Yes:
-            tl_cam.dispose_all(mono_cam_flag, mono_cam, color_cam_flag, color_cam, \
-                        mono_to_color_processor, mono_to_color_constructor, \
-                        camera_constructor)
+            tl_cam.dispose_cam(mono_cam)
+            tl_cam.dispose_sdk(camera_constructor)
             event.accept()
             print('Closing GUI...')
             self.close()
@@ -248,6 +469,10 @@ class Frontend(QtGui.QFrame):
     def make_connections(self, backend):
         backend.imageSignal.connect(self.get_image)
         backend.filePathSignal.connect(self.get_file_path)
+        backend.piezoWorker.make_connections(self.piezoWidget)
+        backend.getReflectionDataSignal.connect(self.retrieve_reflection_data)
+        backend.sendFittedDataSignal.connect(self.receive_cm_data)
+        return
 
 #=====================================
 
@@ -259,12 +484,22 @@ class Backend(QtCore.QObject):
 
     imageSignal = pyqtSignal(np.ndarray)
     filePathSignal = pyqtSignal(str)
+    getReflectionDataSignal = pyqtSignal()
+    sendFittedDataSignal = pyqtSignal(np.ndarray, list, float)
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.viewTimer = QtCore.QTimer()
         self.viewTimer.timeout.connect(self.update_view)   
         self.image_np = None
+        self.trackingTimer = QtCore.QTimer()
+        self.trackingTimer.timeout.connect(self.call_pid)
+        self.tracking_period = initial_tracking_period
+        self.piezo_stage = piezo_stage_GUI.piezo_stage     
+        self.piezoWorker = piezo_stage_GUI.Backend(self.piezo_stage)
+        self.threshold = initial_threshold
+        self.file_path = initial_filepath
+        return
     
     @pyqtSlot(bool, float)    
     def change_exposure(self, livebool, exposure_time_ms):
@@ -274,6 +509,7 @@ class Backend(QtCore.QObject):
             self.start_liveview(self.exposure_time_ms)
         else:
             self.exposure_time_ms = exposure_time_ms
+        return
     
     @pyqtSlot(bool, float)
     def take_picture(self, livebool, exposure_time_ms):
@@ -283,11 +519,11 @@ class Backend(QtCore.QObject):
             self.stop_liveview()
         tl_cam.set_camera_one_picture_mode(camera)
         self.frame_time = tl_cam.set_exp_time(camera, self.exposure_time_ms)
-        image_np, _ = tl_cam.get_image(camera, mono_to_color_processor, mono_color_string)
-        if image_np is not None:
-            self.image_np = image_np # assign to class to be able to save it later
+        self.image_np, _ = tl_cam.get_mono_image(camera)
+        if self.image_np is not None:
             tl_cam.stop_camera(camera)
-            self.imageSignal.emit(image_np)            
+            self.imageSignal.emit(self.image_np)
+        return            
         
     @pyqtSlot(bool, float)
     def liveview(self, livebool, exposure_time_ms):
@@ -296,25 +532,125 @@ class Backend(QtCore.QObject):
             self.start_liveview(self.exposure_time_ms)
         else:
             self.stop_liveview()
+        return
 
     def start_liveview(self, exposure_time_ms):
         print('\nLive view started at', datetime.now())
         tl_cam.set_camera_continuous_mode(camera)
         self.exposure_time_ms = exposure_time_ms # in ms, is float
         self.frame_time = tl_cam.set_exp_time(camera, self.exposure_time_ms)
-        image_np, _ = tl_cam.get_image(camera, mono_to_color_processor, mono_color_string)
-        self.imageSignal.emit(image_np) 
         self.viewTimer.start(round(self.frame_time)) # ms
+        return
                 
     def update_view(self):
         # Image update while in Live view mode
-        image_np, _ = tl_cam.get_image(camera, mono_to_color_processor, mono_color_string)
-        self.imageSignal.emit(image_np)
+        self.image_np, _ = tl_cam.get_mono_image(camera)
+        self.imageSignal.emit(self.image_np)
+        return
         
     def stop_liveview(self):
         print('\nLive view stopped at', datetime.now())
         tl_cam.stop_camera(camera)
         self.viewTimer.stop()
+        return
+
+    @pyqtSlot(bool, int)
+    def change_tracking_period(self, lockbool, new_tracking_period):
+        print('Tracking period changed to {:.3f} s.'.format(new_tracking_period/1000))
+        self.tracking_period = new_tracking_period
+        if lockbool:
+            print('Restarting QtTimer...')
+            self.trackingTimer.stop()
+            self.trackingTimer.start(self.tracking_period)
+        return
+    
+    def call_pid(self):
+        error = {}
+        center, timeaxis = self.center_of_mass()
+        error_x = self.initial_center[0] - center[0]
+        error_y = self.initial_center[1] - center[1]
+        # print(error_x, error_y)
+        error = [error_x, error_y]
+        # send position of the reflection to Frontend
+        self.sendFittedDataSignal.emit(center, error, timeaxis)
+        return
+
+    @pyqtSlot(bool)
+    def start_stop_tracking(self, trackbool):
+        if trackbool:
+            print('Locking and tracking z reflection...')
+            # initiating variables
+            self.center = {}
+            self.timeaxis = {}
+            self.center_to_save = []
+            self.timeaxis_to_save = []
+            # t0 initial time
+            self.start_tracking_time = timer()
+            # ask for ROI data and coordinates
+            self.get_reflection_data()
+            # start timer
+            self.trackingTimer.start(self.tracking_period)
+        else:
+            self.trackingTimer.stop()
+            print('Unlocking...')
+        return
+    
+    def get_reflection_data(self):
+        self.getReflectionDataSignal.emit()
+        return
+    
+    @pyqtSlot(np.ndarray, bool)
+    def receive_roi_data(self, roi_coordinates, append_drift_bool):
+        self.save_drift_data = append_drift_bool
+        # set indexes for ROI
+        self.x1 = int(roi_coordinates[0,0,0])
+        self.x2 = int(roi_coordinates[0,-1,0]) + 1
+        self.y1 = int(roi_coordinates[1,0,0])
+        self.y2 = int(roi_coordinates[1,0,-1]) + 1
+        # then frame_intensity is self.image_np[x1:x2, y1:y2]
+        print('Finding initial coordinates...')
+        self.initial_center, _ = self.center_of_mass()
+        return
+    
+    def center_of_mass(self):
+        # find center of mass
+        frame_roi_intensity = self.image_np[self.x1:self.x2, self.y1:self.y2]
+        frame_roi_th = np.where(frame_roi_intensity > self.threshold, frame_roi_intensity, 0)
+        cm_y, cm_x = ndimage.center_of_mass(frame_roi_th) # vertical, horizontal
+        center = np.array([cm_x, cm_y])
+        timeaxis = timer() - self.start_tracking_time
+        # flatten data to save drift vs time when the Lock and Track option is released
+        if self.save_drift_data:
+            self.timeaxis_to_save.append(timeaxis)
+            self.center_to_save.append(center)
+        return center, timeaxis
+
+    @pyqtSlot(int)
+    def new_threshold(self, new_threshold):
+        self.threshold = new_threshold
+        print('Intesity threshold has been changed.')        
+        return
+
+    @pyqtSlot()    
+    def save_drift_curve(self):
+        # prepare the array to be saved
+        # structure of the file will be
+        # first col = time, in s
+        # second and third col = x and y position of the reflection
+        # fourth and fifth col = x and y position of 2nd NP, respectively, in um 
+        # etc...
+        M = np.array(self.timeaxis_to_save).shape[0]
+        data_to_save = np.zeros((M, 3))
+        data_to_save[:, 0] = self.timeaxis_to_save
+        data_to_save[:, 1:] = self.center_to_save
+        # create filename
+        timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
+        filename = "drift_curve_z_" + timestr + ".dat"
+        full_filename = os.path.join(self.file_path, filename)
+        # save
+        np.savetxt(full_filename, data_to_save, fmt='%.3e')
+        print('Drift curve %s saved' % filename)
+        return
 
     @pyqtSlot()    
     def save_picture(self):
@@ -324,6 +660,7 @@ class Backend(QtCore.QObject):
         image_to_save = Image.fromarray(self.image_np)
         image_to_save.save(full_filename) 
         print('Image %s saved' % filename)
+        return
         
     @pyqtSlot()    
     def set_working_folder(self):
@@ -335,6 +672,19 @@ class Backend(QtCore.QObject):
         else:
             self.file_path = file_path
             self.filePathSignal.emit(self.file_path) # TODO Lo reciben los módulos de traza, confocal y printing
+        return
+
+    @pyqtSlot()
+    def close_all_backends(self):
+        print('Shutting down piezo stage...')
+        self.piezo_stage.shutdown()
+        print('Stopping timers...')
+        self.piezoWorker.updateTimer.stop()
+        self.viewTimer.stop()
+        self.trackingTimer.stop()
+        print('Exiting threads...')
+        workerThread.exit()
+        return
 
     def make_connections(self, frontend):
         frontend.exposureChangedSignal.connect(self.change_exposure)
@@ -342,6 +692,13 @@ class Backend(QtCore.QObject):
         frontend.takePictureSignal.connect(self.take_picture) 
         frontend.saveSignal.connect(self.save_picture)
         frontend.setWorkDirSignal.connect(self.set_working_folder)
+        frontend.savedriftSignal.connect(self.save_drift_curve)
+        frontend.lockAndTrackSignal.connect(self.start_stop_tracking)
+        frontend.trackingPeriodChangedSignal.connect(self.change_tracking_period)
+        frontend.dataReflectionSignal.connect(self.receive_roi_data)
+        frontend.thresholdChangedSignal.connect(self.new_threshold)
+        frontend.piezoWidget.make_connections(self.piezoWorker)
+        return
       
 #=====================================
 
@@ -357,9 +714,20 @@ if __name__ == '__main__':
     gui = Frontend()
     worker = Backend()
     
+    # for tracking and z camera
+    workerThread = QtCore.QThread()
+    worker.moveToThread(workerThread)
+    worker.trackingTimer.moveToThread(workerThread)
+    worker.viewTimer.moveToThread(workerThread)
+    worker.piezoWorker.updateTimer.moveToThread(workerThread)
+    
     # connect both classes
     worker.make_connections(gui)
     gui.make_connections(worker)
     
+    # start threads
+    workerThread.start()
+    
     gui.show()    
     app.exec()
+    

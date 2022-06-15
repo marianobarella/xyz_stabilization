@@ -325,7 +325,7 @@ class Frontend(QtGui.QFrame):
                 x_pos = 0
                 y_pos = 0 + i*self.box_size
                 ROIpos = (x_pos, y_pos) # (0.5*numberofPixels - 0.5*box_size, 0.5*numberofPixels - 0.5*box_size)
-                self.roi[i] = viewbox_tools.ROI(self.box_size, self.vb, ROIpos,
+                self.roi[i] = viewbox_tools.ROI_squared(self.box_size, self.vb, ROIpos,
                                                  handlePos = (1, 1),
                                                  handleCenter = (0, 0),
                                                  scaleSnap = True,
@@ -757,7 +757,7 @@ class Backend(QtCore.QObject):
         data_to_save[:, 1:] = self.centers_to_save
         # create filename
         timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
-        filename = "drift_curve_" + timestr + ".dat"
+        filename = "drift_curve_xy_" + timestr + ".dat"
         full_filename = os.path.join(self.file_path, filename)
         # save
         np.savetxt(full_filename, data_to_save, fmt='%.3e')
