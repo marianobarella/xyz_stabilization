@@ -58,6 +58,11 @@ initial_horizontal_size = 1440
 # for center of mass estimation
 initial_threshold = 10
 
+# PID constants
+initial_kp = -1 # proportinal factor of the PID
+initial_ki = -0.0001 # integral factor of the PID
+initial_kd = -0.05 # derivative factor of the PID
+
 #=====================================
 
 # GUI / Frontend definition
@@ -77,6 +82,8 @@ class Frontend(QtGui.QFrame):
     savedriftSignal = pyqtSignal()
     roiChangedSignal = pyqtSignal(bool, list)
     thresholdChangedSignal = pyqtSignal(int)
+    pidParamChangedSignal = pyqtSignal(bool, list)
+    stabilizationStatusChangedSignal = pyqtSignal(bool)
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -86,6 +93,7 @@ class Frontend(QtGui.QFrame):
         self.setWindowTitle(title)
         self.roi = {}
         self.image = np.array([])
+        self.stabilize = False
         return
             
     def setUpGUI(self):
@@ -157,7 +165,7 @@ class Frontend(QtGui.QFrame):
         self.working_dir_path = QtGui.QLineEdit(self.filepath)
         self.working_dir_path.setReadOnly(True) 
         
-        # lock and track the fiducials
+        # lock and track the z reflection position
         self.lock_z_position_button = QtGui.QPushButton('Lock and Track')
         self.lock_z_position_button.setToolTip('Lock ROI\' position and start to track the laser reflection.')
         self.lock_z_position_button.setCheckable(True)
@@ -172,6 +180,17 @@ class Frontend(QtGui.QFrame):
         self.tracking_period = initial_tracking_period
         self.tracking_period_value.setToolTip('Period to measure fiducial markers\' position.')
         self.tracking_period_value.editingFinished.connect(self.tracking_period_changed_check)
+        
+        # stabilize
+        self.stabilize_z_button = QtGui.QPushButton('Stabilize z axis')
+        self.stabilize_z_button.setToolTip('Stabilize sample in z axis.')
+        self.stabilize_z_button.setCheckable(True)
+        self.stabilize_z_button.clicked.connect(self.stabilize_status)
+        self.stabilize_z_button.setStyleSheet(
+            "QPushButton { background-color: lightgray; }"
+            "QPushButton:pressed { background-color: red; }"
+            "QPushButton::checked { background-color: orange; }")
+        
         # save drift trace button
         self.savedrift_tickbox = QtGui.QCheckBox('Save drift curve')
         self.initial_state_savedrift = False
@@ -218,11 +237,23 @@ class Frontend(QtGui.QFrame):
             "QPushButton:pressed { background-color: red; }"
             "QPushButton::checked { background-color: steelblue; }")
         
+        # PID parameters
+        self.pid_label = QtGui.QLabel('PID parameters')
+        self.kp_label = QtGui.QLabel('K_proportional:')
+        self.kp_value = QtGui.QLineEdit(str(initial_kp))
+        self.kp_value.editingFinished.connect(self.pid_param_changed_check)
+        self.ki_label = QtGui.QLabel('K_integrative:')
+        self.ki_value = QtGui.QLineEdit(str(initial_ki))
+        self.ki_value.editingFinished.connect(self.pid_param_changed_check)
+        self.kd_label = QtGui.QLabel('K_derivative:')
+        self.kd_value = QtGui.QLineEdit(str(initial_kd))
+        self.kd_value.editingFinished.connect(self.pid_param_changed_check)
+        self.pid_param_list = [initial_kp, initial_ki, initial_kd]
         # position vs time of z position
         driftWidget = pg.GraphicsLayoutWidget()
         self.driftPlot = driftWidget.addPlot(title = "Z drift")
         self.driftPlot.showGrid(x = True, y = True)
-        self.driftPlot.setLabel('left', 'Shift (px)')
+        self.driftPlot.setLabel('left', 'Shift (μm)')
         self.driftPlot.setLabel('bottom', 'Time (s)')
         
         # Live view parameters dock
@@ -263,8 +294,16 @@ class Frontend(QtGui.QFrame):
         layout_zLock.addWidget(self.lock_z_position_button,         7, 0, 1, 2)
         layout_zLock.addWidget(self.tracking_period_label,         8, 0)
         layout_zLock.addWidget(self.tracking_period_value,         8, 1)
+        layout_zLock.addWidget(self.stabilize_z_button,         9, 0, 1, 2)
+        layout_zLock.addWidget(self.pid_label,         10, 0)
+        layout_zLock.addWidget(self.kp_label,         11, 0)
+        layout_zLock.addWidget(self.kp_value,         11, 1)
+        layout_zLock.addWidget(self.ki_label,         12, 0)
+        layout_zLock.addWidget(self.ki_value,         12, 1)
+        layout_zLock.addWidget(self.kd_label,         13, 0)
+        layout_zLock.addWidget(self.kd_value,         13, 1)
         # save drift
-        layout_zLock.addWidget(self.savedrift_tickbox,      9, 0)
+        layout_zLock.addWidget(self.savedrift_tickbox,      14, 0)
         
         # Place layouts and boxes
         dockArea = DockArea()
@@ -294,6 +333,12 @@ class Frontend(QtGui.QFrame):
         
         hbox.addWidget(dockArea)
         self.setLayout(hbox)
+        return
+
+    def stabilize_status(self):
+        if self.stabilize_z_button.isChecked():
+            self.stabilize = True
+            self.stabilizationStatusChangedSignal.emit(self.stabilize)
         return
 
     def threshold_changed_check(self):
@@ -403,6 +448,11 @@ class Frontend(QtGui.QFrame):
             if self.create_ROI_button.isChecked():
                 self.driftPlot.clear()
                 self.lockAndTrackSignal.emit(True)
+                N = int(driftbox_length*1000/self.tracking_period)
+                self.error_to_plot = np.empty(N)
+                self.error_to_plot[:] = np.nan
+                self.time_to_plot = np.empty(N)
+                self.time_to_plot[:] = np.nan
             else:
                 print('Warning! Lock and Track can only be used if the ROI has been created.')
         else:
@@ -421,19 +471,35 @@ class Frontend(QtGui.QFrame):
         self.dataReflectionSignal.emit(self.coord_ROI, self.savedrift_bool)
         return
     
-    @pyqtSlot(np.ndarray, list, float)
+    @pyqtSlot(np.ndarray, np.ndarray, float)
     def receive_cm_data(self, xy_pos_pixel_relative, error, timestamp):
         # plot xy position of fiducials vs time
-        self.driftPlot.plot(x = [timestamp], y = [error[1]], size = 1, \
-                            symbol = 'o', pen = pg.mkPen('r', width = 1))
+        self.error_to_plot = np.roll(self.error_to_plot, -1, axis = 0)
+        self.time_to_plot = np.roll(self.time_to_plot, -1)
+        self.error_to_plot[-1] = error[0] # only plot x coordinate
+        self.time_to_plot[-1] = timestamp
+        self.driftPlot.plot(x = self.time_to_plot, y = self.error_to_plot, \
+                            pen = pg.mkPen('r', width = 1))
         self.driftPlot.setXRange(timestamp - driftbox_length, timestamp)
-        # draw center of fiducials, convert um to pixels
-        # xy_pos = xy_pos_pixel_relative/pixel_size_um
+        # draw center of refkectuib, convert um to pixels
         xy_pos_absolute = xy_pos_pixel_relative + (self.roi_list_previous[1], 
                                                    self.roi_list_previous[0])
         self.z_reflection.setData(x = [xy_pos_absolute[0]], y = [xy_pos_absolute[1]])        
         return
-            
+    
+    def pid_param_changed_check(self):
+        kp = float(self.kp_value.text())
+        ki = float(self.ki_value.text())
+        kd = float(self.kd_value.text())
+        pid_param_list = [kp, ki, kd]
+        if pid_param_list != self.pid_param_list:
+            self.pid_param_list = pid_param_list
+            if self.lock_z_position_button.isChecked():
+                self.pidParamChangedSignal.emit(True, pid_param_list)
+            else:
+                self.pidParamChangedSignal.emit(False, pid_param_list)
+        return    
+    
     @pyqtSlot(np.ndarray)
     def get_image(self, image):
         self.image = image
@@ -485,7 +551,7 @@ class Backend(QtCore.QObject):
     imageSignal = pyqtSignal(np.ndarray)
     filePathSignal = pyqtSignal(str)
     getReflectionDataSignal = pyqtSignal()
-    sendFittedDataSignal = pyqtSignal(np.ndarray, list, float)
+    sendFittedDataSignal = pyqtSignal(np.ndarray, np.ndarray, float)
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -499,6 +565,8 @@ class Backend(QtCore.QObject):
         self.piezoWorker = piezo_stage_GUI.Backend(self.piezo_stage)
         self.threshold = initial_threshold
         self.file_path = initial_filepath
+        self.pid_param_list = [initial_kp, initial_ki, initial_kd]
+        self.stabilization = False
         return
     
     @pyqtSlot(bool, float)    
@@ -565,14 +633,35 @@ class Backend(QtCore.QObject):
         return
     
     def call_pid(self):
-        error = {}
-        center, timeaxis = self.center_of_mass()
+        center, timestamp = self.calculate_center_of_mass()
         error_x = self.initial_center[0] - center[0]
         error_y = self.initial_center[1] - center[1]
         # print(error_x, error_y)
-        error = [error_x, error_y]
+        error =  np.array([error_x, error_y])
+        # PID calculation
+        # assign parameters
+        kp = self.pid_param_list[0]
+        ki = self.pid_param_list[1]
+        kd = self.pid_param_list[2]
+        # proportional term
+        self.prop_correction = kp*error_x
+        # integral term
+        self.int_correction = self.int_correction + ki*error_x*self.tracking_period
+        # derivative term
+        self.dev_correction = self.dev_correction + \
+            kd*(error_x - self.last_error_x)/self.tracking_period
+        self.last_error_x = error_x
+        # calculate correction in um
+        correction = self.prop_correction + self.int_correction + self.dev_correction
+        # print(correction)
+        if self.stabilization:
+            print('Corregir')
         # send position of the reflection to Frontend
-        self.sendFittedDataSignal.emit(center, error, timeaxis)
+        self.sendFittedDataSignal.emit(center, error, timestamp)
+        # store data to save drift vs time when the Lock and Track option is released
+        if self.save_drift_data:
+            self.timeaxis_to_save.append(timestamp)
+            self.errors_to_save.append(error)
         return
 
     @pyqtSlot(bool)
@@ -582,8 +671,11 @@ class Backend(QtCore.QObject):
             # initiating variables
             self.center = {}
             self.timeaxis = {}
-            self.center_to_save = []
+            self.errors_to_save = []
             self.timeaxis_to_save = []
+            self.int_correction = 0
+            self.dev_correction = 0
+            self.last_error_x = 0
             # t0 initial time
             self.start_tracking_time = timer()
             # ask for ROI data and coordinates
@@ -609,20 +701,17 @@ class Backend(QtCore.QObject):
         self.y2 = int(roi_coordinates[1,0,-1]) + 1
         # then frame_intensity is self.image_np[x1:x2, y1:y2]
         print('Finding initial coordinates...')
-        self.initial_center, _ = self.center_of_mass()
+        self.initial_center, _ = self.calculate_center_of_mass()
+        print('Done.')
         return
     
-    def center_of_mass(self):
+    def calculate_center_of_mass(self):
         # find center of mass
         frame_roi_intensity = self.image_np[self.x1:self.x2, self.y1:self.y2]
         frame_roi_th = np.where(frame_roi_intensity > self.threshold, frame_roi_intensity, 0)
         cm_y, cm_x = ndimage.center_of_mass(frame_roi_th) # vertical, horizontal
         center = np.array([cm_x, cm_y])
         timeaxis = timer() - self.start_tracking_time
-        # flatten data to save drift vs time when the Lock and Track option is released
-        if self.save_drift_data:
-            self.timeaxis_to_save.append(timeaxis)
-            self.center_to_save.append(center)
         return center, timeaxis
 
     @pyqtSlot(int)
@@ -642,7 +731,7 @@ class Backend(QtCore.QObject):
         M = np.array(self.timeaxis_to_save).shape[0]
         data_to_save = np.zeros((M, 3))
         data_to_save[:, 0] = self.timeaxis_to_save
-        data_to_save[:, 1:] = self.center_to_save
+        data_to_save[:, 1:] = self.errors_to_save
         # create filename
         timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
         filename = "drift_curve_z_" + timestr + ".dat"
@@ -650,6 +739,28 @@ class Backend(QtCore.QObject):
         # save
         np.savetxt(full_filename, data_to_save, fmt='%.3e')
         print('Drift curve %s saved' % filename)
+        return
+
+    @pyqtSlot(bool, list)
+    def new_pid_params(self, lockbool, pid_param_list):
+        print('PID parameters changed to kp={} / ki={} / kd={}.'.format(pid_param_list[0], \
+                                                                        pid_param_list[1], \
+                                                                        pid_param_list[2]))
+        self.pid_param_list = pid_param_list
+        if lockbool:
+            print('Restarting QtTimer...')
+            self.trackingTimer.stop()
+            self.trackingTimer.start(self.tracking_period)
+        return
+
+    @pyqtSlot(bool)
+    def set_stabilization(self, stabilizebool):
+        if stabilizebool:
+            print('Stabilization ON.')
+            self.stabilization = True
+        else:
+            print('Stabilization OFF.')
+            self.stabilization = False
         return
 
     @pyqtSlot()    
@@ -698,6 +809,8 @@ class Backend(QtCore.QObject):
         frontend.dataReflectionSignal.connect(self.receive_roi_data)
         frontend.thresholdChangedSignal.connect(self.new_threshold)
         frontend.piezoWidget.make_connections(self.piezoWorker)
+        frontend.pidParamChangedSignal.connect(self.new_pid_params)
+        frontend.stabilizationStatusChangedSignal.connect(self.set_stabilization)
         return
       
 #=====================================

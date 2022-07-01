@@ -351,9 +351,9 @@ class Frontend(QtGui.QFrame):
         return
     
     def pid_param_changed_check(self):
-        kp = int(self.kp_value.text())
-        ki = int(self.ki_value.text())
-        kd = int(self.kd_value.text())
+        kp = float(self.kp_value.text())
+        ki = float(self.ki_value.text())
+        kd = float(self.kd_value.text())
         pid_param_list = [kp, ki, kd]
         if pid_param_list != self.pid_param_list:
             self.pid_param_list = pid_param_list
@@ -685,19 +685,6 @@ class Backend(QtCore.QObject):
             self.trackingTimer.start(self.tracking_period)
         return
     
-    def pid_param_changed_check(self):
-        kp = int(self.kp_value.text())
-        ki = int(self.ki_value.text())
-        kd = int(self.kd_value.text())
-        pid_param_list = [kp, ki, kd]
-        if pid_param_list != self.pid_param_list:
-            self.pid_param_list = pid_param_list
-            if self.live_view_button.isChecked():
-                self.pidParamChangedSignal.emit(True, pid_param_list)
-            else:
-                self.pidParamChangedSignal.emit(False, pid_param_list)
-        return     
-    
     @pyqtSlot(bool)
     def start_stop_tracking(self, trackbool):
         if trackbool:
@@ -707,6 +694,9 @@ class Backend(QtCore.QObject):
             self.timeaxis = {}
             self.errors_to_save = []
             self.timeaxis_to_save = []
+            self.int_correction = 0
+            self.dev_correction = 0
+            self.last_error_avg = 0
             # t0 initial time
             self.start_tracking_time = timer()
             # ask for ROI data and coordinates
@@ -783,10 +773,9 @@ class Backend(QtCore.QObject):
         # be aware that if uncommented you should change the signal type slot also
         # self.sendFittedDataSignal.emit(centers, error, timeaxis)
         self.sendFittedDataSignal.emit(centers, error_avg, timestamp)
-        # flatten data to save drift vs time when the Lock and Track option is released
+        # store data to save drift vs time when the Lock and Track option is released
         if self.save_drift_data:
             self.timeaxis_to_save.append(timestamp)
-            # errors_flattened = list(np.array(list(error.values())).flatten())
             self.errors_to_save.append(error_avg)
         return
     

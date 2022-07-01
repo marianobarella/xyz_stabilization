@@ -32,7 +32,7 @@ else:
     print('Couldn\'t connect to piezo stage.')
 # get info
 print(piezo_stage.get_info())
-print('Zeroing the piezo stage. This step takes 30 s. Please wait...\n')
+print('Zeroing the piezo stage. This step takes around 30 s. Please wait...\n')
 # perform zero routine for all axis
 piezo_stage.zero('all')
 

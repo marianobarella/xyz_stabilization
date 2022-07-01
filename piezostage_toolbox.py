@@ -175,7 +175,7 @@ class BPC303:
         for axis in ("x", "y", "z"):
             channel = self.__get_chan(axis)
             channel.SetPositionControlMode(mode)
-        sleep(0.3)
+            sleep(0.3)
         return
     
     def zero(self, axis="all"):
