@@ -39,15 +39,16 @@ daq.check_voltage_range(daq_board, initial_voltage_range)
 max_sampling_rate = daq_board.ai_max_single_chan_rate # set to maximum, here 2 MS/s    
 initial_sampling_rate = 1e3 # in S/s
 # duration of the traces in s
-initial_duration = 2
+initial_duration = 5
 # set acquisition mode to measure continuosly
 acquisition_mode = 'continuous'
 
 # function that calculates the number of datapoins to be measured
 def calculate_num_of_points(duration, sampling_rate):
     number_of_points = int(duration*sampling_rate)
-    print('\nAt {:.3f} MS/s sampling rate, a duration of {} s means: \n \
-    {} datapoints per trace'.format(sampling_rate*1e-6, duration, number_of_points))
+    print('\nAt {:.3f} MS/s sampling rate, a duration of {} s means:'.format(sampling_rate*1e-6, \
+                                                                       duration))
+    print('{} datapoints per trace'.format(number_of_points))  
     return number_of_points
 
 # define a fixed length (in s) for the time axis of viewbox signal vs time
@@ -73,7 +74,7 @@ class FastLine(pg.QtGui.QGraphicsPathItem):
     def __init__(self, x, y, color = 'w'):
         # from https://stackoverflow.com/questions/17103698/plotting-large-arrays-in-pyqtgraph?rq=1
         """x and y are 1D arrays"""
-        self.path = pg.arrayToQPath(x, y, connect = 'all', finiteCheck = False)
+        self.path = pg.arrayToQPath(x, y, connect = 'all', finiteCheck = True)
         pg.QtGui.QGraphicsPathItem.__init__(self, self.path)
         self.setPen(pg.mkPen(color))
     def shape(self): # override because QGraphicsPathItem.shape is too expensive.
@@ -113,7 +114,6 @@ class Frontend(QtGui.QFrame):
         self.set_working_dir()
         self.set_filename()
         self.sampling_rate_changed()
-        self.x0_viewbox = 0
 
     def setUpGUI(self):
 
@@ -334,62 +334,14 @@ class Frontend(QtGui.QFrame):
         self.setVoltageRangeSignal.emit(self.voltage_range)
         return
     
-    ##########################################################################
-    # circle of displaying data: any variable of the following affects the other two
-    # display rate <-> viewbox length <-> number of points to render
-    
     def sampling_rate_changed(self):
         selected_rate = int(self.samplingRateValue.text())
         if selected_rate != self.sampling_rate:
             self.sampling_rate = selected_rate
             self.time_base = 1/(selected_rate*1e3)
             self.setSamplingRateSignal.emit(selected_rate)
-            self.change_display_rate(self.downsampling_period)
+            self.change_downsampling(self.downsampling_period)
         return
-    
-    def downsampling_changed(self):
-        downsampling_period = int(self.downsamplingValue.text())
-        if downsampling_period != self.downsampling_period:
-            print('Downsampling has changed to {} points'.format(downsampling_period))
-            self.downsampling_period = downsampling_period
-            self.change_display_rate(downsampling_period)            
-        return
-
-    def change_display_rate(self, downsampling_period):
-        self.display_rate = self.sampling_rate/downsampling_period
-        print('\nDisplaying at {} kS/s'.format(self.display_rate))
-        new_text = 'Display rate: {:.3f} kS/s (display period: {:.3f} ms)'.format(self.display_rate, 1/self.display_rate)
-        self.displayRateLabel.setText(new_text)
-        tm.sleep(0.1)
-        self.calculate_points_to_render()
-        return    
-       
-    def get_viewbox_size(self):
-        self.viewbox_pixel_width = self.signal_plot.viewGeometry().getRect()[2]
-        self.viewbox_pixel_height = self.signal_plot.viewGeometry().getRect()[3]
-        print('\nViewbox size is {} px x {} px (width x height)'.format(self.viewbox_pixel_width, \
-                                                                      self.viewbox_pixel_height))
-        sampling_rate_for_performance = self.viewbox_pixel_width/self.viewbox_length/1000
-        print('Good performance would be achieved with {:.3f} kS/s'.format(sampling_rate_for_performance))
-        return
-    
-    def time_viewbox_length_changed(self):
-        time_viewbox_length = float(self.timeViewboxLength_value.text())
-        if time_viewbox_length != self.viewbox_length:
-            print('\nTime length of the viewbox changed to {:.1f} s'.format(time_viewbox_length))
-            self.viewbox_length = time_viewbox_length
-            self.get_viewbox_size()
-            tm.sleep(0.1)
-            self.calculate_points_to_render()
-        return
-    
-    def calculate_points_to_render(self):
-        self.points_to_render = int(self.viewbox_length*self.display_rate*1000)
-        print('\nAt this display rate (sampling rate/downsampling) and viewbox length: \n \
-              {} points will be rendered in the viewbox.'.format(self.points_to_render))
-        return
-    
-    ##########################################################################
     
     def duration_value_changed(self):
         duration = float(self.durationValue.text())
@@ -398,10 +350,35 @@ class Frontend(QtGui.QFrame):
             self.setDurationSignal.emit(self.duration)
         return
     
+    def time_viewbox_length_changed(self):
+        time_viewbox_length = float(self.timeViewboxLength_value.text())
+        if time_viewbox_length != self.viewbox_length:
+            print('Time length of the viewbox changed to {:.1f} s'.format(time_viewbox_length))
+            self.viewbox_length = time_viewbox_length
+        return
+    
     def get_trace(self):
         if self.traceButton.isChecked():
             self.signal_plot.clear()
-            self.get_viewbox_size()
+            # allocate arrays to plot them with improved performance
+            # sampling_rate is in kS/s
+            # viewbox_length is in s
+            # so multiply by 1000 to obtain the right size of N
+            N = int(self.viewbox_length*self.sampling_rate*1000)
+            # data array
+            self.data_array_to_plot = np.empty(N)
+            self.data_array_to_plot[:] = np.nan
+            # mean array
+            self.mean_array_to_plot = np.empty(N)
+            self.mean_array_to_plot[:] = np.nan
+            # std dev +/- array
+            self.std_plus_array_to_plot = np.empty(N)
+            self.std_plus_array_to_plot[:] = np.nan
+            self.std_minus_array_to_plot = np.empty(N)
+            self.std_minus_array_to_plot[:] = np.nan
+            # time array
+            self.time_array_to_plot = np.empty(N)
+            self.time_array_to_plot[:] = np.nan
             # trigger signal
             self.traceSignal.emit(True)
         else:
@@ -421,7 +398,22 @@ class Frontend(QtGui.QFrame):
         else:
             self.saveTraceContSignal.emit(False) 
         return
+    
+    def downsampling_changed(self):
+        downsampling_period = int(self.downsamplingValue.text())
+        if downsampling_period != self.downsampling_period:
+            print('Downsampling has changed to {} points'.format(downsampling_period))
+            self.change_downsampling(downsampling_period)            
+        return
 
+    def change_downsampling(self, downsampling_period):
+        self.display_rate = self.sampling_rate/downsampling_period
+        print('\nDisplaying at {} kS/s'.format(self.display_rate))
+        new_text = 'Display rate: {:.3f} kS/s (display period: {:.3f} ms)'.format(self.display_rate, 1/self.display_rate)
+        self.displayRateLabel.setText(new_text)
+        self.downsampling_period = downsampling_period
+        return
+    
     def get_save_trace(self):
         if self.saveButton.isChecked:
             self.saveSignal.emit()
@@ -461,7 +453,7 @@ class Frontend(QtGui.QFrame):
         self.signalMeanValue.setText('{:.3f}'.format(self.mean_value))
         self.signalStdValue.setText('{:.3f}'.format(sd_mV))
 
-        # prepare time array
+        # build time array
         start = i
         end = i + n_read
         time_array = np.arange(start, end)*self.time_base
@@ -481,43 +473,47 @@ class Frontend(QtGui.QFrame):
             # average
             data_array = np.mean(data_array, axis = 0)
             time_array = np.mean(time_array, axis = 0)
-            
+            n_roll = new_size
+        else:
+            # no downsampling/averaging
+            n_roll = n_read
+        # prepare arrays to plot    
+        self.time_array_to_plot = np.roll(self.time_array_to_plot, -n_roll)
+        self.data_array_to_plot = np.roll(self.data_array_to_plot, -n_roll)
+        self.mean_array_to_plot = np.roll(self.mean_array_to_plot, -n_roll)
+        self.std_plus_array_to_plot = np.roll(self.std_plus_array_to_plot, -n_roll)
+        self.std_minus_array_to_plot = np.roll(self.std_minus_array_to_plot, -n_roll)
+
         # plot raw data (with or without downsampling)
-        time_array_to_plot = time_array
-        data_array_to_plot = data_array
-        item_raw_data_curve = FastLine(time_array_to_plot, data_array_to_plot, 'w')
+        self.time_array_to_plot[-n_roll:] = time_array
+        self.data_array_to_plot[-n_roll:] = data_array
+        item_raw_data_curve = FastLine(self.time_array_to_plot, self.data_array_to_plot, 'w')
         
         # plot mean of data (using previous arrays)
-        mean_array_to_plot = np.copy(data_array_to_plot)
-        mean_array_to_plot[:] = self.mean_value
-        item_mean_data_curve = FastLine(time_array_to_plot, mean_array_to_plot, 'b')
+        # mean_array_to_plot = np.copy(data_array_to_plot)
+        self.mean_array_to_plot[-n_roll:] = self.mean_value
+        item_mean_data_curve = FastLine(self.time_array_to_plot, self.mean_array_to_plot, 'b')
         
         # plot std dev of the data (using previous arrays)
-        std_plus_array_to_plot = np.copy(data_array_to_plot)
-        std_minus_array_to_plot = np.copy(data_array_to_plot)
-        std_plus_array_to_plot[:] = self.mean_value + 3*self.sd_value # 3 sigma means 99.73%
-        std_minus_array_to_plot[:] = self.mean_value - 3*self.sd_value # 3 sigma means 99.73%
-        item_std_plus_data_curve = FastLine(time_array_to_plot, std_plus_array_to_plot, 'g')
-        item_std_minus_data_curve = FastLine(time_array_to_plot, std_minus_array_to_plot, 'g')
+        # std_plus_array_to_plot = np.copy(data_array_to_plot)
+        # std_minus_array_to_plot = np.copy(data_array_to_plot)
+        self.std_plus_array_to_plot[-n_roll:] = self.mean_value + 3*self.sd_value # 3 sigma means 99.73%
+        self.std_minus_array_to_plot[-n_roll:] = self.mean_value - 3*self.sd_value # 3 sigma means 99.73%
+        item_std_plus_data_curve = FastLine(self.time_array_to_plot, self.std_plus_array_to_plot, 'g')
+        item_std_minus_data_curve = FastLine(self.time_array_to_plot, self.std_minus_array_to_plot, 'g')
         
         # add plots
-        self.signal_plot.addItem(item_raw_data_curve, skipFiniteCheck = True)
-        self.signal_plot.addItem(item_mean_data_curve, skipFiniteCheck = True)
-        self.signal_plot.addItem(item_std_plus_data_curve, skipFiniteCheck = True)
-        self.signal_plot.addItem(item_std_minus_data_curve, skipFiniteCheck = True)
+        self.signal_plot.clear()
+        self.signal_plot.addItem(item_raw_data_curve, skipFiniteCheck = False)
+        self.signal_plot.addItem(item_mean_data_curve, skipFiniteCheck = False)
+        self.signal_plot.addItem(item_std_plus_data_curve, skipFiniteCheck = False)
+        self.signal_plot.addItem(item_std_minus_data_curve, skipFiniteCheck = False)
         
         # set range and fix rolling window length
-        self.x0_viewbox = time_array[-1]
-        self.signal_plot.setXRange(self.x0_viewbox - self.viewbox_length, self.x0_viewbox)
+        x_viewbox = time_array[-1]
+        self.signal_plot.setXRange(x_viewbox - self.viewbox_length, x_viewbox)
         return
         
-    @pyqtSlot()
-    def clear_plot(self):
-        print(self.signal_plot.viewGeometry())
-        # self.signal_plot.clear()
-        # self.signal_plot.setXRange(self.x0_viewbox - self.viewbox_length, self.x0_viewbox)
-        return
-    
     @pyqtSlot()
     def acquisition_stopped(self):
         # uncheck Acquire button
@@ -547,7 +543,6 @@ class Frontend(QtGui.QFrame):
         backend.dataSignal.connect(self.get_data)
         backend.filepathSignal.connect(self.get_filepath)
         backend.acqStopped.connect(self.acquisition_stopped)
-        backend.clearPlotSignal.connect(self.clear_plot)
         return
     
 #=====================================
@@ -561,7 +556,6 @@ class Backend(QtCore.QObject):
     dataSignal = pyqtSignal(np.ndarray, int, int)
     filepathSignal = pyqtSignal(str)
     acqStopped = pyqtSignal()
-    clearPlotSignal = pyqtSignal()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -669,7 +663,6 @@ class Backend(QtCore.QObject):
                 # reset counter
                 self.i = 0
                 self.trace_number += 1
-                self.clearPlotSignal.emit()
             else:
                 # stop timer
                 self.updateTimer.stop()

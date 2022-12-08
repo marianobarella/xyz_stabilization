@@ -63,6 +63,9 @@ initial_kp = -1 # proportinal factor of the PID
 initial_ki = -0.0001 # integral factor of the PID
 initial_kd = -0.05 # derivative factor of the PID
 
+# conversion factor from camera pixels to nm in z drift
+initial_conversion_factor = 75 # nm/px
+
 #=====================================
 
 # GUI / Frontend definition
@@ -84,6 +87,7 @@ class Frontend(QtGui.QFrame):
     thresholdChangedSignal = pyqtSignal(int)
     pidParamChangedSignal = pyqtSignal(bool, list)
     stabilizationStatusChangedSignal = pyqtSignal(bool)
+    conversionFactorChangedSignal = pyqtSignal(float)
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -237,6 +241,12 @@ class Frontend(QtGui.QFrame):
             "QPushButton:pressed { background-color: red; }"
             "QPushButton::checked { background-color: steelblue; }")
         
+        # conversion from camera pixel to drift in z
+        self.conversion_label = QtGui.QLabel('Conversion factor (nm/px):')
+        self.conversion_value = QtGui.QLineEdit(str(initial_conversion_factor))
+        self.intensity_threshold_value.editingFinished.connect(self.conversion_factor_changed)
+        self.conversion_factor = initial_conversion_factor
+
         # PID parameters
         self.pid_label = QtGui.QLabel('PID parameters')
         self.kp_label = QtGui.QLabel('K_proportional:')
@@ -253,7 +263,7 @@ class Frontend(QtGui.QFrame):
         driftWidget = pg.GraphicsLayoutWidget()
         self.driftPlot = driftWidget.addPlot(title = "Z drift")
         self.driftPlot.showGrid(x = True, y = True)
-        self.driftPlot.setLabel('left', 'Shift (μm)')
+        self.driftPlot.setLabel('left', 'Shift (nm)') # μ
         self.driftPlot.setLabel('bottom', 'Time (s)')
         
         # Live view parameters dock
@@ -295,15 +305,17 @@ class Frontend(QtGui.QFrame):
         layout_zLock.addWidget(self.tracking_period_label,         8, 0)
         layout_zLock.addWidget(self.tracking_period_value,         8, 1)
         layout_zLock.addWidget(self.stabilize_z_button,         9, 0, 1, 2)
-        layout_zLock.addWidget(self.pid_label,         10, 0)
-        layout_zLock.addWidget(self.kp_label,         11, 0)
-        layout_zLock.addWidget(self.kp_value,         11, 1)
-        layout_zLock.addWidget(self.ki_label,         12, 0)
-        layout_zLock.addWidget(self.ki_value,         12, 1)
-        layout_zLock.addWidget(self.kd_label,         13, 0)
-        layout_zLock.addWidget(self.kd_value,         13, 1)
+        layout_zLock.addWidget(self.conversion_label,         10, 0)
+        layout_zLock.addWidget(self.conversion_value,         10, 1)
+        layout_zLock.addWidget(self.pid_label,         11, 0)
+        layout_zLock.addWidget(self.kp_label,         12, 0)
+        layout_zLock.addWidget(self.kp_value,         12, 1)
+        layout_zLock.addWidget(self.ki_label,         13, 0)
+        layout_zLock.addWidget(self.ki_value,         13, 1)
+        layout_zLock.addWidget(self.kd_label,         14, 0)
+        layout_zLock.addWidget(self.kd_value,         14, 1)
         # save drift
-        layout_zLock.addWidget(self.savedrift_tickbox,      14, 0)
+        layout_zLock.addWidget(self.savedrift_tickbox,      15, 0)
         
         # Place layouts and boxes
         dockArea = DockArea()
@@ -339,6 +351,13 @@ class Frontend(QtGui.QFrame):
         if self.stabilize_z_button.isChecked():
             self.stabilize = True
             self.stabilizationStatusChangedSignal.emit(self.stabilize)
+        return
+
+    def conversion_factor_changed(self):
+        conversion_factor = int(self.intensity_threshold_value.text())
+        if conversion_factor != self.conversion_factor:
+            self.conversion_factor = conversion_factor
+            self.conversionFactorChangedSignal.emit(self.conversion_factor)
         return
 
     def threshold_changed_check(self):
@@ -476,8 +495,10 @@ class Frontend(QtGui.QFrame):
         # plot xy position of fiducials vs time
         self.error_to_plot = np.roll(self.error_to_plot, -1, axis = 0)
         self.time_to_plot = np.roll(self.time_to_plot, -1)
-        self.error_to_plot[-1] = error[0] # only plot x coordinate
+        # only plot x coordinate and convert to nm using calibration
+        self.error_to_plot[-1] = error[0]*self.conversion_factor
         self.time_to_plot[-1] = timestamp
+        self.driftPlot.clear()
         self.driftPlot.plot(x = self.time_to_plot, y = self.error_to_plot, \
                             pen = pg.mkPen('r', width = 1))
         self.driftPlot.setXRange(timestamp - driftbox_length, timestamp)
@@ -567,6 +588,7 @@ class Backend(QtCore.QObject):
         self.file_path = initial_filepath
         self.pid_param_list = [initial_kp, initial_ki, initial_kd]
         self.stabilization = False
+        self.conversion_factor = initial_conversion_factor
         return
     
     @pyqtSlot(bool, float)    
@@ -731,7 +753,7 @@ class Backend(QtCore.QObject):
         M = np.array(self.timeaxis_to_save).shape[0]
         data_to_save = np.zeros((M, 3))
         data_to_save[:, 0] = self.timeaxis_to_save
-        data_to_save[:, 1:] = self.errors_to_save
+        data_to_save[:, 1:] = self.errors_to_save*self.conversion_factor
         # create filename
         timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
         filename = "drift_curve_z_" + timestr + ".dat"
@@ -751,6 +773,12 @@ class Backend(QtCore.QObject):
             print('Restarting QtTimer...')
             self.trackingTimer.stop()
             self.trackingTimer.start(self.tracking_period)
+        return
+    
+    @pyqtSlot(float)
+    def new_conversion_factor(self, new_conv_factor):
+        print('COnversion factor changed to {.1f} nm/px'.format(new_conv_factor))
+        self.conversion_factor = new_conv_factor
         return
 
     @pyqtSlot(bool)
@@ -811,6 +839,7 @@ class Backend(QtCore.QObject):
         frontend.piezoWidget.make_connections(self.piezoWorker)
         frontend.pidParamChangedSignal.connect(self.new_pid_params)
         frontend.stabilizationStatusChangedSignal.connect(self.set_stabilization)
+        frontend.conversionFactorChangedSignal.connect(self.new_conversion_factor)
         return
       
 #=====================================

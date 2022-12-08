@@ -289,7 +289,7 @@ class BPC303:
             #                                              piezoInfo)
         return info
 
-    def estimate_precision(self, position_array, number_of_measurements = 1000, delay = 0.1):
+    def estimate_precision(self, position_array, number_of_measurements = 100, delay = 0.5):
         """
         Method to estimate the position precision in a close loop operation 
         at a particular position. Method returns average position and standard 
@@ -429,5 +429,5 @@ if __name__ == "__main__":
     
 #%%
     # disconnect        
-    piezo_stage.shutdown()
+    # piezo_stage.shutdown()
     

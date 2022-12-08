@@ -41,12 +41,12 @@ initial_filename = 'image_pco_test'
 viewTimer_update = 25 # in ms (makes no sense to go lower than the refresh rate of the screen)
 tempTimer_update = 5000 # in ms
 initial_tracking_period = 500 # in ms
-driftbox_length = 30.0 # in seconds
+driftbox_length = 60.0 # in seconds
 
 # PID constants
-initial_kp = -1 # proportinal factor of the PID
-initial_ki = -0.0001 # integral factor of the PID
-initial_kd = -0.05 # derivative factor of the PID
+initial_kp = 1 # proportinal factor of the PID
+initial_ki = 0 # integral factor of the PID
+initial_kd = 0 # derivative factor of the PID
 
 #=====================================
 
@@ -68,6 +68,7 @@ class Frontend(QtGui.QFrame):
     lockAndTrackSignal = pyqtSignal(bool)
     dataFiducialsSignal = pyqtSignal(int, dict, bool)
     savedriftSignal = pyqtSignal()
+    correctDriftSignal = pyqtSignal(bool)
     pidParamChangedSignal = pyqtSignal(bool, list)
     
     def __init__(self, *args, **kwargs):
@@ -81,6 +82,7 @@ class Frontend(QtGui.QFrame):
         self.power_temp = 0.00
         self.image = np.array([])
         self.roi = {}
+        self.correct_drift_flag = False
         return
             
     def setUpGUI(self):
@@ -203,9 +205,9 @@ class Frontend(QtGui.QFrame):
         
         # tracking fiducials / ROIs
         number_of_fiducials_label = QtGui.QLabel('Number of fiducials:')
-        self.number_of_fiducials_value = QtGui.QLineEdit('1')
+        self.number_of_fiducials_value = QtGui.QLineEdit('4')
         box_size_label = QtGui.QLabel('Box size (pixels):')
-        self.box_size_value = QtGui.QLineEdit('17')
+        self.box_size_value = QtGui.QLineEdit('101')
         self.box_size_value.setValidator(QtGui.QIntValidator(1, 999))
         self.box_size_value.setToolTip('Restricted to odd numbers. Good starting point is box_size ~ 1 µm (use pixel size).')
         self.create_ROIs_button = QtGui.QPushButton('Create ROIs')
@@ -224,6 +226,14 @@ class Frontend(QtGui.QFrame):
             "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: red; }"
             "QPushButton::checked { background-color: limegreen; }")
+        self.correct_drift_button = QtGui.QPushButton('Correct drift')
+        self.correct_drift_button.setToolTip('If active, drift will be corrected. Leave inactive for tracking only.')
+        self.correct_drift_button.setCheckable(True)
+        self.correct_drift_button.clicked.connect(self.correct_drift_status)
+        self.correct_drift_button.setStyleSheet(
+            "QPushButton { background-color: lightgray; }"
+            "QPushButton:pressed { background-color: red; }"
+            "QPushButton::checked { background-color: springgreen; }")
         # tracking period
         self.tracking_period_label = QtGui.QLabel('Tracking period (s):')
         self.tracking_period_value = QtGui.QLineEdit(str(initial_tracking_period/1000))
@@ -308,17 +318,18 @@ class Frontend(QtGui.QFrame):
         layout_fiducials.addWidget(self.box_size_value,      1, 1)
         layout_fiducials.addWidget(self.create_ROIs_button,         2, 0, 1, 2)
         layout_fiducials.addWidget(self.lock_ROIs_button,         3, 0, 1, 2)
-        layout_fiducials.addWidget(self.tracking_period_label,         4, 0)
-        layout_fiducials.addWidget(self.tracking_period_value,         4, 1)
-        layout_fiducials.addWidget(self.pid_label,         5, 0)
-        layout_fiducials.addWidget(self.kp_label,         6, 0)
-        layout_fiducials.addWidget(self.kp_value,         6, 1)
-        layout_fiducials.addWidget(self.ki_label,         7, 0)
-        layout_fiducials.addWidget(self.ki_value,         7, 1)
-        layout_fiducials.addWidget(self.kd_label,         8, 0)
-        layout_fiducials.addWidget(self.kd_value,         8, 1)
+        layout_fiducials.addWidget(self.correct_drift_button,         4, 0, 1, 2)
+        layout_fiducials.addWidget(self.tracking_period_label,         5, 0)
+        layout_fiducials.addWidget(self.tracking_period_value,         5, 1)
+        layout_fiducials.addWidget(self.pid_label,         6, 0)
+        layout_fiducials.addWidget(self.kp_label,         7, 0)
+        layout_fiducials.addWidget(self.kp_value,         7, 1)
+        layout_fiducials.addWidget(self.ki_label,         8, 0)
+        layout_fiducials.addWidget(self.ki_value,         8, 1)
+        layout_fiducials.addWidget(self.kd_label,         9, 0)
+        layout_fiducials.addWidget(self.kd_value,         9, 1)
         # save drift
-        layout_fiducials.addWidget(self.savedrift_tickbox,      9, 0)
+        layout_fiducials.addWidget(self.savedrift_tickbox,      10, 0)
         
         # Place layouts and boxes
         dockArea = DockArea()
@@ -405,6 +416,15 @@ class Frontend(QtGui.QFrame):
             self.xy_fiducials.clear()
         return
     
+    def correct_drift_status(self):
+        if self.correct_drift_button.isChecked():
+            self.correct_drift_flag = True
+            self.lock_and_track()
+        else:
+            self.correct_drift_flag = False
+        self.correctDriftSignal.emit(self.correct_drift_flag)
+        return
+    
     def retrieve_fiducials_data(self):
         for i in range(self.number_of_fiducials):
             (self.data_ROI[i], \
@@ -425,6 +445,7 @@ class Frontend(QtGui.QFrame):
         self.time_to_plot = np.roll(self.time_to_plot, -1)
         self.error_to_plot[-1,:] = error
         self.time_to_plot[-1] = timestamp
+        self.driftPlot.clear()
         self.driftPlot.plot(x = self.time_to_plot, y = self.error_to_plot[:, 0], \
                             pen = pg.mkPen('r'))
         self.driftPlot.plot(x = self.time_to_plot, y = self.error_to_plot[:, 1], \
@@ -625,6 +646,7 @@ class Backend(QtCore.QObject):
         self.dev_correction = np.array([0, 0])
         self.last_error_avg = np.array([0, 0])
         self.pid_param_list = [initial_kp, initial_ki, initial_kd]
+        self.correct_drift_flag = False
         return
     
     @pyqtSlot(bool, list)    
@@ -767,7 +789,6 @@ class Backend(QtCore.QObject):
         self.last_error_avg = error_avg
         # calculate correction in um
         correction = self.prop_correction + self.int_correction + self.dev_correction
-        # print(correction)
         # send position of all fiducials to Frontend
         # first line is to check that all fiducials drift in the same way
         # be aware that if uncommented you should change the signal type slot also
@@ -777,6 +798,10 @@ class Backend(QtCore.QObject):
         if self.save_drift_data:
             self.timeaxis_to_save.append(timestamp)
             self.errors_to_save.append(error_avg)
+        # now correct drift if button is checked
+        if self.correct_drift_flag:
+            # call function to correct
+            self.correct_drift(correction)
         return
     
     def fit_fiducials(self):
@@ -799,6 +824,20 @@ class Backend(QtCore.QObject):
             centers[i] = np.array([x_fitted, y_fitted])
             timeaxis[i] = timer() - self.start_tracking_time
         return centers, timeaxis
+    
+    def correct_drift(self, correction):
+        print(correction)
+        # make float32 to avoid crashing the module
+        correction_x = float(correction[0])
+        correction_y = float(correction[1])
+        # use the worker to send the instructions
+        # only if the drift correction is larger than 2x the resolution
+        # of the piezostage, i.e., 2x5 nm = 2x0.005 um = 0.01 um
+        if abs(correction_x) > 0.010:
+            self.piezoWorker.move_relative('x', correction_x)
+        if abs(correction_y) > 0.010:
+            self.piezoWorker.move_relative('y', correction_y)
+        return
     
     @pyqtSlot(bool, float)
     def take_picture(self, livebool, exposure_time_ms):
@@ -868,6 +907,12 @@ class Backend(QtCore.QObject):
         print('Drift curve %s saved' % filename)
         return
     
+    @pyqtSlot(bool)
+    def set_correct_drift_flag(self, flag):
+        print('Drift correction set to: %s' % flag)
+        self.correct_drift_flag = flag
+        return    
+    
     @pyqtSlot()    
     def save_picture(self):
         timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
@@ -917,6 +962,7 @@ class Backend(QtCore.QObject):
         frontend.lockAndTrackSignal.connect(self.start_stop_tracking)
         frontend.dataFiducialsSignal.connect(self.receive_roi_fiducials)
         frontend.savedriftSignal.connect(self.save_drift_curve)
+        frontend.correctDriftSignal.connect(self.set_correct_drift_flag)
         frontend.pidParamChangedSignal.connect(self.new_pid_params)
         frontend.piezoWidget.make_connections(self.piezoWorker)
         return
