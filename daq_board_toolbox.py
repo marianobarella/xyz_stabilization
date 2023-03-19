@@ -19,6 +19,7 @@ Fribourg, Switzerland
 
 import nidaqmx
 from nidaqmx.stream_readers import AnalogSingleChannelReader as single_ch_st_reader
+from nidaqmx.stream_readers import AnalogMultiChannelReader as multi_ch_st_reader
 import nidaqmx.constants as ctes
 import numpy as np
 from timeit import default_timer as timer
@@ -34,6 +35,7 @@ import matplotlib.pyplot as plt
 #=====================================
 
 apd_ch = 0 # analog input (ai) for apd, where it's connected
+power_pd_ch = 1 # analog input (ai) for amplified pd to monitor power, where it's connected
 plt.ioff()
 
 #=====================================
@@ -48,16 +50,24 @@ def init_daq():
     print('DAQ board serial number: {}'.format(daq_board.dev_serial_num))
     return daq_board
 
-# configure APD channels (or other instruments connected to the DAQ board)
-def set_ch_APD(sampling_rate, samples_per_ch, min_rng, max_rng, mode, debug = False):
+# configure APD channels
+def set_task(number_of_channels, sampling_rate, samples_per_ch, min_rng, max_rng, mode, debug = False):
     # define the task object
     APD_task = nidaqmx.task.Task(new_task_name = 'APD_task')
+    # prepare task to read the APD channel
     # set voltage channel for "APD_task"
     APD_task.ai_channels.add_ai_voltage_chan(
         physical_channel = 'Dev1/ai{}'.format(apd_ch), \
         name_to_assign_to_channel = 'APD_ch{}'.format(apd_ch), \
         min_val = min_rng, \
         max_val = max_rng)
+    if number_of_channels > 1:
+        # add Monitor laser power task
+        APD_task.ai_channels.add_ai_voltage_chan(
+            physical_channel = 'Dev1/ai{}'.format(power_pd_ch), \
+            name_to_assign_to_channel = 'monitor_ch{}'.format(power_pd_ch), \
+            min_val = min_rng, \
+            max_val = max_rng)
     # estimate timeout (time_to_finish) for the task
     time_to_finish = samples_per_ch/sampling_rate # in s
     if debug:
@@ -159,10 +169,13 @@ def allocate_datafile(number_of_points):
     array[:] = -1000 # set data array to an impossible output
     return dummy_file_path, array
 
-def arm_measurement_in_loop(task):
+def arm_measurement_in_loop(task, number_of_channels):
     '''Prepare task to measure in loop continuosly'''
     # initiate the stream reader object and pass the in_stream object of the Task
-    task_st_reader = single_ch_st_reader(task.in_stream)
+    if number_of_channels > 1:
+        task_st_reader = multi_ch_st_reader(task.in_stream)
+    else:
+        task_st_reader = single_ch_st_reader(task.in_stream)
     return task_st_reader
 
 def measure_in_loop_continuously(task, task_stream_reader, number_of_points, \
@@ -181,14 +194,14 @@ def measure_in_loop_continuously(task, task_stream_reader, number_of_points, \
     assert np.all(data_array > -1000)
     return data_array
 
-def measure_one_loop(task_stream_reader, number_of_points, i):
+def measure_one_loop(task_stream_reader, number_of_channels, number_of_points_per_ch, i):
     n_available = task_stream_reader._in_stream.avail_samp_per_chan
     if n_available == 0: 
         return n_available, np.array([])
     # prevent reading too many samples
-    n_available = min(n_available, number_of_points - i) 
+    n_available = min(n_available, number_of_points_per_ch - i) 
     # read directly
-    data = np.empty(n_available)
+    data = np.empty((number_of_channels, n_available))
     task_stream_reader.read_many_sample(data, number_of_samples_per_channel = n_available)
     return n_available, data
 
@@ -202,7 +215,7 @@ def measure_one_loop(task_stream_reader, number_of_points, i):
 if __name__ == '__main__':
 
     print('\nDAQ board toolbox test')
-    
+    number_of_channels = 1
     daq_board = init_daq()
     
     # set measurement range
@@ -222,7 +235,7 @@ if __name__ == '__main__':
     ########################################################
     mode = 'finite'
     number_of_points_per_run = 100
-    APD_task, time_to_finish = set_ch_APD(sampling_rate, number_of_points_per_run, \
+    APD_task, time_to_finish = set_task(number_of_channels, sampling_rate, number_of_points_per_run, \
                                           min_range, max_range, mode)
     # APD_ch = APD_task.ai_channels[0]
     # ask_range(APD_ch)
@@ -249,7 +262,7 @@ if __name__ == '__main__':
     mode = 'continuous'
     number_of_points = max_num_of_meas*number_of_points_per_run
     time_base = 1/sampling_rate
-    APD_task, time_to_finish = set_ch_APD(sampling_rate, number_of_points, \
+    APD_task, time_to_finish = set_task(number_of_channels, sampling_rate, number_of_points, \
                                           min_range, max_range, mode)
     
     # allocate array

@@ -26,7 +26,7 @@ from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper
 bytesToRead = 200
 # COM ports
 COM_port_oxxius = 'COM4'
-COM_port_flipper_Thorlas = 'COM5'
+COM_port_flipper_Thorlas = 'COM1'
 COM_port_toptica = 'COM6'
 
 def serial_ports():
@@ -341,6 +341,7 @@ class toptica_laser(object):
 class motorized_flipper(object):
     def __init__(self, debug_mode):
         # Parameters for Motorized Flipper
+        self.baudRate = 9600
         self.serialPort = COM_port_flipper_Thorlas
         self.debug_mode = debug_mode
         self.initialize()

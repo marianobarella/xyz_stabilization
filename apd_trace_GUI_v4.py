@@ -21,6 +21,7 @@ import daq_board_toolbox as daq
 from tkinter import filedialog
 import tkinter as tk
 import time as tm
+# import asyncio
 
 #=====================================
 
@@ -42,13 +43,15 @@ initial_sampling_rate = 1e3 # in S/s
 initial_duration = 1
 # set acquisition mode to measure continuosly
 acquisition_mode = 'continuous'
+# number of analog input channels to read
+number_of_channels = 2
 
 # function that calculates the number of datapoins to be measured
 def calculate_num_of_points(duration, sampling_rate):
     number_of_points = int(duration*sampling_rate)
     print('\nAt {:.3f} MS/s sampling rate, a duration of {} s means:'.format(sampling_rate*1e-6, \
                                                                        duration))
-    print('{} datapoints per trace'.format(number_of_points))  
+    print('{} datapoints per trace'.format(number_of_points))
     return number_of_points
 
 # define a fixed length (in s) for the time axis of viewbox signal vs time
@@ -108,6 +111,7 @@ class Frontend(QtGui.QFrame):
         # set the title of thw window
         title = "APD signal module"
         self.setWindowTitle(title)
+        self.setGeometry(1000, 30, 800, 1000)
         self.set_y_range()
         self.mean_value = initial_mean_value # in V
         self.sd_value = initial_sd_value # in V
@@ -192,9 +196,7 @@ class Frontend(QtGui.QFrame):
         self.downsampling_period = initial_downsampling_period
         self.downsamplingValue.editingFinished.connect(self.downsampling_changed)
         self.downsamplingValue.setValidator(QtGui.QIntValidator(1, 1000))
-        
 
-        
         # Duration of the measurement
         self.duration = initial_duration
         self.durationLabel = QtGui.QLabel('Duration (s) [max 10 min]: ')
@@ -215,7 +217,7 @@ class Frontend(QtGui.QFrame):
         fontsize = 14
         font_family = 'Serif'
         self.display_rate = self.sampling_rate/self.downsampling_period
-        self.points_displayed = self.display_rate*1e3*self.viewbox_length
+        self.points_displayed = np.floor(self.display_rate*1e3*self.viewbox_length)
         display_rate_text = 'Display rate: {:.3f} kS/s. Display period: {:.3f} ms. Points displayed: {:.0f}'.format(self.display_rate, 1/self.display_rate, self.points_displayed)
         self.displayRateLabel = QtGui.QLabel(display_rate_text)
         self.displayRateLabel.setFont(QtGui.QFont(font_family, fontsize))
@@ -301,6 +303,14 @@ class Frontend(QtGui.QFrame):
         self.signal_plot.setLabel('left', 'Voltage (V)')
         self.signal_plot.setLabel('bottom', 'Time (s)')
         
+        # widget for the laser power monitor
+        self.monitorTraceWidget = pg.GraphicsLayoutWidget()
+        self.monitor_plot = self.monitorTraceWidget.addPlot(row = 1, col = 1, title = 'Monitor power signal')
+        self.monitor_plot.enableAutoRange(False, False)
+        self.monitor_plot.showGrid(x = True, y = True)
+        self.monitor_plot.setLabel('left', 'Voltage (V)')
+        self.monitor_plot.setLabel('bottom', 'Time (s)')
+        
         # Docks
         hbox = QtGui.QHBoxLayout(self)
         dockArea = DockArea()
@@ -313,9 +323,13 @@ class Frontend(QtGui.QFrame):
         displayCtrlDock.addWidget(self.paramDisplayWidget)
         dockArea.addDock(displayCtrlDock, 'bottom', acqTraceDock)        
 
-        viewTraceDock = Dock('Trace viewbox', size = (10,10))
+        viewTraceDock = Dock('Trace viewbox', size = (1000,10))
         viewTraceDock.addWidget(self.viewTraceWidget)
         dockArea.addDock(viewTraceDock, 'bottom', displayCtrlDock)
+
+        monitorTraceDock = Dock('Trace viewbox', size = (1000,10))
+        monitorTraceDock.addWidget(self.monitorTraceWidget)
+        dockArea.addDock(monitorTraceDock, 'bottom', viewTraceDock)
 
         hbox.addWidget(dockArea) 
         self.setLayout(hbox)
@@ -359,6 +373,7 @@ class Frontend(QtGui.QFrame):
         if time_viewbox_length != self.viewbox_length:
             print('Time length of the viewbox changed to {:.1f} s'.format(time_viewbox_length))
             self.viewbox_length = time_viewbox_length
+            self.change_downsampling(self.downsampling_period)
         return
     
     def get_trace(self):
@@ -368,18 +383,27 @@ class Frontend(QtGui.QFrame):
             # sampling_rate is in kS/s
             # viewbox_length is in s
             # so multiply by 1000 to obtain the right size of N
-            N = int(self.viewbox_length*self.sampling_rate*1000)
+            N = int(self.viewbox_length*self.sampling_rate*1e3)
             # data array
-            self.data_array_to_plot = np.empty(N)
-            self.data_array_to_plot[:] = np.nan
+            self.data_apd_array_to_plot = np.empty(N)
+            self.data_apd_array_to_plot[:] = np.nan
+            # monitor array
+            self.monitor_array_to_plot = np.empty(N)
+            self.monitor_array_to_plot[:] = np.nan
             # mean array
-            self.mean_array_to_plot = np.empty(N)
-            self.mean_array_to_plot[:] = np.nan
+            self.mean_apd_array_to_plot = np.empty(N)
+            self.mean_apd_array_to_plot[:] = np.nan
+            self.mean_monitor_array_to_plot = np.empty(N)
+            self.mean_monitor_array_to_plot[:] = np.nan
             # std dev +/- array
-            self.std_plus_array_to_plot = np.empty(N)
-            self.std_plus_array_to_plot[:] = np.nan
-            self.std_minus_array_to_plot = np.empty(N)
-            self.std_minus_array_to_plot[:] = np.nan
+            self.std_apd_plus_array_to_plot = np.empty(N)
+            self.std_apd_plus_array_to_plot[:] = np.nan
+            self.std_apd_minus_array_to_plot = np.empty(N)
+            self.std_apd_minus_array_to_plot[:] = np.nan
+            self.std_monitor_plus_array_to_plot = np.empty(N)
+            self.std_monitor_plus_array_to_plot[:] = np.nan
+            self.std_monitor_minus_array_to_plot = np.empty(N)
+            self.std_monitor_minus_array_to_plot[:] = np.nan
             # time array
             self.time_array_to_plot = np.empty(N)
             self.time_array_to_plot[:] = np.nan
@@ -412,7 +436,7 @@ class Frontend(QtGui.QFrame):
 
     def change_downsampling(self, downsampling_period):
         self.display_rate = self.sampling_rate/downsampling_period
-        self.points_displayed = self.display_rate*1e3*self.viewbox_length
+        self.points_displayed = np.floor(self.display_rate*1e3*self.viewbox_length)
         print('\nDisplaying at {} kS/s'.format(self.display_rate))
         new_text = 'Display rate: {:.3f} kS/s. Display period: {:.3f} ms. Points displayed: {:.0f}'.format(self.display_rate, 1/self.display_rate, self.points_displayed)
         self.displayRateLabel.setText(new_text)
@@ -444,19 +468,25 @@ class Frontend(QtGui.QFrame):
         return
     
     def center_signal(self):
-        self.signal_plot.setYRange(self.mean_value - 10*self.sd_value, 
-                                   self.mean_value + 10*self.sd_value)
+        self.signal_plot.setYRange(self.mean_value_apd - 10*self.sd_value_apd, 
+                                   self.mean_value_apd + 10*self.sd_value_apd)
+        self.monitor_plot.setYRange(self.mean_value_monitor - 10*self.sd_value_monitor, 
+                                   self.mean_value_monitor + 10*self.sd_value_monitor)
         return
     
     @pyqtSlot(np.ndarray, int, int)
-    def get_data(self, data_array, i, n_read):
+    def get_data(self, data, i, n_read):
+        data_apd_array = data[0,:]
+        monitor_array = data[1,:]
         # do some minor stats
-        self.mean_value = np.mean(data_array)
-        self.sd_value = np.std(data_array, ddof = 1)
+        self.mean_value_apd = np.mean(data_apd_array)
+        self.sd_value_apd = np.std(data_apd_array, ddof = 1)
+        self.mean_value_monitor = np.mean(monitor_array)
+        self.sd_value_monitor = np.std(monitor_array, ddof = 1)
         # update value labels
-        sd_mV = self.sd_value*1000 # to mV
-        self.signalMeanValue.setText('{:.3f}'.format(self.mean_value))
-        self.signalStdValue.setText('{:.3f}'.format(sd_mV))
+        sd_mV_apd = self.sd_value_apd*1000 # to mV
+        self.signalMeanValue.setText('{:.3f}'.format(self.mean_value_apd))
+        self.signalStdValue.setText('{:.3f}'.format(sd_mV_apd))
 
         # build time array
         start = i
@@ -465,18 +495,21 @@ class Frontend(QtGui.QFrame):
         # for visualizing purposes
         if self.downsampling_period != 1:
             # crop and resize data for later averaging as downsampling method
-            data_array_length = data_array.size
+            data_array_length = data_apd_array.size
             remainder = np.mod(data_array_length, self.downsampling_period)
             round_size = data_array_length - remainder
             # crop
-            data_array = data_array[:round_size]
+            data_apd_array = data_apd_array[:round_size]
+            monitor_array = monitor_array[:round_size]
             time_array = time_array[:round_size]
             # reshape
             new_size = int(round_size/self.downsampling_period)
-            data_array = data_array.reshape([self.downsampling_period, new_size], order = 'F')
+            data_apd_array = data_apd_array.reshape([self.downsampling_period, new_size], order = 'F')
+            monitor_array = monitor_array.reshape([self.downsampling_period, new_size], order = 'F')
             time_array = time_array.reshape([self.downsampling_period, new_size], order = 'F')
             # average
-            data_array = np.mean(data_array, axis = 0)
+            data_apd_array = np.mean(data_apd_array, axis = 0)
+            monitor_array = np.mean(monitor_array, axis = 0)
             time_array = np.mean(time_array, axis = 0)
             n_roll = new_size
         else:
@@ -484,39 +517,59 @@ class Frontend(QtGui.QFrame):
             n_roll = n_read
         # prepare arrays to plot    
         self.time_array_to_plot = np.roll(self.time_array_to_plot, -n_roll)
-        self.data_array_to_plot = np.roll(self.data_array_to_plot, -n_roll)
-        self.mean_array_to_plot = np.roll(self.mean_array_to_plot, -n_roll)
-        self.std_plus_array_to_plot = np.roll(self.std_plus_array_to_plot, -n_roll)
-        self.std_minus_array_to_plot = np.roll(self.std_minus_array_to_plot, -n_roll)
+        self.data_apd_array_to_plot = np.roll(self.data_apd_array_to_plot, -n_roll)
+        self.mean_apd_array_to_plot = np.roll(self.mean_apd_array_to_plot, -n_roll)
+        self.std_apd_plus_array_to_plot = np.roll(self.std_apd_plus_array_to_plot, -n_roll)
+        self.std_apd_minus_array_to_plot = np.roll(self.std_apd_minus_array_to_plot, -n_roll)
+        self.monitor_array_to_plot = np.roll(self.monitor_array_to_plot, -n_roll)
+        self.mean_monitor_array_to_plot = np.roll(self.mean_monitor_array_to_plot, -n_roll)
+        self.std_monitor_plus_array_to_plot = np.roll(self.std_monitor_plus_array_to_plot, -n_roll)
+        self.std_monitor_minus_array_to_plot = np.roll(self.std_monitor_minus_array_to_plot, -n_roll)
 
         # plot raw data (with or without downsampling)
         self.time_array_to_plot[-n_roll:] = time_array
-        self.data_array_to_plot[-n_roll:] = data_array
-        item_raw_data_curve = FastLine(self.time_array_to_plot, self.data_array_to_plot, 'w')
+        self.data_apd_array_to_plot[-n_roll:] = data_apd_array
+        self.monitor_array_to_plot[-n_roll:] = monitor_array
+        item_raw_apd_data_curve = FastLine(self.time_array_to_plot, self.data_apd_array_to_plot, 'w')
+        item_raw_monitor_data_curve = FastLine(self.time_array_to_plot, self.monitor_array_to_plot, 'w')
         
         # plot mean of data (using previous arrays)
         # mean_array_to_plot = np.copy(data_array_to_plot)
-        self.mean_array_to_plot[-n_roll:] = self.mean_value
-        item_mean_data_curve = FastLine(self.time_array_to_plot, self.mean_array_to_plot, 'b')
+        self.mean_apd_array_to_plot[-n_roll:] = self.mean_value_apd
+        item_mean_apd_data_curve = FastLine(self.time_array_to_plot, self.mean_apd_array_to_plot, 'b')
+        self.mean_monitor_array_to_plot[-n_roll:] = self.mean_value_monitor
+        item_mean_monitor_data_curve = FastLine(self.time_array_to_plot, self.mean_monitor_array_to_plot, 'y')
         
         # plot std dev of the data (using previous arrays)
         # std_plus_array_to_plot = np.copy(data_array_to_plot)
         # std_minus_array_to_plot = np.copy(data_array_to_plot)
-        self.std_plus_array_to_plot[-n_roll:] = self.mean_value + 3*self.sd_value # 3 sigma means 99.73%
-        self.std_minus_array_to_plot[-n_roll:] = self.mean_value - 3*self.sd_value # 3 sigma means 99.73%
-        item_std_plus_data_curve = FastLine(self.time_array_to_plot, self.std_plus_array_to_plot, 'g')
-        item_std_minus_data_curve = FastLine(self.time_array_to_plot, self.std_minus_array_to_plot, 'g')
+        self.std_apd_plus_array_to_plot[-n_roll:] = self.mean_value_apd + 3*self.sd_value_apd # 3 sigma means 99.73%
+        self.std_apd_minus_array_to_plot[-n_roll:] = self.mean_value_apd - 3*self.sd_value_apd # 3 sigma means 99.73%
+        item_std_apd_plus_data_curve = FastLine(self.time_array_to_plot, self.std_apd_plus_array_to_plot, 'g')
+        item_std_apd_minus_data_curve = FastLine(self.time_array_to_plot, self.std_apd_minus_array_to_plot, 'g')
+        self.std_monitor_plus_array_to_plot[-n_roll:] = self.mean_value_monitor + 3*self.sd_value_monitor # 3 sigma means 99.73%
+        self.std_monitor_minus_array_to_plot[-n_roll:] = self.mean_value_monitor - 3*self.sd_value_monitor # 3 sigma means 99.73%
+        item_std_monitor_plus_data_curve = FastLine(self.time_array_to_plot, self.std_monitor_plus_array_to_plot, 'y')
+        item_std_monitor_minus_data_curve = FastLine(self.time_array_to_plot, self.std_monitor_minus_array_to_plot, 'y')
         
         # add plots
+        # APD
         self.signal_plot.clear()
-        self.signal_plot.addItem(item_raw_data_curve, skipFiniteCheck = False)
-        self.signal_plot.addItem(item_mean_data_curve, skipFiniteCheck = False)
-        self.signal_plot.addItem(item_std_plus_data_curve, skipFiniteCheck = False)
-        self.signal_plot.addItem(item_std_minus_data_curve, skipFiniteCheck = False)
+        self.signal_plot.addItem(item_raw_apd_data_curve, skipFiniteCheck = False)
+        self.signal_plot.addItem(item_mean_apd_data_curve, skipFiniteCheck = False)
+        self.signal_plot.addItem(item_std_apd_plus_data_curve, skipFiniteCheck = False)
+        self.signal_plot.addItem(item_std_apd_minus_data_curve, skipFiniteCheck = False)
+        # monitor
+        self.monitor_plot.clear()
+        self.monitor_plot.addItem(item_raw_monitor_data_curve, skipFiniteCheck = False)
+        self.monitor_plot.addItem(item_mean_monitor_data_curve, skipFiniteCheck = False)
+        self.monitor_plot.addItem(item_std_monitor_plus_data_curve, skipFiniteCheck = False)
+        self.monitor_plot.addItem(item_std_monitor_minus_data_curve, skipFiniteCheck = False)
         
         # set range and fix rolling window length
         x_viewbox = time_array[-1]
         self.signal_plot.setXRange(x_viewbox - self.viewbox_length, x_viewbox)
+        self.monitor_plot.setXRange(x_viewbox - self.viewbox_length, x_viewbox)
         return
         
     @pyqtSlot()
@@ -576,7 +629,9 @@ class Backend(QtCore.QObject):
         self.number_of_points = calculate_num_of_points(self.duration, self.sampling_rate)
         self.voltage_range = initial_voltage_range
         print('Setting up task...')
-        self.APD_task, self.time_to_finish = daq.set_ch_APD(self.sampling_rate, \
+        # APD task
+        self.APD_task, self.time_to_finish = daq.set_task(number_of_channels, \
+                                                          self.sampling_rate, \
                                                             self.number_of_points, \
                                                             -self.voltage_range, \
                                                             +self.voltage_range, \
@@ -620,16 +675,20 @@ class Backend(QtCore.QObject):
     
     def start_trace(self):
         print('\nAcquisition started at {}'.format(timer()))
+        self.init_time = timer()
         # allocate arrays
         self.data_array_filepath, self.data_array = daq.allocate_datafile(self.number_of_points)
+        self.monitor_array_filepath, self.monitor_array = daq.allocate_datafile(self.number_of_points)
         self.time_array_filepath, self.time_array = daq.allocate_datafile(self.number_of_points)
         # counter to account for the number of points already measured
         self.i = 0
         self.i_to_send = 0
         self.trace_number = 0
         # prepare stream reader
-        self.APD_stream_reader = daq.arm_measurement_in_loop(self.APD_task)
+        self.APD_stream_reader = daq.arm_measurement_in_loop(self.APD_task, number_of_channels)
         # start task
+        if not self.APD_task.is_task_done():
+            self.APD_task.stop()
         self.APD_task.start()
         # start timer to retrieve data periodically
         self.updateTimer.start()
@@ -641,6 +700,7 @@ class Backend(QtCore.QObject):
         # flush DAQ buffer
         self.data_array.flush()
         print('\nStopping acquisition at {}'.format(timer()))
+        print('Total time recording: {:.3f} s'.format(self.total_time))
         if not self.APD_task.is_task_done():
             self.APD_task.stop()
         # emit signal acquisition has ended
@@ -651,15 +711,17 @@ class Backend(QtCore.QObject):
         # perform the measurement 
         if ( not self.APD_task.is_task_done() and self.i < self.number_of_points ):
             # read a short stream
-            n_available, data = daq.measure_one_loop(self.APD_stream_reader, \
+            n_available_per_ch, data = daq.measure_one_loop(self.APD_stream_reader, \
+                                                     number_of_channels, \
                                                      self.number_of_points, \
                                                      self.i)
+            data_APD = data[0,:]
             # assign
-            self.data_array[self.i:self.i + n_available] = data
+            self.data_array[self.i:self.i + n_available_per_ch] = data_APD
             # send
-            self.dataSignal.emit(data, self.i_to_send, n_available)
-            self.i += n_available
-            self.i_to_send += n_available
+            self.dataSignal.emit(data, self.i_to_send, n_available_per_ch)
+            self.i += n_available_per_ch
+            self.i_to_send += n_available_per_ch
         else:
             if self.save_continuously_bool:
                 # flush array at buffer into the disk (because it was a memmap array)
@@ -677,6 +739,7 @@ class Backend(QtCore.QObject):
     @pyqtSlot()
     def stop_timer(self):
         self.updateTimer.stop()
+        self.total_time = timer() - self.init_time
     
     @pyqtSlot()
     def save_trace(self):
@@ -695,7 +758,7 @@ class Backend(QtCore.QObject):
         np.save(full_filepath, np.transpose(self.data_array), allow_pickle = False)
         # uncomment the line below to debug saving procedure
         # it will save an ASCII encoded text file
-        # np.savetxt(full_filepath+'.dat', np.transpose(self.data_array))
+        # np.savetxt(os.path.join(full_filepath,'.dat'), np.transpose(self.data_array))
         # save measurement parameters and comments
         full_filepath_params = os.path.join(filepath, filename + '_params.txt')
         self.params_to_be_saved = self.get_params_to_be_saved()
@@ -716,7 +779,8 @@ class Backend(QtCore.QObject):
         print('Changing voltage ranges...')
         self.voltage_range = voltage_range # in V, is float
         print('Setting up new task...')
-        self.APD_task, self.time_to_finish = daq.set_ch_APD(self.sampling_rate, \
+        self.APD_task, self.time_to_finish = daq.set_task(number_of_channels, \
+                                                          self.sampling_rate, \
                                                             self.number_of_points, \
                                                             -self.voltage_range, \
                                                             +self.voltage_range, \
@@ -737,7 +801,8 @@ class Backend(QtCore.QObject):
         print('Sampling rate changed to', sampling_rate, 'kS/s')
         self.number_of_points = calculate_num_of_points(self.duration, self.sampling_rate)
         print('Setting up new task...')
-        self.APD_task, self.time_to_finish = daq.set_ch_APD(self.sampling_rate, \
+        self.APD_task, self.time_to_finish = daq.set_task(number_of_channels, \
+                                                          self.sampling_rate, \
                                                             self.number_of_points, \
                                                             -self.voltage_range, \
                                                             +self.voltage_range, \
@@ -757,7 +822,8 @@ class Backend(QtCore.QObject):
         print('Duration of the measurement changed to', duration, 's')
         self.number_of_points = calculate_num_of_points(self.duration, self.sampling_rate) 
         print('Setting up new task...')
-        self.APD_task, self.time_to_finish = daq.set_ch_APD(self.sampling_rate, \
+        self.APD_task, self.time_to_finish = daq.set_task(number_of_channels, \
+                                                          self.sampling_rate, \
                                                             self.number_of_points, \
                                                             -self.voltage_range, \
                                                             +self.voltage_range, \
