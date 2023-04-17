@@ -231,10 +231,12 @@ class BPC303:
         Closed Loop mode
         """
         if axis in ("x", "y", "z"):
-            print("\t- moving %s axis piezo to %f um -->" % (axis, pos), end="")
+            # uncomment for debugging
+            # print("\t- moving %s axis piezo to %.3f um -->" % (axis, pos), end="")
             channel = self.__get_chan(axis)
             channel.SetPosition(Decimal(pos))
-            print(" done")
+            # uncomment for debugging
+            # print(" done")
         else:
             print("\t- axis invalid)")
         return
@@ -260,6 +262,8 @@ class BPC303:
         """
         actual_position = self.get_axis_position(axis)
         new_position = actual_position + step
+        # uncomment for debugging
+        print("\t- piezo moving %.3f um on axis %s" % (step, axis))
         self.__set_axis_position(axis, new_position)
         return 
     

@@ -114,6 +114,7 @@ class pco_camera(object):
         return
     
     def set_binning(self, n):
+        self.n = int(n)
         # restricted to squared binning for symmetry and resolution purposes
         if n > 4:
             print('Binning options are 1x1, 2x2 and 4x4. Binning has not been set.')
@@ -121,9 +122,10 @@ class pco_camera(object):
         if n < 1:
             print('Binning options are 1x1, 2x2 and 4x4. Binning has not been set.')
             return
-        print('Setting squared binning to {}x{} pixels...'.format(n, n))
-        self.camera.sdk.set_binning(n, n)
-        print(self.camera.sdk.get_binning())
+        print('Setting squared binning to {}x{} pixels...'.format(self.n, self.n))
+        self.camera.sdk.set_binning(self.n, self.n)
+        # uncomment to debug
+        # print(self.camera.sdk.get_binning())
         return
     
     def set_roi(self, starting_col, starting_row, final_col, final_row):

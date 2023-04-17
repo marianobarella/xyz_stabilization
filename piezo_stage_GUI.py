@@ -386,20 +386,22 @@ class Backend(QtCore.QObject):
         """ 
         Moves the stage relative to its current position along the specified axis.
         """
-        x_pos_before, y_pos_before, z_pos_before = self.read_position() 
+        # impose a settling time before reading
+        tm.sleep(0.5) 
         # uncomment for debbuging
+        x_pos_before, y_pos_before, z_pos_before = self.read_position() 
         print('\nBefore')
         print('x_pos', x_pos_before)
         print('y_pos', y_pos_before)
         print('z_pos', z_pos_before)
-        print('Asking for a', distance, 'step on', axis, 'axis')
+        print('Asking for a %.3f step on %s axis' % (distance, axis) )
         self.piezo_stage.move_relative(axis, distance)
         # impose a settling time before reading
         tm.sleep(0.5) 
         # check piezo_toolbox.py\response_time function
         # after running it, it's clear that 0.5 s is a suitable settling time
-        x_pos_after, y_pos_after, z_pos_after = self.read_position() 
         # uncomment for debbuging
+        x_pos_after, y_pos_after, z_pos_after = self.read_position() 
         print('After')
         print('x_pos', x_pos_after)
         print('y_pos', y_pos_after)

@@ -32,10 +32,16 @@ import piezo_stage_GUI
 #=====================================
 
 cam = pco.pco_camera()
-initial_pixel_size = 65 # in nm (with 1x1 binning)
-initial_exp_time = 20 # in ms
-initial_filepath = 'D:\\daily_data' # save in SSD for fast and daily use
-initial_filename = 'image_pco_test'
+initial_binning = 4
+initial_pixel_size = 260 # in nm (with 4x4 binning)
+initial_exp_time = 200.0 # in ms
+initial_starting_col = 1 
+initial_starting_row = 1
+initial_final_col = 512 # with 4x4 binning
+initial_final_row = 512 # with 4x4 binning
+initial_roi_list = [initial_starting_col, initial_starting_row, initial_final_col, initial_final_row]
+initial_filepath = 'D:\\daily_data\\pco_camera_pictures' # save in SSD for fast and daily use
+initial_filename = 'image_pco'
 
 # timers
 viewTimer_update = 25 # in ms (makes no sense to go lower than the refresh rate of the screen)
@@ -44,7 +50,7 @@ initial_tracking_period = 500 # in ms
 driftbox_length = 60.0 # in seconds
 
 # PID constants
-initial_kp = 1 # proportinal factor of the PID
+initial_kp = -0.25 # proportinal factor of the PID
 initial_ki = 0 # integral factor of the PID
 initial_kd = 0 # derivative factor of the PID
 
@@ -77,6 +83,7 @@ class Frontend(QtGui.QFrame):
         # set the title of the window
         title = "XY stabilization module"
         self.setWindowTitle(title)
+        self.setGeometry(5, 30, 1900, 600)
         self.sensor_temp = 0.00
         self.cam_temp = 0.00
         self.power_temp = 0.00
@@ -172,9 +179,9 @@ class Frontend(QtGui.QFrame):
 
         # Binning
         binning_label = QtGui.QLabel('Binning (pixels):')
-        self.binning_edit = QtGui.QLineEdit('1')
+        self.binning_edit = QtGui.QLineEdit(str(initial_binning))
         self.binning_edit.setToolTip('Restricted to squared binning. Options are 1x1, 2x2 and 4x4.')
-        self.binning_previous = float(self.binning_edit.text())
+        self.binning_previous = int(self.binning_edit.text())
         self.binning_edit.editingFinished.connect(self.binning_changed_check)
         self.binning_edit.setValidator(QtGui.QIntValidator(1, 4))
         
@@ -184,10 +191,10 @@ class Frontend(QtGui.QFrame):
         final_col_label = QtGui.QLabel('Final col (pixel):')
         starting_row_label = QtGui.QLabel('Starting row (pixel):')
         final_row_label = QtGui.QLabel('Final row (pixel):')
-        self.starting_col = QtGui.QLineEdit('1')
-        self.final_col = QtGui.QLineEdit('2048')
-        self.starting_row = QtGui.QLineEdit('1')
-        self.final_row = QtGui.QLineEdit('2048')
+        self.starting_col = QtGui.QLineEdit(str(initial_roi_list[0]))
+        self.final_col = QtGui.QLineEdit(str(initial_roi_list[2]))
+        self.starting_row = QtGui.QLineEdit(str(initial_roi_list[1]))
+        self.final_row = QtGui.QLineEdit(str(initial_roi_list[3]))
         self.starting_col_previous = int(self.starting_col.text())
         self.final_col_previous = int(self.final_col.text())
         self.starting_row_previous = int(self.starting_row.text())
@@ -207,7 +214,7 @@ class Frontend(QtGui.QFrame):
         number_of_fiducials_label = QtGui.QLabel('Number of fiducials:')
         self.number_of_fiducials_value = QtGui.QLineEdit('4')
         box_size_label = QtGui.QLabel('Box size (pixels):')
-        self.box_size_value = QtGui.QLineEdit('101')
+        self.box_size_value = QtGui.QLineEdit('31')
         self.box_size_value.setValidator(QtGui.QIntValidator(1, 999))
         self.box_size_value.setToolTip('Restricted to odd numbers. Good starting point is box_size ~ 1 µm (use pixel size).')
         self.create_ROIs_button = QtGui.QPushButton('Create ROIs')
@@ -335,7 +342,7 @@ class Frontend(QtGui.QFrame):
         dockArea = DockArea()
         hbox = QtGui.QHBoxLayout(self)
 
-        viewDock = Dock('Camera', size = (20, 20)) # optical format is squared
+        viewDock = Dock('Camera', size = (20, 200)) # optical format is squared
         viewDock.addWidget(imageWidget)
         dockArea.addDock(viewDock)
         
@@ -578,7 +585,7 @@ class Frontend(QtGui.QFrame):
     @pyqtSlot(str)
     def get_file_path(self, file_path):
         self.file_path = file_path
-        self.working_dir_label.setText(self.file_path)
+        self.working_dir_path.setText(self.file_path)
         return
     
     # re-define the closeEvent to execute an specific command
@@ -634,19 +641,24 @@ class Backend(QtCore.QObject):
         print('Monitoring pco.camera temperature each {:.1f} s.'.format(tempTimer_update/1000))
         self.tempTimer.start(tempTimer_update) # ms
         self.image_np = None
-        self.binning = 1
-        self.exposure_time_ms = 100
+        self.binning = initial_binning
+        self.pixel_size = initial_pixel_size
+        self.exposure_time_ms = initial_exp_time
         self.file_path = initial_filepath
         self.trackingTimer = QtCore.QTimer()
         self.trackingTimer.timeout.connect(self.call_pid)
         self.tracking_period = initial_tracking_period
-        self.pixel_size = initial_pixel_size
         self.prop_correction = np.array([0, 0])
         self.int_correction = np.array([0, 0])
         self.dev_correction = np.array([0, 0])
         self.last_error_avg = np.array([0, 0])
         self.pid_param_list = [initial_kp, initial_ki, initial_kd]
         self.correct_drift_flag = False
+        cam.set_binning(self.binning)
+        cam.set_roi(initial_roi_list[0], \
+                    initial_roi_list[1], \
+                    initial_roi_list[2], \
+                    initial_roi_list[3])
         return
     
     @pyqtSlot(bool, list)    
@@ -674,7 +686,7 @@ class Backend(QtCore.QObject):
     
     @pyqtSlot(bool, int, float)    
     def change_binning(self, livebool, binning, pixel_size):
-        print('\nBinning changed to {}x{}'.format(binning, binning))
+        print('\nBinning changed to %d x %d' % (binning, binning))
         self.binning = binning # is int
         self.pixel_size = pixel_size
         if livebool:
@@ -774,6 +786,7 @@ class Backend(QtCore.QObject):
         error_x_avg = error_x_sum/self.number_of_fiducials
         error_y_avg = error_y_sum/self.number_of_fiducials
         error_avg = np.array([error_x_avg, error_y_avg])
+        print('\n err_x %.0f nm / err_y %.0f nm' % (error_x_avg*1000, error_y_avg*1000))
         # PID calculation
         # assign parameters
         kp = self.pid_param_list[0]
@@ -801,7 +814,7 @@ class Backend(QtCore.QObject):
         # now correct drift if button is checked
         if self.correct_drift_flag:
             # call function to correct
-            self.correct_drift(correction)
+            self.correct_drift(error_avg, correction)
         return
     
     def fit_fiducials(self):
@@ -825,17 +838,20 @@ class Backend(QtCore.QObject):
             timeaxis[i] = timer() - self.start_tracking_time
         return centers, timeaxis
     
-    def correct_drift(self, correction):
-        print(correction)
+    def correct_drift(self, error, correction):
         # make float32 to avoid crashing the module
+        error_x = float(error[0])
+        error_y = float(error[1])
         correction_x = float(correction[0])
         correction_y = float(correction[1])
         # use the worker to send the instructions
         # only if the drift correction is larger than 2x the resolution
         # of the piezostage, i.e., 2x5 nm = 2x0.005 um = 0.01 um
-        if abs(correction_x) > 0.010:
+        if abs(error_x) > 0.020:
+            print('correction x %.0f nm ' % (correction[0]*1000))
             self.piezoWorker.move_relative('x', correction_x)
-        if abs(correction_y) > 0.010:
+        if abs(error_y) > 0.020:
+            print('correction y %.0f nm' % (correction[1]*1000))
             self.piezoWorker.move_relative('y', correction_y)
         return
     
@@ -941,11 +957,13 @@ class Backend(QtCore.QObject):
         # laser532.close()
         # flipperMirror.close()
         cam.stop()
+        # self.piezo_stage.shutdown()
         print('Stopping QtTimers...')
+        self.piezoWorker.updateTimer.stop()
         self.viewTimer.stop()
         self.tempTimer.stop()
-        self.piezoWorker.updateTimer.stop()
         print('Exiting thread...')
+        tm.sleep(2)
         workerThread.exit()
         return
     
