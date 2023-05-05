@@ -216,7 +216,6 @@ class BPC303:
         Method setting the position in um if the channel is in
         Closed Loop mode
         """
-        print("Setting Position:")
         pos = {"x": x, "y": y, "z": z}
         for axis, pos in pos.items():
             if pos is None:

@@ -46,13 +46,24 @@ initial_filename = 'image_pco'
 # timers
 viewTimer_update = 25 # in ms (makes no sense to go lower than the refresh rate of the screen)
 tempTimer_update = 5000 # in ms
-initial_tracking_period = 500 # in ms
-driftbox_length = 60.0 # in seconds
+initial_tracking_period = 200 # in ms
+initial_bix_size = 51 # always odd number pixels
+driftbox_length = 10.0 # in seconds
 
 # PID constants
-initial_kp = -0.25 # proportinal factor of the PID
-initial_ki = 0 # integral factor of the PID
-initial_kd = 0 # derivative factor of the PID
+# DO NOT CHANGE
+initial_kp = 0.2 # proportinal factor of the PID
+initial_ki = 0.03 # integral factor of the PID
+initial_kd = 0.01 # derivative factor of the PID
+# working values (tested with tracking periods of 100, 200, 300 and 500 ms)
+# the shorter the time, the longer the transitory period
+# initial_kp = 0.2 # proportinal factor of the PID
+# initial_ki = 0.03 # integral factor of the PID
+# initial_kd = 0.01 # derivative factor of the PID
+# correction threshold in um
+# above this value (distance) the software starts to apply a correction
+# to compensate the drift
+correction_threshold = 0.020
 
 #=====================================
 
@@ -214,7 +225,7 @@ class Frontend(QtGui.QFrame):
         number_of_fiducials_label = QtGui.QLabel('Number of fiducials:')
         self.number_of_fiducials_value = QtGui.QLineEdit('4')
         box_size_label = QtGui.QLabel('Box size (pixels):')
-        self.box_size_value = QtGui.QLineEdit('31')
+        self.box_size_value = QtGui.QLineEdit(str(initial_bix_size))
         self.box_size_value.setValidator(QtGui.QIntValidator(1, 999))
         self.box_size_value.setToolTip('Restricted to odd numbers. Good starting point is box_size ~ 1 µm (use pixel size).')
         self.create_ROIs_button = QtGui.QPushButton('Create ROIs')
@@ -648,6 +659,7 @@ class Backend(QtCore.QObject):
         self.trackingTimer = QtCore.QTimer()
         self.trackingTimer.timeout.connect(self.call_pid)
         self.tracking_period = initial_tracking_period
+        self.tracking_period_seconds = self.tracking_period/1000
         self.prop_correction = np.array([0, 0])
         self.int_correction = np.array([0, 0])
         self.dev_correction = np.array([0, 0])
@@ -699,7 +711,7 @@ class Backend(QtCore.QObject):
     
     @pyqtSlot(bool, int)
     def change_tracking_period(self, lockbool, new_tracking_period):
-        print('Tracking period changed to {:.3f} s.'.format(new_tracking_period/1000))
+        print('\nTracking period changed to {:.3f} s.'.format(new_tracking_period/1000))
         self.tracking_period = new_tracking_period
         if lockbool:
             print('Restarting QtTimer...')
@@ -709,7 +721,7 @@ class Backend(QtCore.QObject):
     
     @pyqtSlot(bool, list)
     def new_pid_params(self, lockbool, pid_param_list):
-        print('PID parameters changed to kp={} / ki={} / kd={}.'.format(pid_param_list[0], \
+        print('\nPID parameters changed to kp={} / ki={} / kd={}.'.format(pid_param_list[0], \
                                                                         pid_param_list[1], \
                                                                         pid_param_list[2]))
         self.pid_param_list = pid_param_list
@@ -722,7 +734,7 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool)
     def start_stop_tracking(self, trackbool):
         if trackbool:
-            print('Locking and tracking fiducials...')
+            print('\nLocking and tracking fiducials...')
             # initiating variables
             self.centers = {}
             self.timeaxis = {}
@@ -739,7 +751,7 @@ class Backend(QtCore.QObject):
             self.trackingTimer.start(self.tracking_period)
         else:
             self.trackingTimer.stop()
-            print('Unlocking...')
+            print('\nUnlocking...')
         return
     
     def get_fiducials_data(self):
@@ -763,7 +775,7 @@ class Backend(QtCore.QObject):
             self.y1[i] = int(self.frame_coordinates[i][1,0,0])
             self.y2[i] = int(self.frame_coordinates[i][1,0,-1]) + 1
             # then frame_intensity is self.image_np[x1:x2, y1:y2]
-        print('Finding initial coordinates...')
+        print('\nFinding initial coordinates...')
         self.initial_centers, _ = self.fit_fiducials()
         print('Done.')
         return  
@@ -777,8 +789,8 @@ class Backend(QtCore.QObject):
         error_x_sum = 0
         error_y_sum = 0
         for i in range(self.number_of_fiducials):
-            error_x = self.initial_centers[i][0] - centers[i][0]
-            error_y = self.initial_centers[i][1] - centers[i][1]
+            error_y = self.initial_centers[i][0] - centers[i][0]
+            error_x = self.initial_centers[i][1] - centers[i][1]
             error[i] = [error_x, error_y]
             # print(error_x, error_y)
             error_x_sum += error_x
@@ -786,22 +798,8 @@ class Backend(QtCore.QObject):
         error_x_avg = error_x_sum/self.number_of_fiducials
         error_y_avg = error_y_sum/self.number_of_fiducials
         error_avg = np.array([error_x_avg, error_y_avg])
-        print('\n err_x %.0f nm / err_y %.0f nm' % (error_x_avg*1000, error_y_avg*1000))
-        # PID calculation
-        # assign parameters
-        kp = self.pid_param_list[0]
-        ki = self.pid_param_list[1]
-        kd = self.pid_param_list[2]
-        # proportional term
-        self.prop_correction = kp*error_avg
-        # integral term
-        self.int_correction = self.int_correction + ki*error_avg*self.tracking_period
-        # derivative term
-        self.dev_correction = self.dev_correction + \
-            kd*(error_avg - self.last_error_avg)/self.tracking_period
-        self.last_error_avg = error_avg
-        # calculate correction in um
-        correction = self.prop_correction + self.int_correction + self.dev_correction
+        # uncomment for debugging
+        # print('\n err_x %.0f nm / err_y %.0f nm' % (error_x_avg*1000, error_y_avg*1000))
         # send position of all fiducials to Frontend
         # first line is to check that all fiducials drift in the same way
         # be aware that if uncommented you should change the signal type slot also
@@ -813,6 +811,21 @@ class Backend(QtCore.QObject):
             self.errors_to_save.append(error_avg)
         # now correct drift if button is checked
         if self.correct_drift_flag:
+            # PID calculation
+            # assign parameters
+            kp = self.pid_param_list[0]
+            ki = self.pid_param_list[1]
+            kd = self.pid_param_list[2]
+            # proportional term
+            self.prop_correction = kp*error_avg
+            # integral term
+            self.int_correction = self.int_correction + ki*error_avg*self.tracking_period_seconds
+            # derivative term
+            self.dev_correction = self.dev_correction + \
+                kd*(error_avg - self.last_error_avg)/self.tracking_period_seconds
+            self.last_error_avg = error_avg
+            # calculate correction in um
+            correction = self.prop_correction + self.int_correction + self.dev_correction
             # call function to correct
             self.correct_drift(error_avg, correction)
         return
@@ -845,13 +858,12 @@ class Backend(QtCore.QObject):
         correction_x = float(correction[0])
         correction_y = float(correction[1])
         # use the worker to send the instructions
-        # only if the drift correction is larger than 2x the resolution
-        # of the piezostage, i.e., 2x5 nm = 2x0.005 um = 0.01 um
-        if abs(error_x) > 0.020:
-            print('correction x %.0f nm ' % (correction[0]*1000))
+        # only if the drift correction is larger than a threshold
+        if abs(error_x) > correction_threshold:
+            # print('correction x %.0f nm ' % (correction[0]*1000))
             self.piezoWorker.move_relative('x', correction_x)
-        if abs(error_y) > 0.020:
-            print('correction y %.0f nm' % (correction[1]*1000))
+        if abs(error_y) > correction_threshold:
+            # print('correction y %.0f nm' % (correction[1]*1000))
             self.piezoWorker.move_relative('y', correction_y)
         return
     
@@ -963,7 +975,7 @@ class Backend(QtCore.QObject):
         self.viewTimer.stop()
         self.tempTimer.stop()
         print('Exiting thread...')
-        tm.sleep(2)
+        tm.sleep(1)
         workerThread.exit()
         return
     

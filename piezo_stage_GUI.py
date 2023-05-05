@@ -37,7 +37,7 @@ print('Zeroing the piezo stage. This step takes around 30 s. Please wait...\n')
 piezo_stage.zero('all')
 
 # time period used to update stage position
-updatePosition_period = 100 # in ms
+updatePosition_period = 500 # in ms
 
 #=====================================
 
@@ -81,12 +81,12 @@ class Frontend(QtGui.QFrame):
         self.feedback_loop_mode_tickbox.setToolTip('Tick = Close-loop mode / Untick = Open-loop mode.')
 
         # xyz position control
-        self.StepEdit = QtGui.QLineEdit("1")
+        self.StepEdit = QtGui.QLineEdit("0.2")
         self.StepEdit.setValidator(QtGui.QDoubleValidator(0.000, 20.000, 3))
 
         self.xLabel = QtGui.QLabel('Nan')
         self.xLabel.setTextFormat(QtCore.Qt.RichText)
-        self.xname = QtGui.QLabel("<strong>x =")
+        self.xname = QtGui.QLabel("<strong>x (μm) =")
         self.xname.setTextFormat(QtCore.Qt.RichText)
         self.xUpButton = QtGui.QPushButton("x ►")
         self.xDownButton = QtGui.QPushButton("◄ x")
@@ -99,7 +99,7 @@ class Frontend(QtGui.QFrame):
 
         self.yLabel = QtGui.QLabel('Nan')
         self.yLabel.setTextFormat(QtCore.Qt.RichText)
-        self.yname = QtGui.QLabel("<strong>y =")
+        self.yname = QtGui.QLabel("<strong>y (μm) =")
         self.yname.setTextFormat(QtCore.Qt.RichText)
         self.yUpButton = QtGui.QPushButton("y ▲")  # ↑
         self.yDownButton = QtGui.QPushButton("y ▼")  # ↓
@@ -112,7 +112,7 @@ class Frontend(QtGui.QFrame):
 
         self.zLabel = QtGui.QLabel('Nan')  
         self.zLabel.setTextFormat(QtCore.Qt.RichText)
-        self.zname = QtGui.QLabel("<strong>z =")
+        self.zname = QtGui.QLabel("<strong>z (μm) =")
         self.zname.setTextFormat(QtCore.Qt.RichText)
         self.zUpButton = QtGui.QPushButton("z ▲")
         self.zDownButton = QtGui.QPushButton("z ▼")
@@ -386,29 +386,29 @@ class Backend(QtCore.QObject):
         """ 
         Moves the stage relative to its current position along the specified axis.
         """
-        # impose a settling time before reading
-        tm.sleep(0.5) 
         # uncomment for debbuging
-        x_pos_before, y_pos_before, z_pos_before = self.read_position() 
-        print('\nBefore')
-        print('x_pos', x_pos_before)
-        print('y_pos', y_pos_before)
-        print('z_pos', z_pos_before)
-        print('Asking for a %.3f step on %s axis' % (distance, axis) )
-        self.piezo_stage.move_relative(axis, distance)
         # impose a settling time before reading
-        tm.sleep(0.5) 
+        # tm.sleep(0.5) 
+        # x_pos_before, y_pos_before, z_pos_before = self.read_position() 
+        # print('\nBefore')
+        # print('x_pos', x_pos_before)
+        # print('y_pos', y_pos_before)
+        # print('z_pos', z_pos_before)
+        # print('Asking for a %.3f step on %s axis' % (distance, axis) )
+        self.piezo_stage.move_relative(axis, distance)
         # check piezo_toolbox.py\response_time function
         # after running it, it's clear that 0.5 s is a suitable settling time
         # uncomment for debbuging
-        x_pos_after, y_pos_after, z_pos_after = self.read_position() 
-        print('After')
-        print('x_pos', x_pos_after)
-        print('y_pos', y_pos_after)
-        print('z_pos', z_pos_after)
-        print('x_shift', round((x_pos_after-x_pos_before), 3))
-        print('y_shift', round((y_pos_after-y_pos_before), 3))
-        print('z_shift', round((z_pos_after-z_pos_before), 3))
+        # impose a settling time before reading
+        # tm.sleep(0.5) 
+        # x_pos_after, y_pos_after, z_pos_after = self.read_position() 
+        # print('After')
+        # print('x_pos', x_pos_after)
+        # print('y_pos', y_pos_after)
+        # print('z_pos', z_pos_after)
+        # print('x_shift', round((x_pos_after-x_pos_before), 3))
+        # print('y_shift', round((y_pos_after-y_pos_before), 3))
+        # print('z_shift', round((z_pos_after-z_pos_before), 3))
         return
 
     @pyqtSlot(list)
@@ -417,6 +417,7 @@ class Backend(QtCore.QObject):
         Moves the stage to an absolute position.
         """
         # first x, then y, and last z
+        # print("Setting Position:", position)
         self.piezo_stage.set_position(x = position[0], \
                                       y = position[1], \
                                       z = position[2])
