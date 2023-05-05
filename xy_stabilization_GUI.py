@@ -860,10 +860,10 @@ class Backend(QtCore.QObject):
         # use the worker to send the instructions
         # only if the drift correction is larger than a threshold
         if abs(error_x) > correction_threshold:
-            # print('correction x %.0f nm ' % (correction[0]*1000))
+            # print('correction x %.0f nm ' % (correction_x*1000))
             self.piezoWorker.move_relative('x', correction_x)
         if abs(error_y) > correction_threshold:
-            # print('correction y %.0f nm' % (correction[1]*1000))
+            # print('correction y %.0f nm' % (correction_y*1000))
             self.piezoWorker.move_relative('y', correction_y)
         return
     
@@ -895,7 +895,8 @@ class Backend(QtCore.QObject):
         self.exposure_time_ms = exposure_time_ms # in ms, is float
         cam.set_exp_time(self.exposure_time_ms)
         cam.config_recorder()
-        self.viewTimer.start(viewTimer_update) # ms
+        self.viewTimer.start(round(self.exposure_time_ms)) # ms
+        # self.viewTimer.start(viewTimer_update) # ms
         return
             
     def update_view(self):

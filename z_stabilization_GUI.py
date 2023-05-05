@@ -13,6 +13,7 @@ import numpy as np
 from datetime import datetime
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
+from PyQt5.QtWidgets import QFrame
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
 from pyqtgraph.dockarea import Dock, DockArea
 import thorlabs_camera_toolbox as tl_cam
@@ -41,30 +42,37 @@ mono_cam_sensor_pixel_height_um = tl_cam.init_Thorlabs_mono_camera(camera_constr
 
 camera = mono_cam
 pixel_size_um = mono_cam_sensor_pixel_width_um
-initial_filepath = 'D:\\daily_data' # save in SSD for fast and daily use
-initial_filename = 'image_z_drift_test'
+initial_filepath = 'D:\\daily_data\\z_stabilization_cam' # save in SSD for fast and daily use
+initial_filename = 'image_z_drift'
 viewTimer_update = 25 # in ms (makes no sense to go lower than the refresh rate of the screen)
-initial_tracking_period = 500 # in ms
-driftbox_length = 30.0 # in seconds
+initial_tracking_period = 100 # in ms
 initial_exp_time = 10 # in ms
-driftbox_length = 30 # in s
+driftbox_length = 10 # in s
 
 # inital ROI definition
-initial_vertical_pos = 410
+initial_vertical_pos = 450
 initial_horizontal_pos = 0
-initial_vertical_size = 175
+initial_vertical_size = 300
 initial_horizontal_size = 1440
 
-# for center of mass estimation
-initial_threshold = 10
+# for center of mass estimation, float between 0.00 and 1.00
+initial_threshold = 0.1
 
 # PID constants
 initial_kp = -1 # proportinal factor of the PID
 initial_ki = -0.0001 # integral factor of the PID
 initial_kd = -0.05 # derivative factor of the PID
+# correction threshold in um
+# above this value (distance) the software starts to apply a correction
+# to compensate the drift
+correction_threshold = 0.020
 
 # conversion factor from camera pixels to nm in z drift
-initial_conversion_factor = 75 # nm/px
+# calibration of 05/05/2023 gives (see origin file)
+# slope = -40.76 px/um so
+# conversion factor is -0.0245
+# initial_conversion_factor = -0.0245 # nm/px
+initial_conversion_factor = -0.0245 # nm/px
 
 #=====================================
 
@@ -84,7 +92,7 @@ class Frontend(QtGui.QFrame):
     dataReflectionSignal = pyqtSignal(np.ndarray, bool)
     savedriftSignal = pyqtSignal()
     roiChangedSignal = pyqtSignal(bool, list)
-    thresholdChangedSignal = pyqtSignal(int)
+    thresholdChangedSignal = pyqtSignal(float)
     pidParamChangedSignal = pyqtSignal(bool, list)
     stabilizationStatusChangedSignal = pyqtSignal(bool)
     conversionFactorChangedSignal = pyqtSignal(float)
@@ -95,6 +103,7 @@ class Frontend(QtGui.QFrame):
         # set the title of thw window
         title = "Z stabilization module"
         self.setWindowTitle(title)
+        self.setGeometry(5, 30, 1900, 600)
         self.roi = {}
         self.image = np.array([])
         self.stabilize = False
@@ -132,6 +141,18 @@ class Frontend(QtGui.QFrame):
         self.autolevel_bool = self.initial_autolevel_state
 
         # Buttons and labels
+        
+        # Working folder and filename
+        self.working_dir_button = QtGui.QPushButton('Select directory')
+        self.working_dir_button.clicked.connect(self.set_working_dir)
+        self.working_dir_button.setStyleSheet(
+            "QPushButton { background-color: lightgray; }"
+            "QPushButton:pressed { background-color: palegreen; }")
+        self.working_dir_label = QtGui.QLabel('Working directory:')
+        self.filepath = initial_filepath
+        self.working_dir_path = QtGui.QLineEdit(self.filepath)
+        self.working_dir_path.setReadOnly(True) 
+
         self.take_picture_button = QtGui.QPushButton('Take a picture')
         self.take_picture_button.setCheckable(False)
         self.take_picture_button.clicked.connect(self.take_picture_button_check)
@@ -157,17 +178,6 @@ class Frontend(QtGui.QFrame):
         self.exp_time_edit_previous = float(self.exp_time_edit.text())
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
         self.exp_time_edit.setValidator(QtGui.QIntValidator(1, 26843))
-        
-        # Working folder and filename
-        self.working_dir_button = QtGui.QPushButton('Select directory')
-        self.working_dir_button.clicked.connect(self.set_working_dir)
-        self.working_dir_button.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
-            "QPushButton:pressed { background-color: palegreen; }")
-        self.working_dir_label = QtGui.QLabel('Working directory:')
-        self.filepath = initial_filepath
-        self.working_dir_path = QtGui.QLineEdit(self.filepath)
-        self.working_dir_path.setReadOnly(True) 
         
         # lock and track the z reflection position
         self.lock_z_position_button = QtGui.QPushButton('Lock and Track')
@@ -226,9 +236,11 @@ class Frontend(QtGui.QFrame):
         self.horizontal_size_previous = int(self.ROIbox_horizontal_size.text())
         self.roi_list_previous = [self.vertical_pos_previous, self.horizontal_pos_previous, \
                                   self.vertical_size_previous, self.horizontal_size_previous]
+            
         self.intensity_threshold_label = QtGui.QLabel('Intensity threshold:')
         self.intensity_threshold_value = QtGui.QLineEdit(str(initial_threshold))
-        self.intensity_threshold_value.setValidator(QtGui.QIntValidator(1, 1024))
+        self.intensity_threshold_value.setToolTip('Above which fraction of the maximum intensity is going to look for the center of mass.')
+        self.intensity_threshold_value.setValidator(QtGui.QDoubleValidator(0, 1, 2))
         self.intensity_threshold_value.editingFinished.connect(self.threshold_changed_check)
         self.threshold = initial_threshold
             
@@ -242,9 +254,9 @@ class Frontend(QtGui.QFrame):
             "QPushButton::checked { background-color: steelblue; }")
         
         # conversion from camera pixel to drift in z
-        self.conversion_label = QtGui.QLabel('Conversion factor (nm/px):')
+        self.conversion_label = QtGui.QLabel('Conversion factor (μm/px):')
         self.conversion_value = QtGui.QLineEdit(str(initial_conversion_factor))
-        self.intensity_threshold_value.editingFinished.connect(self.conversion_factor_changed)
+        self.conversion_value.editingFinished.connect(self.conversion_factor_changed)
         self.conversion_factor = initial_conversion_factor
 
         # PID parameters
@@ -263,7 +275,7 @@ class Frontend(QtGui.QFrame):
         driftWidget = pg.GraphicsLayoutWidget()
         self.driftPlot = driftWidget.addPlot(title = "Z drift")
         self.driftPlot.showGrid(x = True, y = True)
-        self.driftPlot.setLabel('left', 'Shift (nm)') # μ
+        self.driftPlot.setLabel('left', 'Shift (μm)') # μ
         self.driftPlot.setLabel('bottom', 'Time (s)')
         
         # Live view parameters dock
@@ -300,22 +312,42 @@ class Frontend(QtGui.QFrame):
         layout_zLock.addWidget(self.create_ROI_button,         5, 0, 1, 2)
         layout_zLock.addWidget(self.intensity_threshold_label,         6, 0)
         layout_zLock.addWidget(self.intensity_threshold_value,         6, 1)
+        # # lock and track buttons
+        # layout_zLock.addWidget(self.lock_z_position_button,         7, 0, 1, 2)
+        # layout_zLock.addWidget(self.conversion_label,         8, 0)
+        # layout_zLock.addWidget(self.conversion_value,         8, 1)
+        # layout_zLock.addWidget(self.tracking_period_label,         9, 0)
+        # layout_zLock.addWidget(self.tracking_period_value,         9, 1)
+        # layout_zLock.addWidget(self.stabilize_z_button,         10, 0, 1, 2)
+        # layout_zLock.addWidget(self.pid_label,         11, 0)
+        # layout_zLock.addWidget(self.kp_label,         12, 0)
+        # layout_zLock.addWidget(self.kp_value,         12, 1)
+        # layout_zLock.addWidget(self.ki_label,         13, 0)
+        # layout_zLock.addWidget(self.ki_value,         13, 1)
+        # layout_zLock.addWidget(self.kd_label,         14, 0)
+        # layout_zLock.addWidget(self.kd_value,         14, 1)
+
         # lock and track buttons
-        layout_zLock.addWidget(self.lock_z_position_button,         7, 0, 1, 2)
-        layout_zLock.addWidget(self.tracking_period_label,         8, 0)
-        layout_zLock.addWidget(self.tracking_period_value,         8, 1)
-        layout_zLock.addWidget(self.stabilize_z_button,         9, 0, 1, 2)
-        layout_zLock.addWidget(self.conversion_label,         10, 0)
-        layout_zLock.addWidget(self.conversion_value,         10, 1)
-        layout_zLock.addWidget(self.pid_label,         11, 0)
-        layout_zLock.addWidget(self.kp_label,         12, 0)
-        layout_zLock.addWidget(self.kp_value,         12, 1)
-        layout_zLock.addWidget(self.ki_label,         13, 0)
-        layout_zLock.addWidget(self.ki_value,         13, 1)
-        layout_zLock.addWidget(self.kd_label,         14, 0)
-        layout_zLock.addWidget(self.kd_value,         14, 1)
+        self.separatorLine = QFrame()
+        self.separatorLine.setFrameShape(QFrame.VLine)
+        self.separatorLine.setFrameShadow(QFrame.Raised)
+        layout_zLock.addWidget(self.separatorLine, 0, 2, 9, 1)
+        layout_zLock.addWidget(self.lock_z_position_button,         0, 3, 1, 2)
+        layout_zLock.addWidget(self.conversion_label,         1, 3)
+        layout_zLock.addWidget(self.conversion_value,         1, 4)
+        layout_zLock.addWidget(self.tracking_period_label,         2, 3)
+        layout_zLock.addWidget(self.tracking_period_value,         2, 4)
+        layout_zLock.addWidget(self.stabilize_z_button,         3, 3, 1, 2)
+        layout_zLock.addWidget(self.pid_label,         4, 3)
+        layout_zLock.addWidget(self.kp_label,         5, 3)
+        layout_zLock.addWidget(self.kp_value,         5, 4)
+        layout_zLock.addWidget(self.ki_label,         6, 3)
+        layout_zLock.addWidget(self.ki_value,         6, 4)
+        layout_zLock.addWidget(self.kd_label,         7, 3)
+        layout_zLock.addWidget(self.kd_value,         7, 4)
+        
         # save drift
-        layout_zLock.addWidget(self.savedrift_tickbox,      15, 0)
+        layout_zLock.addWidget(self.savedrift_tickbox,      8, 3)
         
         # Place layouts and boxes
         dockArea = DockArea()
@@ -350,18 +382,20 @@ class Frontend(QtGui.QFrame):
     def stabilize_status(self):
         if self.stabilize_z_button.isChecked():
             self.stabilize = True
-            self.stabilizationStatusChangedSignal.emit(self.stabilize)
-        return
+        else:
+            self.stabilize = False
+        self.stabilizationStatusChangedSignal.emit(self.stabilize)
+        return    
 
     def conversion_factor_changed(self):
-        conversion_factor = int(self.intensity_threshold_value.text())
+        conversion_factor = float(self.conversion_value.text())
         if conversion_factor != self.conversion_factor:
             self.conversion_factor = conversion_factor
             self.conversionFactorChangedSignal.emit(self.conversion_factor)
         return
 
     def threshold_changed_check(self):
-        threshold = int(self.intensity_threshold_value.text())
+        threshold = float(self.intensity_threshold_value.text())
         if threshold != self.threshold:
             self.threshold = threshold
             self.thresholdChangedSignal.emit(self.threshold)
@@ -393,10 +427,9 @@ class Frontend(QtGui.QFrame):
             ROIpos = (x_pos, y_pos) # (0.5*numberofPixels - 0.5*box_size, 0.5*numberofPixels - 0.5*box_size)
             self.roi = viewbox_tools.ROI_rect(box_size, self.vb, ROIpos,
                                               handlePos = (1, 1),
-                                              handleCenter = (0, 0),
-                                              movable = False, 
+                                              handleCenter = (0, 0), 
                                               scaleSnap = False,
-                                              translateSnap = False)
+                                              translateSnap = True)
         else:
             self.vb.removeItem(self.roi)
             self.roi.hide()
@@ -530,7 +563,7 @@ class Frontend(QtGui.QFrame):
     @pyqtSlot(str)
     def get_file_path(self, file_path):
         self.file_path = file_path
-        self.working_dir_label.setText(self.file_path)
+        self.working_dir_path.setText(self.file_path)
         return
         
     # re-define the closeEvent to execute an specific command
@@ -587,7 +620,7 @@ class Backend(QtCore.QObject):
         self.threshold = initial_threshold
         self.file_path = initial_filepath
         self.pid_param_list = [initial_kp, initial_ki, initial_kd]
-        self.stabilization = False
+        self.stabilization_flag = False
         self.conversion_factor = initial_conversion_factor
         return
     
@@ -630,6 +663,7 @@ class Backend(QtCore.QObject):
         self.exposure_time_ms = exposure_time_ms # in ms, is float
         self.frame_time = tl_cam.set_exp_time(camera, self.exposure_time_ms)
         self.viewTimer.start(round(self.frame_time)) # ms
+        # self.viewTimer.start(viewTimer_update) # ms
         return
                 
     def update_view(self):
@@ -660,30 +694,45 @@ class Backend(QtCore.QObject):
         error_y = self.initial_center[1] - center[1]
         # print(error_x, error_y)
         error =  np.array([error_x, error_y])
-        # PID calculation
-        # assign parameters
-        kp = self.pid_param_list[0]
-        ki = self.pid_param_list[1]
-        kd = self.pid_param_list[2]
-        # proportional term
-        self.prop_correction = kp*error_x
-        # integral term
-        self.int_correction = self.int_correction + ki*error_x*self.tracking_period
-        # derivative term
-        self.dev_correction = self.dev_correction + \
-            kd*(error_x - self.last_error_x)/self.tracking_period
-        self.last_error_x = error_x
-        # calculate correction in um
-        correction = self.prop_correction + self.int_correction + self.dev_correction
-        # print(correction)
-        if self.stabilization:
-            print('Corregir')
         # send position of the reflection to Frontend
         self.sendFittedDataSignal.emit(center, error, timestamp)
         # store data to save drift vs time when the Lock and Track option is released
         if self.save_drift_data:
             self.timeaxis_to_save.append(timestamp)
             self.errors_to_save.append(error)
+        # now correct drift if button is checked
+        if self.stabilization_flag:
+            # PID calculation
+            # assign parameters
+            kp = self.pid_param_list[0]
+            ki = self.pid_param_list[1]
+            kd = self.pid_param_list[2]
+            # proportional term
+            self.prop_correction = kp*error
+            # integral term
+            self.int_correction = self.int_correction + ki*error*self.tracking_period
+            # derivative term
+            self.dev_correction = self.dev_correction + \
+                kd*(error - self.last_error)/self.tracking_period
+            self.last_error = error
+            # calculate correction in um
+            correction = self.prop_correction + self.int_correction + self.dev_correction
+            # call function to correct
+            self.correct_drift(error, correction)
+        return
+
+    def correct_drift(self, error, correction):
+        # y axis will be ignored cause the setup uses only lateral shifts
+        # make float32 to avoid crashing the module
+        error_x = float(error[0])
+        error_y = float(error[1])
+        correction_x = float(correction[0])*self.conversion_factor
+        correction_y = float(correction[1])*self.conversion_factor
+        # use the worker to send the instructions
+        # only if the drift correction is larger than a threshold
+        if abs(error_x) > correction_threshold:
+            print('correction z %.0f nm ' % (correction_x*1000))
+            self.piezoWorker.move_relative('z', correction_x)
         return
 
     @pyqtSlot(bool)
@@ -697,7 +746,7 @@ class Backend(QtCore.QObject):
             self.timeaxis_to_save = []
             self.int_correction = 0
             self.dev_correction = 0
-            self.last_error_x = 0
+            self.last_error = 0
             # t0 initial time
             self.start_tracking_time = timer()
             # ask for ROI data and coordinates
@@ -730,16 +779,18 @@ class Backend(QtCore.QObject):
     def calculate_center_of_mass(self):
         # find center of mass
         frame_roi_intensity = self.image_np[self.x1:self.x2, self.y1:self.y2]
-        frame_roi_th = np.where(frame_roi_intensity > self.threshold, frame_roi_intensity, 0)
+        roi_threshold = self.threshold*np.max(frame_roi_intensity)
+        frame_roi_th = np.where(frame_roi_intensity > roi_threshold, frame_roi_intensity, 0)
         cm_y, cm_x = ndimage.center_of_mass(frame_roi_th) # vertical, horizontal
+        # print(cm_y, cm_x)
         center = np.array([cm_x, cm_y])
         timeaxis = timer() - self.start_tracking_time
         return center, timeaxis
 
-    @pyqtSlot(int)
+    @pyqtSlot(float)
     def new_threshold(self, new_threshold):
         self.threshold = new_threshold
-        print('Intesity threshold has been changed.')        
+        print('Intesity threshold has been changed to %.2f.' % self.threshold)        
         return
 
     @pyqtSlot()    
@@ -752,8 +803,8 @@ class Backend(QtCore.QObject):
         # etc...
         M = np.array(self.timeaxis_to_save).shape[0]
         data_to_save = np.zeros((M, 3))
-        data_to_save[:, 0] = self.timeaxis_to_save
-        data_to_save[:, 1:] = self.errors_to_save*self.conversion_factor
+        data_to_save[:, 0] = np.array(self.timeaxis_to_save)
+        data_to_save[:, 1:] = np.array(self.errors_to_save)*self.conversion_factor
         # create filename
         timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
         filename = "drift_curve_z_" + timestr + ".dat"
@@ -777,7 +828,7 @@ class Backend(QtCore.QObject):
     
     @pyqtSlot(float)
     def new_conversion_factor(self, new_conv_factor):
-        print('COnversion factor changed to {.1f} nm/px'.format(new_conv_factor))
+        print('Conversion factor changed to {:.1f} nm/px'.format(new_conv_factor))
         self.conversion_factor = new_conv_factor
         return
 
@@ -785,10 +836,10 @@ class Backend(QtCore.QObject):
     def set_stabilization(self, stabilizebool):
         if stabilizebool:
             print('Stabilization ON.')
-            self.stabilization = True
+            self.stabilization_flag = True
         else:
             print('Stabilization OFF.')
-            self.stabilization = False
+            self.stabilization_flag = False
         return
 
     @pyqtSlot()    
@@ -815,13 +866,14 @@ class Backend(QtCore.QObject):
 
     @pyqtSlot()
     def close_all_backends(self):
-        print('Shutting down piezo stage...')
-        self.piezo_stage.shutdown()
+        # print('Shutting down piezo stage...')
+        # self.piezo_stage.shutdown()
         print('Stopping timers...')
         self.piezoWorker.updateTimer.stop()
         self.viewTimer.stop()
         self.trackingTimer.stop()
         print('Exiting threads...')
+        tm.sleep(1)
         workerThread.exit()
         return
 
