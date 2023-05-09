@@ -45,7 +45,7 @@ pixel_size_um = mono_cam_sensor_pixel_width_um
 initial_filepath = 'D:\\daily_data\\z_stabilization_cam' # save in SSD for fast and daily use
 initial_filename = 'image_z_drift'
 viewTimer_update = 25 # in ms (makes no sense to go lower than the refresh rate of the screen)
-initial_tracking_period = 100 # in ms
+initial_tracking_period = 200 # in ms
 initial_exp_time = 10 # in ms
 driftbox_length = 10 # in s
 
@@ -56,12 +56,13 @@ initial_vertical_size = 300
 initial_horizontal_size = 1440
 
 # for center of mass estimation, float between 0.00 and 1.00
-initial_threshold = 0.1
+initial_threshold = 0.8
 
 # PID constants
-initial_kp = -1 # proportinal factor of the PID
-initial_ki = -0.0001 # integral factor of the PID
-initial_kd = -0.05 # derivative factor of the PID
+# tested with a 200 ms tracking period
+initial_kp = 0.75 # proportinal factor of the PID
+initial_ki = 0.005 # integral factor of the PID
+initial_kd = 0.01 # derivative factor of the PID
 # correction threshold in um
 # above this value (distance) the software starts to apply a correction
 # to compensate the drift
@@ -70,9 +71,9 @@ correction_threshold = 0.020
 # conversion factor from camera pixels to nm in z drift
 # calibration of 05/05/2023 gives (see origin file)
 # slope = -40.76 px/um so
-# conversion factor is -0.0245
-# initial_conversion_factor = -0.0245 # nm/px
-initial_conversion_factor = -0.0245 # nm/px
+# conversion factor is 0.0245 (take the absolute value)
+# initial_conversion_factor = 0.0245 # nm/px
+initial_conversion_factor = 0.0245 # nm/px
 
 #=====================================
 
@@ -379,14 +380,6 @@ class Frontend(QtGui.QFrame):
         self.setLayout(hbox)
         return
 
-    def stabilize_status(self):
-        if self.stabilize_z_button.isChecked():
-            self.stabilize = True
-        else:
-            self.stabilize = False
-        self.stabilizationStatusChangedSignal.emit(self.stabilize)
-        return    
-
     def conversion_factor_changed(self):
         conversion_factor = float(self.conversion_value.text())
         if conversion_factor != self.conversion_factor:
@@ -484,6 +477,15 @@ class Frontend(QtGui.QFrame):
             self.autolevel_bool = False
             print('Autolevel off')
         return
+
+    def stabilize_status(self):
+        if self.stabilize_z_button.isChecked():
+            self.stabilize = True
+            self.lock_and_track()
+        else:
+            self.stabilize = False
+        self.stabilizationStatusChangedSignal.emit(self.stabilize)
+        return    
 
     def tracking_period_changed_check(self):
         new_tracking_period = int(float(self.tracking_period_value.text())*1000)
@@ -690,12 +692,12 @@ class Backend(QtCore.QObject):
     
     def call_pid(self):
         center, timestamp = self.calculate_center_of_mass()
-        error_x = self.initial_center[0] - center[0]
-        error_y = self.initial_center[1] - center[1]
-        # print(error_x, error_y)
-        error =  np.array([error_x, error_y])
+        error_x_px = self.initial_center[0] - center[0]
+        error_y_px = self.initial_center[1] - center[1]
+        error_px =  np.array([error_x_px, error_y_px])
+        error = error_px*self.conversion_factor # in nm
         # send position of the reflection to Frontend
-        self.sendFittedDataSignal.emit(center, error, timestamp)
+        self.sendFittedDataSignal.emit(center, error_px, timestamp)
         # store data to save drift vs time when the Lock and Track option is released
         if self.save_drift_data:
             self.timeaxis_to_save.append(timestamp)
@@ -726,11 +728,12 @@ class Backend(QtCore.QObject):
         # make float32 to avoid crashing the module
         error_x = float(error[0])
         error_y = float(error[1])
-        correction_x = float(correction[0])*self.conversion_factor
-        correction_y = float(correction[1])*self.conversion_factor
+        correction_x = float(correction[0])
+        correction_y = float(correction[1])
         # use the worker to send the instructions
         # only if the drift correction is larger than a threshold
         if abs(error_x) > correction_threshold:
+            print(error_x)
             print('correction z %.0f nm ' % (correction_x*1000))
             self.piezoWorker.move_relative('z', correction_x)
         return

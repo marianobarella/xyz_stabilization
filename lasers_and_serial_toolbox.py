@@ -14,6 +14,16 @@ import serial
 import re
 import time
 from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper
+# import clr
+
+# sys.path.append(r"C:\Program Files\Thorlabs\Kinesis")
+# clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI.dll")
+# clr.AddReference("Thorlabs.MotionControl.GenericMotorCLI.dll")
+# clr.AddReference("ThorLabs.MotionControl.KCube.SolenoidCLI.dll")
+# from Thorlabs.MotionControl.DeviceManagerCLI import *
+# from Thorlabs.MotionControl.GenericMotorCLI import *
+# from Thorlabs.MotionControl.KCube.SolenoidCLI import *
+# from System import Decimal  # necessary for real world units
 
 #=====================================
 
@@ -26,7 +36,8 @@ from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper
 bytesToRead = 200
 # COM ports
 COM_port_oxxius = 'COM4'
-COM_port_flipper_Thorlas = 'COM1'
+COM_port_flipper_Thorlabs = 'COM5'
+COM_port_shutter_Thorlabs = 'COM7'
 COM_port_toptica = 'COM6'
 
 def serial_ports():
@@ -342,7 +353,7 @@ class motorized_flipper(object):
     def __init__(self, debug_mode):
         # Parameters for Motorized Flipper
         self.baudRate = 9600
-        self.serialPort = COM_port_flipper_Thorlas
+        self.serialPort = COM_port_flipper_Thorlabs
         self.debug_mode = debug_mode
         self.initialize()
         
@@ -356,9 +367,9 @@ class motorized_flipper(object):
     def get_state(self):
         reply = self.serialInstance.get_state()
         if reply == 0:
-            state = 'down'
-        else:
             state = 'up'
+        else:
+            state = 'down'
         if self.debug_mode:
             print("State: ", state)
         return state
@@ -376,6 +387,65 @@ class motorized_flipper(object):
         time.sleep(0.2)
         return
 
+#=====================================
+
+# Motorized Flipper Mount Class Definitions
+
+#=====================================
+
+class Thorlabs_shutter(object):
+    def __init__(self, debug_mode):
+        # Parameters for 1 inch Thorlabs shutter SH1
+        self.baudRate = 9600
+        self.serialPort = COM_port_shutter_Thorlabs
+        self.debug_mode = debug_mode
+        # self.initialize()
+        
+    # def initialize(self):
+    #     self.serialInstance = motoFlipper(self.serialPort)
+    #     if self.serialInstance.is_opened:
+    #         print('Serial port ' + self.serialPort + ' opened.')
+    #     else:
+    #         print('Serial port ' + self.serialPort + ' has NOT been opened.')
+        
+#     def get_state(self):
+#         reply = self.serialInstance.get_state()
+#         if reply == 0:
+#             state = 'up'
+#         else:
+#             state = 'down'
+#         if self.debug_mode:
+#             print("State: ", state)
+#         return state
+
+    def shutter(self, action):
+        if action == 'close':
+            # command = 'la off\r\n'
+            # reply = sendCommand(command, self.serialInstance, self.debug_mode)
+            print('Ti:Sa shutter CLOSED')
+        elif action == 'open':
+            # command = 'la on\r\n'
+            # reply = sendCommand(command, self.serialInstance, self.debug_mode)
+            print('Ti:Sa shutter OPENED')
+        else:
+            print('Action was not determined. For precaution: shutter has been closed.')
+            # command = 'la off\r\n'
+            # reply = sendCommand(command, self.serialInstance, self.debug_mode)    
+        # return reply
+
+#     def set_inspect_cam_up(self):
+#         self.serialInstance.move_to_state(1)
+        
+#     def set_inspect_cam_down(self):
+#         self.serialInstance.move_to_state(0)
+        
+#     def close(self):
+#         print('Closing motorized flipper serial communication...')
+#         self.set_inspect_cam_down()
+#         self.serialInstance.close()
+#         time.sleep(0.2)
+#         return
+
 #======================================
     
 if __name__ == '__main__':
@@ -386,9 +456,9 @@ if __name__ == '__main__':
     
     # laser532 = oxxius_laser(debug_mode = False)
     
-    # laser488 = toptica_laser(debug_mode = False)
+    laser488 = toptica_laser(debug_mode = False)
     
-    # mff = motorized_flipper(debug_mode = False)
+    mff = motorized_flipper(debug_mode = False)
     
     # laser532.close()
 

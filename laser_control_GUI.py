@@ -24,6 +24,7 @@ list_of_serial_ports = laserTool.serial_ports()
 print('Ports available:', list_of_serial_ports)   
 laser532 = laserTool.oxxius_laser(debug_mode = False)
 laser488 = laserTool.toptica_laser(debug_mode = False)
+shutterTisa = laserTool.Thorlabs_shutter(debug_mode = False)
 flipperMirror = laserTool.motorized_flipper(debug_mode = False)
 updateParams_period = 5000 # in ms
 initial_blue_power = 1.4 # in mW
@@ -38,6 +39,7 @@ class Frontend(QtGui.QFrame):
 
     shutter488_signal = pyqtSignal(bool)
     shutter532_signal = pyqtSignal(bool)
+    shutterTisa_signal = pyqtSignal(bool)
     flipper_signal = pyqtSignal(bool)
     powerChangedSignal = pyqtSignal(float)
     closeSignal = pyqtSignal()
@@ -49,16 +51,21 @@ class Frontend(QtGui.QFrame):
         # set the title of thw window
         title = "Lasers control module"
         self.setWindowTitle(title)
+        return
     
     def setUpGUI(self):       
  
         # Shutters
+        self.shutterTisaButton = QtGui.QCheckBox('Ti:Sa shutter')
+        self.shutterTisaButton.clicked.connect(self.control_tisa_button_check)
+        self.shutterTisaButton.setStyleSheet("color: darkMagenta; ")
+        
         self.shutter488button = QtGui.QCheckBox('488 nm (blue)')
-        self.shutter488button.clicked.connect(self.shutter488_signal)
+        self.shutter488button.clicked.connect(self.control_488_button_check)
         self.shutter488button.setStyleSheet("color: blue; ")
 
         self.shutter532button = QtGui.QCheckBox('532 nm (green)')
-        self.shutter532button.clicked.connect(self.shutter532_signal)
+        self.shutter532button.clicked.connect(self.control_532_button_check)
         self.shutter532button.setStyleSheet("color: green; ")
         
         self.updateParamsButton = QtGui.QPushButton('Continuously update lasers\' parameters')
@@ -73,11 +80,13 @@ class Frontend(QtGui.QFrame):
         self.updateParamsButton.setToolTip('Retrieve continuosly lasers\' parameters')
         
         # Flippers 
-        self.flipperButton = QtGui.QCheckBox('Inspection camera')
-        self.flipperButton.setChecked(True)
-        self.flipperButton.clicked.connect(self.flipper_signal)
+        self.flipperButton = QtGui.QCheckBox('Camera selector  | ')
         self.flipperButton.setStyleSheet("color: black; ")
-        self.flipperButton.setToolTip('Up/Down flipper mirror')        
+        self.flipperButton.setChecked(True)
+        self.flipperButton.clicked.connect(self.flipperButton_check)
+        self.flipperButton_label = QtGui.QLabel('Inspection camera')
+        self.flipperButton_label.setStyleSheet("color: black; ")
+        self.flipperButton_label.setToolTip('Up/Down flipper mirror')        
         
         # 488 power
         power488_label = QtGui.QLabel('Power 488 (mW):')
@@ -100,44 +109,58 @@ class Frontend(QtGui.QFrame):
         self.grid_shutters = QtGui.QWidget()
         grid_shutters_layout = QtGui.QGridLayout()
         self.grid_shutters.setLayout(grid_shutters_layout)
-        grid_shutters_layout.addWidget(self.shutter488button, 0, 0)
-        grid_shutters_layout.addWidget(self.shutter532button, 1, 0)
-        grid_shutters_layout.addWidget(self.flipperButton, 2, 0)
+        grid_shutters_layout.addWidget(self.shutterTisaButton, 0, 0)
+        grid_shutters_layout.addWidget(self.shutter488button, 1, 0)
+        grid_shutters_layout.addWidget(self.shutter532button, 2, 0)
+        grid_shutters_layout.addWidget(self.flipperButton, 3, 0)
+        grid_shutters_layout.addWidget(self.flipperButton_label, 3, 1, 1, 2)
+        
         # Power box
-        grid_shutters_layout.addWidget(power488_label, 0, 1)
-        grid_shutters_layout.addWidget(self.power488_edit, 0, 2)
+        grid_shutters_layout.addWidget(power488_label, 1, 1)
+        grid_shutters_layout.addWidget(self.power488_edit, 1, 2)
         # Status box
-        grid_shutters_layout.addWidget(self.updateParamsButton, 3, 0, 1, 3)
-        grid_shutters_layout.addWidget(self.statusBlockDefinitions, 4, 0)
-        grid_shutters_layout.addWidget(self.statusBlock488, 4, 1)
-        grid_shutters_layout.addWidget(self.statusBlock532, 4, 2)
+        grid_shutters_layout.addWidget(self.updateParamsButton, 4, 0, 1, 3)
+        grid_shutters_layout.addWidget(self.statusBlockDefinitions, 5, 0)
+        grid_shutters_layout.addWidget(self.statusBlock488, 5, 1)
+        grid_shutters_layout.addWidget(self.statusBlock532, 5, 2)
 
         # GUI layout    
         grid = QtGui.QGridLayout()
         self.setLayout(grid)    
         grid.addWidget(self.grid_shutters)
-        
+        return
+    
     # Functions and signals 
+    def control_tisa_button_check(self):
+        if self.shutterTisaButton.isChecked():
+           self.shutterTisa_signal.emit(True)
+        else:
+           self.shutterTisa_signal.emit(False)
+        return
     
     def control_488_button_check(self):
         if self.shutter488button.isChecked():
            self.shutter488_signal.emit(True)
         else:
            self.shutter488_signal.emit(False)
-
+        return
+    
     def control_532_button_check(self):
         if self.shutter532button.isChecked():
            self.shutter532_signal.emit(True)
         else:
            self.shutter532_signal.emit(False)
+        return
 
     def flipperButton_check(self):
         if self.flipperButton.isChecked():
-           self.flipper_signal.emit(True)
-           self.flipperButton.setText('Inspection camera ON')
+            print('caca')
+            self.flipperButton_label.setText('INSPECTION cam (Thorlabs)')
+            self.flipper_signal.emit(True)
         else:
-           self.flipper_signal.emit(False)
-           self.flipperButton.setText('Inspection camera OFF')
+            self.flipperButton_label.setText('XY STABILIZATION cam (pco)')
+            self.flipper_signal.emit(False)
+        return
 
     def power488_changed_check(self):
         power488_mW = float(self.power488_edit.text()) # in mW
@@ -145,7 +168,8 @@ class Frontend(QtGui.QFrame):
             print('\nPower 488 changed to', power488_mW, 'mW')
             self.power488_edit_previous = power488_mW
             self.powerChangedSignal.emit(power488_mW)
-
+        return
+    
     def update_params_button_check(self):
         if self.updateParamsButton.isChecked():
             self.updateParams_signal.emit(True)
@@ -153,14 +177,16 @@ class Frontend(QtGui.QFrame):
             self.updateParams_signal.emit(False)
             self.statusBlock488.setText(self.no_text488)
             self.statusBlock532.setText(self.no_text532)
-
+        return
+    
     @pyqtSlot(list, list)
     def display_params(self, list_of_params488, list_of_params532):
         text_to_display488 = '\n'.join(list_of_params488)
         text_to_display532 = '\n'.join(list_of_params532)
         self.statusBlock488.setText(text_to_display488)
         self.statusBlock532.setText(text_to_display532)
-
+        return
+    
     # re-define the closeEvent to execute an specific command
     def closeEvent(self, event, *args, **kwargs):
         super(QtGui.QFrame, self).closeEvent(event, *args, **kwargs)
@@ -182,7 +208,8 @@ class Frontend(QtGui.QFrame):
     
     def make_connections(self, backend):
         backend.paramSignal.connect(self.display_params)
-
+        return
+    
 #=====================================
 
 # Controls / Backend definition
@@ -200,6 +227,14 @@ class Backend(QtCore.QObject):
         self.updateTimer.timeout.connect(self.update_params) 
         self.updateTimer.setInterval(updateParams_period) # in ms
         self.change_power(initial_blue_power)
+        return
+
+    @pyqtSlot(bool)
+    def shutterTisa(self, shutterbool):
+        if shutterbool:
+            shutterTisa.shutter('open')
+        else:
+            shutterTisa.shutter('close')
         return
     
     @pyqtSlot(bool)
@@ -275,6 +310,7 @@ class Backend(QtCore.QObject):
         return
        
     def make_connections(self, frontend):
+        frontend.shutterTisa_signal.connect(self.shutterTisa)
         frontend.shutter488_signal.connect(self.shutter488)
         frontend.shutter532_signal.connect(self.shutter532)
         frontend.flipper_signal.connect(self.flipper_inspec_cam)
