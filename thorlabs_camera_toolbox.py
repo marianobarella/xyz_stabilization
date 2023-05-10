@@ -44,7 +44,7 @@ def init_Thorlabs_color_camera(camera_constructor):
     # get Thorlabs camera parameters
     list_of_cameras = list_cameras(camera_constructor)
     if not list_of_cameras == None:
-        color_cam, color_cam_flag = open_mono_camera(camera_constructor, list_of_cameras)
+        color_cam, color_cam_flag = open_color_camera(camera_constructor, list_of_cameras)
         color_cam_sensor_width_pixels, color_cam_sensor_height_pixels, \
         color_cam_sensor_pixel_width_um, color_cam_sensor_pixel_height_um = get_camera_param(color_cam)
         # create SDK object. Important: only call it once!

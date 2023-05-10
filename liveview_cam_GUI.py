@@ -27,27 +27,20 @@ import time as tm
 
 #=====================================
         
-camera_constructor, \
-    mono_cam, \
-    mono_cam_flag, \
-    color_cam, \
-    color_cam_flag, \
-    mono_cam_sensor_width_pixels, \
-    mono_cam_sensor_height_pixels, \
-    mono_cam_sensor_pixel_width_um, \
-    mono_cam_sensor_pixel_height_um, \
-    color_cam_sensor_width_pixels, \
-    color_cam_sensor_height_pixels, \
-    color_cam_sensor_pixel_width_um, \
-    color_cam_sensor_pixel_height_um, \
-    mono_to_color_constructor, \
-    mono_to_color_processor = tl_cam.init_Thorlabs_cameras()
+camera_constructor = tl_cam.load_Thorlabs_SDK_cameras()
+color_cam, \
+color_cam_flag, \
+color_cam_sensor_width_pixels, \
+color_cam_sensor_height_pixels, \
+color_cam_sensor_pixel_width_um, \
+color_cam_sensor_pixel_height_um, \
+mono_to_color_constructor, \
+mono_to_color_processor = tl_cam.init_Thorlabs_color_camera(camera_constructor)
 
-mono_color_string = 'color'
 camera = color_cam
 pixel_size = color_cam_sensor_pixel_width_um
 initial_filepath = 'D:\\daily_data' # save in SSD for fast and daily use
-initial_filename = 'image_pco_test'
+initial_filename = 'image_Thorcam'
 
 #=====================================
 
@@ -344,9 +337,8 @@ class Frontend(QtGui.QFrame):
                                            QtGui.QMessageBox.No |
                                            QtGui.QMessageBox.Yes)
         if reply == QtGui.QMessageBox.Yes:
-            tl_cam.dispose_all(mono_cam_flag, mono_cam, color_cam_flag, color_cam, \
-                        mono_to_color_processor, mono_to_color_constructor, \
-                        camera_constructor)
+            tl_cam.dispose_cam(color_cam)
+            tl_cam.dispose_sdk(camera_constructor)
             event.accept()
             print('Closing GUI...')
             self.close()
@@ -425,7 +417,7 @@ class Backend(QtCore.QObject):
             self.stop_liveview()
         tl_cam.set_camera_one_picture_mode(camera)
         self.frame_time = tl_cam.set_exp_time(camera, self.exposure_time_ms)
-        image_np, _ = tl_cam.get_image(camera, mono_to_color_processor, mono_color_string)
+        image_np, _ = tl_cam.get_color_image(camera, mono_to_color_processor)
         if image_np is not None:
             self.image_np = image_np # assign to class to be able to save it later
             tl_cam.stop_camera(camera)
@@ -451,7 +443,7 @@ class Backend(QtCore.QObject):
             
     def update_view(self):
         # Image update while in Live view mode
-        image_np, _ = tl_cam.get_image(camera, mono_to_color_processor, mono_color_string)
+        image_np, _ = tl_cam.get_color_image(camera, mono_to_color_processor)
         self.imageSignal.emit(image_np)
         return
     

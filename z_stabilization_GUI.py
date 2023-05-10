@@ -47,7 +47,7 @@ initial_filename = 'image_z_drift'
 viewTimer_update = 25 # in ms (makes no sense to go lower than the refresh rate of the screen)
 initial_tracking_period = 200 # in ms
 initial_exp_time = 10 # in ms
-driftbox_length = 10 # in s
+driftbox_length = 5 # in s
 
 # inital ROI definition
 initial_vertical_pos = 450
@@ -255,7 +255,7 @@ class Frontend(QtGui.QFrame):
             "QPushButton::checked { background-color: steelblue; }")
         
         # conversion from camera pixel to drift in z
-        self.conversion_label = QtGui.QLabel('Conversion factor (μm/px):')
+        self.conversion_label = QtGui.QLabel('Conversion factor (nm/px):')
         self.conversion_value = QtGui.QLineEdit(str(initial_conversion_factor))
         self.conversion_value.editingFinished.connect(self.conversion_factor_changed)
         self.conversion_factor = initial_conversion_factor

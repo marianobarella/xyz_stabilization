@@ -14,6 +14,7 @@ import serial
 import re
 import time
 from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper
+from pylablib.devices import M2
 # import clr
 
 # sys.path.append(r"C:\Program Files\Thorlabs\Kinesis")
@@ -123,7 +124,8 @@ class oxxius_laser(object):
         self.serialPort = COM_port_oxxius
         self.serialInstance = initSerial(self.serialPort, self.baudRate)
         self.debug_mode = debug_mode
-
+        return
+    
     def ask_model(self):
         command = 'INF?\n'
         reply = sendCommand(command, self.serialInstance, self.debug_mode)
@@ -195,15 +197,30 @@ class oxxius_laser(object):
         if action == 'close':
             command = 'SH 0\n'
             reply = sendCommand(command, self.serialInstance, self.debug_mode)
-            print('532 OFF')
+            print('532 shutter closed')
         elif action == 'open':
             command = 'SH 1\n'
             reply = sendCommand(command, self.serialInstance, self.debug_mode)
-            print('532 ON')
+            print('532 shutter opened')
         else:
             print('Action was not determined. For precaution: shutter has been closed.')
             command = 'SH 0\n'
             reply = sendCommand(command, self.serialInstance, self.debug_mode)    
+        reply_clean_string = reply.rstrip('\r\n')
+        return reply_clean_string
+    
+    def emission(self, action):
+        if action == 'off':
+            command = 'DL 0\n'
+            reply = sendCommand(command, self.serialInstance, self.debug_mode)
+            print('532 emission OFF')
+        elif action == 'on':
+            command = 'DL 1\n'
+            reply = sendCommand(command, self.serialInstance, self.debug_mode)
+            print('532 emission ON')
+        else:
+            print('Action was not determined. Retry.')
+            reply = ''
         reply_clean_string = reply.rstrip('\r\n')
         return reply_clean_string
     
@@ -221,6 +238,11 @@ class oxxius_laser(object):
         self.serialInstance.flush() # empty serial buffer
         self.shutter('close')
         closeSerial(self.serialInstance)
+        return
+    
+#=====================================
+#=====================================
+#=====================================
 
 class toptica_laser(object):
     def __init__(self, debug_mode):
@@ -230,7 +252,8 @@ class toptica_laser(object):
         self.serialInstance = initSerial(self.serialPort, self.baudRate)
         self.debug_mode = debug_mode
         self.initialize()
-        
+        return
+    
     def initialize(self):
         command = 'ini la\n\r'
         reply = sendCommand(command, self.serialInstance, self.debug_mode)
@@ -342,7 +365,33 @@ class toptica_laser(object):
         self.serialInstance.flush() # empty serial buffer
         self.shutter('close')
         closeSerial(self.serialInstance)
+        return
+    
+#=====================================
+#=====================================
+#=====================================
 
+class M2_laser(object):
+    def __init__(self, debug_mode):
+        # Parameters for Ti:Sa CW laser
+        self.port = 1025
+        self.staticIP = '192.168.1.222'
+        self.debug_mode = debug_mode
+        self.initialize()
+        return
+    
+    def initialize(self):
+        self.tisa_laser = M2.Solstis(self.staticIP, self.port)
+        return
+    
+    def close(self):
+        time.sleep(0.1)
+        print('Closing Ti:Sa laser communication...')
+        # self.shutter('close')
+        self.tisa_laser.stop_all_operation()
+        self.tisa_laser.close()
+        return
+    
 #=====================================
 
 # Motorized Flipper Mount Class Definitions
@@ -389,7 +438,7 @@ class motorized_flipper(object):
 
 #=====================================
 
-# Motorized Flipper Mount Class Definitions
+# Thorlabs Shutter Class Definitions
 
 #=====================================
 
@@ -460,8 +509,10 @@ if __name__ == '__main__':
     
     mff = motorized_flipper(debug_mode = False)
     
+    # tisa = M2_laser(debug_mode = False)
     # laser532.close()
 
-    # laser488.close()
+    laser488.close()
+    mff.close()
     
 

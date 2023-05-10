@@ -10,6 +10,7 @@ Fribourg, Switzerland
 
 from pyqtgraph.Qt import QtCore, QtGui
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
+from qtwidgets import Toggle
 import lasers_and_serial_toolbox as laserTool
 import time as tm
 
@@ -26,7 +27,7 @@ laser532 = laserTool.oxxius_laser(debug_mode = False)
 laser488 = laserTool.toptica_laser(debug_mode = False)
 shutterTisa = laserTool.Thorlabs_shutter(debug_mode = False)
 flipperMirror = laserTool.motorized_flipper(debug_mode = False)
-updateParams_period = 5000 # in ms
+# updateParams_period = 2000 # in ms
 initial_blue_power = 1.4 # in mW
 
 #=====================================
@@ -36,10 +37,11 @@ initial_blue_power = 1.4 # in mW
 #=====================================
 
 class Frontend(QtGui.QFrame):
-
+    
+    shutterTisa_signal = pyqtSignal(bool)
     shutter488_signal = pyqtSignal(bool)
     shutter532_signal = pyqtSignal(bool)
-    shutterTisa_signal = pyqtSignal(bool)
+    emission532_signal = pyqtSignal(bool)
     flipper_signal = pyqtSignal(bool)
     powerChangedSignal = pyqtSignal(float)
     closeSignal = pyqtSignal()
@@ -60,24 +62,29 @@ class Frontend(QtGui.QFrame):
         self.shutterTisaButton.clicked.connect(self.control_tisa_button_check)
         self.shutterTisaButton.setStyleSheet("color: darkMagenta; ")
         
-        self.shutter488button = QtGui.QCheckBox('488 nm (blue)')
+        self.shutter488button = QtGui.QCheckBox('488 nm shutter')
         self.shutter488button.clicked.connect(self.control_488_button_check)
         self.shutter488button.setStyleSheet("color: blue; ")
 
-        self.shutter532button = QtGui.QCheckBox('532 nm (green)')
+        self.shutter532button = QtGui.QCheckBox('532 nm shutter')
         self.shutter532button.clicked.connect(self.control_532_button_check)
         self.shutter532button.setStyleSheet("color: green; ")
         
-        self.updateParamsButton = QtGui.QPushButton('Continuously update lasers\' parameters')
-        self.updateParamsButton.setCheckable(True)
+        self.emission532label = QtGui.QLabel('532 emission ON/OFF')
+        self.emission532button = Toggle(bar_color=QtGui.QColor(85,85,85), 
+                                        handle_color=QtGui.QColor(50,50,50), 
+                                        checked_color="#1d8f2a")
+        self.emission532button.clicked.connect(self.control_emission_532_toggle_check)        
+
+        self.updateParamsButton = QtGui.QPushButton('Update lasers\' parameters')
+        self.updateParamsButton.setCheckable(False)
         self.updateParamsButton.clicked.connect(self.update_params_button_check)
         self.updateParamsButton.setStyleSheet(
                 "QPushButton { background-color: lightgray; }"
-                "QPushButton::checked { background-color: lightgreen; }")
+                "QPushButton::pressed { background-color: lightcyan; }")
         
         self.shutter488button.setToolTip('Open/close 488 shutter')
         self.shutter532button.setToolTip('Open/close 532 shutter')
-        self.updateParamsButton.setToolTip('Retrieve continuosly lasers\' parameters')
         
         # Flippers 
         self.flipperButton = QtGui.QCheckBox('Camera selector  | ')
@@ -95,6 +102,7 @@ class Frontend(QtGui.QFrame):
         self.power488_edit.editingFinished.connect(self.power488_changed_check)
         self.power488_edit.setValidator(QtGui.QDoubleValidator(0.00, 200.00, 2))
         
+        # LAYOUT
         # Status text list
         param_list488 = ['488 laser', '-', '-', '-', '-']
         param_list532 = ['532 laser', '-', '-', '-', '-']
@@ -112,12 +120,15 @@ class Frontend(QtGui.QFrame):
         grid_shutters_layout.addWidget(self.shutterTisaButton, 0, 0)
         grid_shutters_layout.addWidget(self.shutter488button, 1, 0)
         grid_shutters_layout.addWidget(self.shutter532button, 2, 0)
+        grid_shutters_layout.addWidget(self.emission532label, 2, 1)
+        grid_shutters_layout.addWidget(self.emission532button, 2, 2)
         grid_shutters_layout.addWidget(self.flipperButton, 3, 0)
         grid_shutters_layout.addWidget(self.flipperButton_label, 3, 1, 1, 2)
         
         # Power box
         grid_shutters_layout.addWidget(power488_label, 1, 1)
         grid_shutters_layout.addWidget(self.power488_edit, 1, 2)
+        
         # Status box
         grid_shutters_layout.addWidget(self.updateParamsButton, 4, 0, 1, 3)
         grid_shutters_layout.addWidget(self.statusBlockDefinitions, 5, 0)
@@ -152,6 +163,13 @@ class Frontend(QtGui.QFrame):
            self.shutter532_signal.emit(False)
         return
 
+    def control_emission_532_toggle_check(self):
+        if self.emission532button.handle_position == 1:
+            self.emission532_signal.emit(True)
+        else:
+            self.emission532_signal.emit(False)
+        return
+
     def flipperButton_check(self):
         if self.flipperButton.isChecked():
             print('caca')
@@ -171,12 +189,7 @@ class Frontend(QtGui.QFrame):
         return
     
     def update_params_button_check(self):
-        if self.updateParamsButton.isChecked():
-            self.updateParams_signal.emit(True)
-        else:
-            self.updateParams_signal.emit(False)
-            self.statusBlock488.setText(self.no_text488)
-            self.statusBlock532.setText(self.no_text532)
+        self.updateParams_signal.emit(True)
         return
     
     @pyqtSlot(list, list)
@@ -223,9 +236,9 @@ class Backend(QtCore.QObject):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # set timer to update lasers status
-        self.updateTimer = QtCore.QTimer()
-        self.updateTimer.timeout.connect(self.update_params) 
-        self.updateTimer.setInterval(updateParams_period) # in ms
+        # self.updateTimer = QtCore.QTimer()
+        # self.updateTimer.timeout.connect(self.update_params) 
+        # self.updateTimer.setInterval(updateParams_period) # in ms
         self.change_power(initial_blue_power)
         return
 
@@ -254,6 +267,14 @@ class Backend(QtCore.QObject):
         return
             
     @pyqtSlot(bool)
+    def emission532(self, emissionbool):
+        if emissionbool:
+            laser532.emission('on')
+        else:
+            laser532.emission('off')
+        return
+    
+    @pyqtSlot(bool)
     def flipper_inspec_cam(self, flipperbool):
         if flipperbool:
             flipperMirror.set_inspect_cam_down() # inspection camera ON
@@ -268,15 +289,15 @@ class Backend(QtCore.QObject):
         laser488.set_power(self.power488_mW)
         return
     
-    @pyqtSlot(bool)    
-    def start_updating_params(self, updatebool):
-        if updatebool:
-            print('Starting updater (QtTimer)... Update period: %.1f s' % (updateParams_period/1000))
-            self.updateTimer.start()
-        else:
-            print('Stopping updater (QtTimer)...')
-            self.updateTimer.stop()
-        return
+    # @pyqtSlot(bool)    
+    # def start_updating_params(self, updatebool):
+    #     if updatebool:
+    #         print('Starting updater (QtTimer)... Update period: %.1f s' % (updateParams_period/1000))
+    #         self.updateTimer.start()
+    #     else:
+    #         print('Stopping updater (QtTimer)...')
+    #         self.updateTimer.stop()
+    #     return
         
     def update_params(self):
         # Parameters of 488 nm laser
@@ -303,8 +324,8 @@ class Backend(QtCore.QObject):
         laser488.close()
         laser532.close()
         flipperMirror.close()
-        print('Stopping updater (QtTimer)...')
-        self.updateTimer.stop()
+        # print('Stopping updater (QtTimer)...')
+        # self.updateTimer.stop()
         print('Exiting thread...')
         workerThread.exit()
         return
@@ -313,10 +334,11 @@ class Backend(QtCore.QObject):
         frontend.shutterTisa_signal.connect(self.shutterTisa)
         frontend.shutter488_signal.connect(self.shutter488)
         frontend.shutter532_signal.connect(self.shutter532)
+        frontend.emission532_signal.connect(self.emission532)
         frontend.flipper_signal.connect(self.flipper_inspec_cam)
         frontend.powerChangedSignal.connect(self.change_power)
         frontend.closeSignal.connect(self.closeBackend)
-        frontend.updateParams_signal.connect(self.start_updating_params)
+        frontend.updateParams_signal.connect(self.update_params)
         return
     
 #=====================================
@@ -336,7 +358,7 @@ if __name__ == '__main__':
     # thread that run in background
     workerThread = QtCore.QThread()
     worker.moveToThread(workerThread)
-    worker.updateTimer.moveToThread(workerThread)
+    # worker.updateTimer.moveToThread(workerThread)
 
     # connect both classes
     worker.make_connections(gui)
@@ -347,3 +369,4 @@ if __name__ == '__main__':
 
     gui.show()
     app.exec()
+    
