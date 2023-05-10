@@ -29,6 +29,10 @@ shutterTisa = laserTool.Thorlabs_shutter(debug_mode = False)
 flipperMirror = laserTool.motorized_flipper(debug_mode = False)
 # updateParams_period = 2000 # in ms
 initial_blue_power = 1.4 # in mW
+initial_wavelength = 852.00 # in nm
+starting_wavelength = 700.00 # in nm
+ending_wavelength = 1000.00 # in nm
+step_wavelength = 10 # in nm
 
 #=====================================
 
@@ -44,6 +48,11 @@ class Frontend(QtGui.QFrame):
     emission532_signal = pyqtSignal(bool)
     flipper_signal = pyqtSignal(bool)
     powerChangedSignal = pyqtSignal(float)
+    wavelengthChangedSignal = pyqtSignal(float)
+    startingWavelengthChangedSignal = pyqtSignal(float)
+    endingWavelengthChangedSignal = pyqtSignal(float)
+    stepWavelengthChangedSignal = pyqtSignal(float)
+    scan_signal = pyqtSignal(bool)
     closeSignal = pyqtSignal()
     updateParams_signal = pyqtSignal(bool)
 
@@ -53,6 +62,7 @@ class Frontend(QtGui.QFrame):
         # set the title of thw window
         title = "Lasers control module"
         self.setWindowTitle(title)
+        self.setGeometry(5, 30, 600, 300)
         return
     
     def setUpGUI(self):       
@@ -69,12 +79,11 @@ class Frontend(QtGui.QFrame):
         self.shutter532button = QtGui.QCheckBox('532 nm shutter')
         self.shutter532button.clicked.connect(self.control_532_button_check)
         self.shutter532button.setStyleSheet("color: green; ")
-        
-        self.emission532label = QtGui.QLabel('532 emission ON/OFF')
-        self.emission532button = Toggle(bar_color=QtGui.QColor(85,85,85), 
-                                        handle_color=QtGui.QColor(50,50,50), 
-                                        checked_color="#1d8f2a")
-        self.emission532button.clicked.connect(self.control_emission_532_toggle_check)        
+
+        self.emission532button = QtGui.QCheckBox('532 emission ON/OFF')
+        self.emission532button.setStyleSheet("color: black; ")
+        self.emission532button.setChecked(True)
+        self.emission532button.clicked.connect(self.control_emission_532_toggle_check)
 
         self.updateParamsButton = QtGui.QPushButton('Update lasers\' parameters')
         self.updateParamsButton.setCheckable(False)
@@ -87,13 +96,47 @@ class Frontend(QtGui.QFrame):
         self.shutter532button.setToolTip('Open/close 532 shutter')
         
         # Flippers 
-        self.flipperButton = QtGui.QCheckBox('Camera selector  | ')
-        self.flipperButton.setStyleSheet("color: black; ")
-        self.flipperButton.setChecked(True)
+        self.flipper_label = QtGui.QLabel('Camera selector  | ')
+        self.flipperButton_label = QtGui.QLabel('INSPECTION cam')
+        self.flipperButton = Toggle(bar_color=QtGui.QColor(42,81,156), 
+                                        handle_color=QtGui.QColor(14,73,150), 
+                                        checked_color="#bd1e1e")
         self.flipperButton.clicked.connect(self.flipperButton_check)
-        self.flipperButton_label = QtGui.QLabel('Inspection camera')
-        self.flipperButton_label.setStyleSheet("color: black; ")
-        self.flipperButton_label.setToolTip('Up/Down flipper mirror')        
+        self.flipperButton.setToolTip('Up/Down flipper mirror')              
+        
+        # Ti:Sa wavelength management
+        target_wavelength_label = QtGui.QLabel('Target wavelength (nm):')
+        self.target_wavelength_edit = QtGui.QLineEdit(str(initial_wavelength))
+        self.target_wavelength_edit_previous = float(self.target_wavelength_edit.text())
+        self.target_wavelength_edit.editingFinished.connect(self.wavelength_changed_check)
+        self.target_wavelength_edit.setValidator(QtGui.QDoubleValidator(698.00, 1002.00, 2))
+        current_wavelength_label = QtGui.QLabel('Current wavelength (nm):')
+        self.current_wavelength = QtGui.QLabel(str(initial_wavelength))
+        
+        # wavelength scan
+        starting_wavelength_label = QtGui.QLabel('Starting wavelength (nm):')
+        self.starting_wavelength_edit = QtGui.QLineEdit(str(starting_wavelength))
+        self.starting_wavelength_edit_previous = float(self.starting_wavelength_edit.text())
+        self.starting_wavelength_edit.editingFinished.connect(self.starting_wavelength_changed_check)
+        self.starting_wavelength_edit.setValidator(QtGui.QDoubleValidator(698.00, 1002.00, 2))
+        ending_wavelength_label = QtGui.QLabel('Ending wavelength (nm):')
+        self.ending_wavelength_edit = QtGui.QLineEdit(str(ending_wavelength))
+        self.ending_wavelength_edit_previous = float(self.ending_wavelength_edit.text())
+        self.ending_wavelength_edit.editingFinished.connect(self.ending_wavelength_changed_check)
+        self.ending_wavelength_edit.setValidator(QtGui.QDoubleValidator(698.00, 1002.00, 2))
+        step_wavelength_label = QtGui.QLabel('Step (nm):')
+        self.step_wavelength_edit = QtGui.QLineEdit(str(step_wavelength))
+        self.step_wavelength_edit_previous = float(self.step_wavelength_edit.text())
+        self.step_wavelength_edit.editingFinished.connect(self.step_wavelength_changed_check)
+        self.step_wavelength_edit.setValidator(QtGui.QDoubleValidator(0.00, 100.00, 2))
+        
+        # start scan
+        self.scanButton = QtGui.QPushButton('Run wavelength scan')
+        self.scanButton.setCheckable(True)
+        self.scanButton.clicked.connect(self.scan_button_check)
+        self.scanButton.setStyleSheet(
+                "QPushButton { background-color: lightgray; }"
+                "QPushButton::checked { background-color: lightcoral; }")
         
         # 488 power
         power488_label = QtGui.QLabel('Power 488 (mW):')
@@ -117,23 +160,41 @@ class Frontend(QtGui.QFrame):
         self.grid_shutters = QtGui.QWidget()
         grid_shutters_layout = QtGui.QGridLayout()
         self.grid_shutters.setLayout(grid_shutters_layout)
-        grid_shutters_layout.addWidget(self.shutterTisaButton, 0, 0)
-        grid_shutters_layout.addWidget(self.shutter488button, 1, 0)
-        grid_shutters_layout.addWidget(self.shutter532button, 2, 0)
-        grid_shutters_layout.addWidget(self.emission532label, 2, 1)
-        grid_shutters_layout.addWidget(self.emission532button, 2, 2)
-        grid_shutters_layout.addWidget(self.flipperButton, 3, 0)
-        grid_shutters_layout.addWidget(self.flipperButton_label, 3, 1, 1, 2)
         
-        # Power box
-        grid_shutters_layout.addWidget(power488_label, 1, 1)
-        grid_shutters_layout.addWidget(self.power488_edit, 1, 2)
+        # Ti:Sa box
+        grid_shutters_layout.addWidget(self.shutterTisaButton, 0, 0)
+        grid_shutters_layout.addWidget(target_wavelength_label, 1, 0)
+        grid_shutters_layout.addWidget(self.target_wavelength_edit, 1, 1)
+        grid_shutters_layout.addWidget(current_wavelength_label, 1, 2)
+        grid_shutters_layout.addWidget(self.current_wavelength, 1, 3)
+        grid_shutters_layout.addWidget(starting_wavelength_label, 2, 0)
+        grid_shutters_layout.addWidget(self.starting_wavelength_edit, 2, 1)
+        grid_shutters_layout.addWidget(ending_wavelength_label, 2, 2)
+        grid_shutters_layout.addWidget(self.ending_wavelength_edit, 2, 3)
+        grid_shutters_layout.addWidget(step_wavelength_label, 2, 4)
+        grid_shutters_layout.addWidget(self.step_wavelength_edit, 2, 5)
+        
+        grid_shutters_layout.addWidget(self.scanButton, 3, 0, 1, 6)
+        
+        # 488 box
+        grid_shutters_layout.addWidget(self.shutter488button, 4, 0)
+        grid_shutters_layout.addWidget(power488_label, 4, 1)
+        grid_shutters_layout.addWidget(self.power488_edit, 4, 2)
+        
+        # 532 box
+        grid_shutters_layout.addWidget(self.shutter532button, 5, 0)
+        grid_shutters_layout.addWidget(self.emission532button, 5, 1)
+        
+        # cameras box
+        grid_shutters_layout.addWidget(self.flipper_label, 6, 0)
+        grid_shutters_layout.addWidget(self.flipperButton_label, 6, 1)
+        grid_shutters_layout.addWidget(self.flipperButton, 6, 2, 1, 2)
         
         # Status box
-        grid_shutters_layout.addWidget(self.updateParamsButton, 4, 0, 1, 3)
-        grid_shutters_layout.addWidget(self.statusBlockDefinitions, 5, 0)
-        grid_shutters_layout.addWidget(self.statusBlock488, 5, 1)
-        grid_shutters_layout.addWidget(self.statusBlock532, 5, 2)
+        grid_shutters_layout.addWidget(self.updateParamsButton, 7, 0, 1, 3)
+        grid_shutters_layout.addWidget(self.statusBlockDefinitions, 8, 0)
+        grid_shutters_layout.addWidget(self.statusBlock488, 8, 1)
+        grid_shutters_layout.addWidget(self.statusBlock532, 8, 2)
 
         # GUI layout    
         grid = QtGui.QGridLayout()
@@ -164,28 +225,61 @@ class Frontend(QtGui.QFrame):
         return
 
     def control_emission_532_toggle_check(self):
-        if self.emission532button.handle_position == 1:
+        if self.emission532button.isChecked():
             self.emission532_signal.emit(True)
         else:
             self.emission532_signal.emit(False)
         return
 
     def flipperButton_check(self):
-        if self.flipperButton.isChecked():
-            print('caca')
-            self.flipperButton_label.setText('INSPECTION cam (Thorlabs)')
+        if self.flipperButton.handle_position == 1:
+            self.flipperButton_label.setText('INSPECTION cam')
             self.flipper_signal.emit(True)
         else:
-            self.flipperButton_label.setText('XY STABILIZATION cam (pco)')
+            self.flipperButton_label.setText('XY STABILIZATION cam')
             self.flipper_signal.emit(False)
         return
 
     def power488_changed_check(self):
         power488_mW = float(self.power488_edit.text()) # in mW
         if power488_mW != self.power488_edit_previous:
-            print('\nPower 488 changed to', power488_mW, 'mW')
             self.power488_edit_previous = power488_mW
             self.powerChangedSignal.emit(power488_mW)
+        return
+    
+    def wavelength_changed_check(self):
+        target_wavelength = float(self.target_wavelength_edit.text()) # in mW
+        if target_wavelength != self.target_wavelength_edit_previous:
+            self.target_wavelength_edit_previous = target_wavelength
+            self.wavelengthChangedSignal.emit(target_wavelength)
+        return
+    
+    def starting_wavelength_changed_check(self):
+        starting_wavelength = float(self.starting_wavelength_edit.text()) # in mW
+        if starting_wavelength != self.starting_wavelength_edit_previous:
+            self.starting_wavelength_edit_previous = starting_wavelength
+            self.startingWavelengthChangedSignal.emit(starting_wavelength)
+        return
+    
+    def ending_wavelength_changed_check(self):
+        ending_wavelength = float(self.ending_wavelength_edit.text()) # in mW
+        if ending_wavelength != self.ending_wavelength_edit_previous:
+            self.ending_wavelength_edit_previous = ending_wavelength
+            self.endingWavelengthChangedSignal.emit(ending_wavelength)
+        return
+    
+    def step_wavelength_changed_check(self):
+        step_wavelength = float(self.step_wavelength_edit.text()) # in mW
+        if step_wavelength != self.step_wavelength_edit_previous:
+            self.step_wavelength_edit_previous = step_wavelength
+            self.stepWavelengthChangedSignal.emit(step_wavelength)
+        return
+
+    def scan_button_check(self):
+        if self.scanButton.isChecked():
+            self.scan_signal.emit(True)
+        else:
+            self.scan_signal.emit(False)
         return
     
     def update_params_button_check(self):
@@ -299,6 +393,12 @@ class Backend(QtCore.QObject):
     #         self.updateTimer.stop()
     #     return
         
+    def change_wavelength(self, target_wavelength):
+        print('\nTarget_wavelength set to %.2f nm' % target_wavelength)
+        # self.power488_mW = power488_mW # in mW, is float
+        # laser488.set_power(self.power488_mW)
+        return
+    
     def update_params(self):
         # Parameters of 488 nm laser
         status488 = laser488.status()
@@ -337,6 +437,7 @@ class Backend(QtCore.QObject):
         frontend.emission532_signal.connect(self.emission532)
         frontend.flipper_signal.connect(self.flipper_inspec_cam)
         frontend.powerChangedSignal.connect(self.change_power)
+        frontend.wavelengthChangedSignal.connect(self.change_wavelength)
         frontend.closeSignal.connect(self.closeBackend)
         frontend.updateParams_signal.connect(self.update_params)
         return

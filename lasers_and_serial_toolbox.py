@@ -13,18 +13,9 @@ import glob
 import serial
 import re
 import time
+from pylablib.devices import Thorlabs
 from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper
 from pylablib.devices import M2
-# import clr
-
-# sys.path.append(r"C:\Program Files\Thorlabs\Kinesis")
-# clr.AddReference("Thorlabs.MotionControl.DeviceManagerCLI.dll")
-# clr.AddReference("Thorlabs.MotionControl.GenericMotorCLI.dll")
-# clr.AddReference("ThorLabs.MotionControl.KCube.SolenoidCLI.dll")
-# from Thorlabs.MotionControl.DeviceManagerCLI import *
-# from Thorlabs.MotionControl.GenericMotorCLI import *
-# from Thorlabs.MotionControl.KCube.SolenoidCLI import *
-# from System import Decimal  # necessary for real world units
 
 #=====================================
 
@@ -374,14 +365,38 @@ class toptica_laser(object):
 class M2_laser(object):
     def __init__(self, debug_mode):
         # Parameters for Ti:Sa CW laser
-        self.port = 1025
+        self.port = 9999 # Remote interface 1 port (set at the web interface)
         self.staticIP = '192.168.1.222'
         self.debug_mode = debug_mode
         self.initialize()
         return
     
     def initialize(self):
-        self.tisa_laser = M2.Solstis(self.staticIP, self.port)
+        self.tisa_laser = M2.Solstis(self.staticIP, self.port, use_cavity=False)
+        if self.tisa_laser.is_opened():
+            print('Ti:Sa laser connected succesfully.')
+        else:
+            print('It was not possible to connect Ti:Sa laser.')
+        return
+    
+    def status(self):
+        status_dict = self.tisa_laser.get_system_status()
+        return status_dict
+    
+    def set_wavelength(self, target_wavelength):
+        # if sync==True, wait until the operation is complete.
+        self.tisa_laser.coarse_tune_wavelength(target_wavelength, sync=True)
+        # wavelength_status = self.tisa_laser.get_coarse_tuning_status()
+        return
+    
+    def get_wavelength(self):
+        # in m
+        self.current_wavelength = self.tisa_laser.get_coarse_wavelength()
+        self.current_wavelength_nm = self.current_wavelength*1e9
+        return
+    
+    def stop_coarse_tuning(self):
+        self.tisa_laser.stop_coarse_tuning()
         return
     
     def close(self):
@@ -446,6 +461,7 @@ class Thorlabs_shutter(object):
     def __init__(self, debug_mode):
         # Parameters for 1 inch Thorlabs shutter SH1
         self.baudRate = 9600
+        self.serial_number = '68000970'
         self.serialPort = COM_port_shutter_Thorlabs
         self.debug_mode = debug_mode
         # self.initialize()
@@ -505,14 +521,22 @@ if __name__ == '__main__':
     
     # laser532 = oxxius_laser(debug_mode = False)
     
-    laser488 = toptica_laser(debug_mode = False)
+    # laser488 = toptica_laser(debug_mode = False)
     
-    mff = motorized_flipper(debug_mode = False)
+    # mff = motorized_flipper(debug_mode = False)
     
-    # tisa = M2_laser(debug_mode = False)
+    tisa = M2_laser(debug_mode = False)
+
     # laser532.close()
 
-    laser488.close()
-    mff.close()
+    # laser488.close()
+    # mff.close()
     
+    # print(Thorlabs.list_kinesis_devices() )
+    # shutter = Thorlabs.KinesisDevice("68000970")
+    # shutter = Thorlabs.BasicKinesisDevice("68000970")
+    # shutter.open()
+    # shutter.close()
+    # shutter.get_device_info()
 
+    
