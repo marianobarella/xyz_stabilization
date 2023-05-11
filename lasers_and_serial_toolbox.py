@@ -28,7 +28,9 @@ from pylablib.devices import M2
 bytesToRead = 200
 # COM ports
 COM_port_oxxius = 'COM4'
-COM_port_flipper_Thorlabs = 'COM5'
+COM_port_flipper_cam_Thorlabs = 'COM5' # Serial number: 37004922
+COM_port_flipper_apd_Thorlabs = 'COM8' # Serial number: 37005240
+COM_port_flipper_tisa_Thorlabs = 'COM9' # Serial number: 37005241
 COM_port_shutter_Thorlabs = 'COM7'
 COM_port_toptica = 'COM6'
 
@@ -380,29 +382,51 @@ class M2_laser(object):
         return
     
     def status(self):
+        # full_status = self.tisa_laser.get_full_status()
         status_dict = self.tisa_laser.get_system_status()
-        return status_dict
+        # print(status_dict)
+        status_list = []
+        status_list.append(str(status_dict['status']))
+        status_list.append(str(round(status_dict['temperature'],1))+' K')
+        return status_list
     
     def set_wavelength(self, target_wavelength):
         # if sync==True, wait until the operation is complete.
         self.tisa_laser.coarse_tune_wavelength(target_wavelength, sync=True)
-        # wavelength_status = self.tisa_laser.get_coarse_tuning_status()
         return
+
+    def wavelength_status(self):
+        return self.tisa_laser.get_coarse_tuning_status()
     
     def get_wavelength(self):
         # in m
         self.current_wavelength = self.tisa_laser.get_coarse_wavelength()
         self.current_wavelength_nm = self.current_wavelength*1e9
-        return
+        return 
     
     def stop_coarse_tuning(self):
         self.tisa_laser.stop_coarse_tuning()
         return
     
+    def get_tuning_status(self):
+        answer = self.tisa_laser.get_coarse_tuning_status()
+        if answer == 'done':
+            return 1
+        elif answer == 'tuning':
+            return 0
+        elif answer == 'fail':
+            print('ERROR! Wavelength tuning failed!')
+            print('Stopping all operations...')
+            self.tisa_laser.stop_all_operation()
+            return -1
+        else:
+            print('Error: could not interpret the status of the Ti:Sa!')
+            return -1
+        return
+    
     def close(self):
         time.sleep(0.1)
         print('Closing Ti:Sa laser communication...')
-        # self.shutter('close')
         self.tisa_laser.stop_all_operation()
         self.tisa_laser.close()
         return
@@ -414,10 +438,10 @@ class M2_laser(object):
 #=====================================
 
 class motorized_flipper(object):
-    def __init__(self, debug_mode):
+    def __init__(self, debug_mode, serial_port):
         # Parameters for Motorized Flipper
         self.baudRate = 9600
-        self.serialPort = COM_port_flipper_Thorlabs
+        self.serialPort = serial_port
         self.debug_mode = debug_mode
         self.initialize()
         
@@ -438,15 +462,17 @@ class motorized_flipper(object):
             print("State: ", state)
         return state
 
-    def set_inspect_cam_up(self):
+    def set_flipper_up(self):
         self.serialInstance.move_to_state(1)
+        return
         
-    def set_inspect_cam_down(self):
+    def set_flipper_down(self):
         self.serialInstance.move_to_state(0)
-        
+        return
+    
     def close(self):
         print('Closing motorized flipper serial communication...')
-        self.set_inspect_cam_down()
+        self.set_flipper_down()
         self.serialInstance.close()
         time.sleep(0.2)
         return
