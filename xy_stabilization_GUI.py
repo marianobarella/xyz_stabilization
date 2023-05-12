@@ -94,7 +94,7 @@ class Frontend(QtGui.QFrame):
         # set the title of the window
         title = "XY stabilization module"
         self.setWindowTitle(title)
-        self.setGeometry(5, 30, 1900, 600)
+        self.setGeometry(5, 30, 1900, 600) # x pos, y pos, width, height
         self.sensor_temp = 0.00
         self.cam_temp = 0.00
         self.power_temp = 0.00

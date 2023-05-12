@@ -127,7 +127,7 @@ class BPC303:
         unit and then each channel, which is linked to the corresponding axis
         as defined in self.axis_chan_mapping
         """
-        print("Connecting to BPC303:")
+        print("\nConnecting to BPC303:")
         print("\t- connecting to controller %s -->" % self.deviceID, end="")
         self.controller.Connect(self.deviceID)
         self.isconnected = self.controller.IsConnected

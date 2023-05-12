@@ -13,9 +13,10 @@ import glob
 import serial
 import re
 import time
-from pylablib.devices import Thorlabs
+# from pylablib.devices import Thorlabs
 from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper
 from pylablib.devices import M2
+from timeit import default_timer as timer
 
 #=====================================
 
@@ -365,16 +366,18 @@ class toptica_laser(object):
 #=====================================
 
 class M2_laser(object):
-    def __init__(self, debug_mode):
+    def __init__(self, debug_mode, timeout = 5.0):
         # Parameters for Ti:Sa CW laser
         self.port = 9999 # Remote interface 1 port (set at the web interface)
         self.staticIP = '192.168.1.222'
         self.debug_mode = debug_mode
+        self.timeout = timeout
         self.initialize()
         return
     
     def initialize(self):
-        self.tisa_laser = M2.Solstis(self.staticIP, self.port, use_cavity=False)
+        self.tisa_laser = M2.Solstis(self.staticIP, self.port, use_cavity=False, \
+                                     timeout = self.timeout)
         if self.tisa_laser.is_opened():
             print('Ti:Sa laser connected succesfully.')
         else:
@@ -392,7 +395,12 @@ class M2_laser(object):
     
     def set_wavelength(self, target_wavelength):
         # if sync==True, wait until the operation is complete.
+        if self.debug_mode:
+            start_time = timer()
         self.tisa_laser.coarse_tune_wavelength(target_wavelength, sync=True)
+        if self.debug_mode:
+            delta_t = timer() - start_time # in s
+            print('It took %.3f s to change the wavelength' % delta_t)
         return
 
     def wavelength_status(self):

@@ -64,8 +64,8 @@ initial_max_y_range = 0.03
 initial_mean_value = 0
 initial_sd_value = 0.2
 # initial filepath and filename
-initial_filepath = 'D:\\daily_data' # save in SSD for fast and daily use
-initial_filename = 'test'
+initial_filepath = 'D:\\daily_data\\apd_traces' # save in SSD for fast and daily use
+initial_filename = 'signal_XX'
 
 #=====================================
 
@@ -96,6 +96,7 @@ class Frontend(QtGui.QFrame):
     traceSignal = pyqtSignal(bool)
     makeTraceContSignal = pyqtSignal(bool)
     saveTraceContSignal = pyqtSignal(bool)
+    saveTraceASCIISignal = pyqtSignal(bool)
     setVoltageRangeSignal = pyqtSignal(float)
     setSamplingRateSignal = pyqtSignal(int)
     setDurationSignal = pyqtSignal(float)
@@ -109,9 +110,9 @@ class Frontend(QtGui.QFrame):
         super().__init__(*args, **kwargs)
         self.setUpGUI()
         # set the title of thw window
-        title = "APD signal module"
+        title = "Acquisition module"
         self.setWindowTitle(title)
-        self.setGeometry(1000, 30, 800, 1000)
+        self.setGeometry(850, 30, 700, 1000) # x pos, y pos, width, height
         self.set_y_range()
         self.mean_value = initial_mean_value # in V
         self.sd_value = initial_sd_value # in V
@@ -151,6 +152,12 @@ class Frontend(QtGui.QFrame):
         self.saveContinuouslyBox.stateChanged.connect(self.set_save_continuously)
         self.saveContinuouslyBox.setToolTip('Set/Tick to save data continuously. Filenames will be sequential.')
         
+        # Save in ASCII tick box
+        self.saveASCIIBox = QtGui.QCheckBox('Save in ASCII (<b>not</b> recommended)')
+        self.saveASCIIBox.setChecked(False)
+        self.saveASCIIBox.stateChanged.connect(self.set_save_in_ascii)
+        self.saveASCIIBox.setToolTip('Set/Tick to save data in ASCII. WARNING: files will be heavier than in binary (4.5 times more).')
+                
         # Working folder
         self.working_dir_button = QtGui.QPushButton('Select directory')
         self.working_dir_button.clicked.connect(self.set_working_dir)
@@ -160,23 +167,19 @@ class Frontend(QtGui.QFrame):
         self.working_dir_label = QtGui.QLabel('Working directory')
         self.filepath = initial_filepath
         self.working_dir_path = QtGui.QLineEdit(self.filepath)
+        self.working_dir_path.setFixedWidth(300)
         self.working_dir_path.setReadOnly(True)
         self.filename_label = QtGui.QLabel('Filename (.npy)')
         self.filename = initial_filename
         self.filename_name = QtGui.QLineEdit(self.filename)
+        self.filename_name.setFixedWidth(300)
         self.filename_name.editingFinished.connect(self.set_filename)
-        
-        # Comments box
-        self.comments_label = QtGui.QLabel('Comments:')
-        self.comment = ''
-        self.comments = QtGui.QLineEdit(self.comment)
-        self.comments.setPlaceholderText('Enter your comments here. They will be saved with the trace data.')
-        self.comments.editingFinished.connect(self.transmit_comments)
         
         # Voltage range
         voltage_ranges_option = ['0.1', '0.2', '0.5', '1.0', '2.0', '5.0', '10.0']
         self.maxVoltageRangeLabel = QtGui.QLabel('Max voltage range (V): ')
         self.maxVoltageRangeList = QtGui.QComboBox()
+        self.maxVoltageRangeList.setFixedWidth(100)
         self.maxVoltageRangeList.addItems(voltage_ranges_option)
         self.maxVoltageRangeList.setCurrentText(str(initial_voltage_range))
         self.maxVoltageRangeList.currentTextChanged.connect(self.voltage_range_changed)
@@ -184,70 +187,104 @@ class Frontend(QtGui.QFrame):
         # Sampling rate
         self.samplingRateLabel = QtGui.QLabel('Sampling rate (kS/s): ')
         self.samplingRateValue = QtGui.QLineEdit(str(int(initial_sampling_rate/1e3)))
+        self.samplingRateValue.setFixedWidth(100)
         self.sampling_rate = int(initial_sampling_rate/1e3)
         self.time_base = 1/initial_sampling_rate
         self.samplingRateValue.editingFinished.connect(self.sampling_rate_changed)
         self.samplingRateValue.setValidator(QtGui.QIntValidator(1, 2000))
-        
-        # Downsampling
-        self.downsamplingLabel = QtGui.QLabel('Downsampling/averaging (int): ')
-        self.downsamplingValue = QtGui.QLineEdit(str(int(initial_downsampling_period)))
-        self.downsamplingValue.setToolTip('For displaying purposes. Number of points to average. The higher the better the performance. Advice: use only for Sampling rates higher than 100 kS/s.')
-        self.downsampling_period = initial_downsampling_period
-        self.downsamplingValue.editingFinished.connect(self.downsampling_changed)
-        self.downsamplingValue.setValidator(QtGui.QIntValidator(1, 1000))
 
         # Duration of the measurement
         self.duration = initial_duration
         self.durationLabel = QtGui.QLabel('Duration (s) [max 10 min]: ')
         self.durationValue = QtGui.QLineEdit(str(self.duration))
+        self.durationValue.setFixedWidth(100)
         self.durationValue.setValidator(QtGui.QDoubleValidator(1.0, 600.0, 1))
         self.durationValue.editingFinished.connect(self.duration_value_changed)
         self.durationValue.setToolTip('Maximum duration set to 600 s (10 min).')
+        
+        # Comments box
+        self.comments_label = QtGui.QLabel('Comments:')
+        self.comment = ''
+        self.comments = QtGui.QLineEdit(self.comment)
+        self.comments.setFixedWidth(300)
+        self.comments.setPlaceholderText('Enter your comments here. They will be saved with the trace data.')
+        self.comments.editingFinished.connect(self.transmit_comments)
+        
+        # display mean and std of the signals using labels
+        fontsize = 16
+        font_family = 'Serif'
+        header_col_0 = QtGui.QLabel('Signal (APD)')
+        header_col_0.setFont(QtGui.QFont(font_family, 14))
+        header_col_1 = QtGui.QLabel('Mean (V)')
+        header_col_1.setFont(QtGui.QFont(font_family, 14))
+        header_col_2 = QtGui.QLabel('Std dev (mV)')
+        header_col_2.setFont(QtGui.QFont(font_family, 14))
+        # for transmission APD
+        self.label_apd = QtGui.QLabel('Transmission')
+        self.label_apd.setFont(QtGui.QFont(font_family, fontsize))
+        self.signalMeanValue_apd = QtGui.QLabel('0.000')
+        self.signalMeanValue_apd.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
+        self.signalStdValue_apd = QtGui.QLabel('0.000')
+        self.signalStdValue_apd.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
+        # for monitor APD
+        self.label_monitor = QtGui.QLabel('Monitor')
+        self.label_monitor.setFont(QtGui.QFont(font_family, fontsize))
+        self.signalMeanValue_monitor = QtGui.QLabel('0.000')
+        self.signalMeanValue_monitor.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
+        self.signalStdValue_monitor = QtGui.QLabel('0.000')
+        self.signalStdValue_monitor.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
+        
+        # Y range 
+        self.min_y_range = initial_min_y_range
+        self.max_y_range = initial_max_y_range
+        self.minmax_apd_RangeLabel = QtGui.QLabel('Transmission - Min/Max Y range (V): ')
+        self.minmax_monitor_RangeLabel = QtGui.QLabel('Monitor - Min/Max Y range (V): ')
+        self.minYRangeValue_apd = QtGui.QLineEdit(str(self.min_y_range))
+        self.minYRangeValue_apd.setFixedWidth(100)
+        self.minYRangeValue_apd.setValidator(QtGui.QDoubleValidator(-10, 10, 6))
+        self.maxYRangeValue_apd = QtGui.QLineEdit(str(self.max_y_range))
+        self.maxYRangeValue_apd.setFixedWidth(100)
+        self.maxYRangeValue_apd.setValidator(QtGui.QDoubleValidator(-10, 10, 6))
+        self.minYRangeValue_apd.editingFinished.connect(self.set_y_range)
+        self.maxYRangeValue_apd.editingFinished.connect(self.set_y_range)
+        self.minYRangeValue_monitor = QtGui.QLineEdit(str(self.min_y_range))
+        self.minYRangeValue_monitor.setFixedWidth(100)
+        self.minYRangeValue_monitor.setValidator(QtGui.QDoubleValidator(-10, 10, 6))
+        self.maxYRangeValue_monitor = QtGui.QLineEdit(str(self.max_y_range))
+        self.maxYRangeValue_monitor.setFixedWidth(100)
+        self.maxYRangeValue_monitor.setValidator(QtGui.QDoubleValidator(-10, 10, 6))
+        self.minYRangeValue_monitor.editingFinished.connect(self.set_y_range)
+        self.maxYRangeValue_monitor.editingFinished.connect(self.set_y_range)
+
+        # Downsampling
+        self.downsamplingLabel = QtGui.QLabel('Downsampling/averaging (int): ')
+        self.downsamplingValue = QtGui.QLineEdit(str(int(initial_downsampling_period)))
+        self.downsamplingValue.setFixedWidth(100)
+        self.downsamplingValue.setToolTip('For displaying purposes. Number of points to average. The higher the better the performance. Advice: use only for Sampling rates higher than 100 kS/s.')
+        self.downsampling_period = initial_downsampling_period
+        self.downsamplingValue.editingFinished.connect(self.downsampling_changed)
+        self.downsamplingValue.setValidator(QtGui.QIntValidator(1, 1000))
         
         # Time window length
         self.viewbox_length = initial_viewbox_length
         self.timeViewboxLength_label = QtGui.QLabel('Time window length (s): ')
         self.timeViewboxLength_value = QtGui.QLineEdit(str(self.viewbox_length))
+        self.timeViewboxLength_value.setFixedWidth(100)
         self.timeViewboxLength_value.setValidator(QtGui.QDoubleValidator(0.1, 10.0, 1))
         self.timeViewboxLength_value.setToolTip('For displaying purposes. Set the time length of the viewbox in seconds.')
         self.timeViewboxLength_value.editingFinished.connect(self.time_viewbox_length_changed)
-        
+
         # Displaying effective sampling rate a.k.a. display rate
         fontsize = 14
         font_family = 'Serif'
         self.display_rate = self.sampling_rate/self.downsampling_period
         self.points_displayed = np.floor(self.display_rate*1e3*self.viewbox_length)
-        display_rate_text = 'Display rate: {:.3f} kS/s. Display period: {:.3f} ms. Points displayed: {:.0f}'.format(self.display_rate, 1/self.display_rate, self.points_displayed)
+        display_rate_text = 'Display rate: {:.3f} kS/s    Display period: {:.3f} ms \nPoints displayed: {:.0f}'.format(self.display_rate, 1/self.display_rate, self.points_displayed)
         self.displayRateLabel = QtGui.QLabel(display_rate_text)
         self.displayRateLabel.setFont(QtGui.QFont(font_family, fontsize))
         
-        # display mean and std of the signal using labels
-        fontsize = 20
-        font_family = 'Serif'
-        self.MeanValueLabel = QtGui.QLabel('Mean (V): ')
-        self.MeanValueLabel.setFont(QtGui.QFont(font_family, fontsize))
-        self.signalMeanValue = QtGui.QLabel('0.000')
-        self.signalMeanValue.setFont(QtGui.QFont(font_family, fontsize))
-        self.StdValueLabel = QtGui.QLabel('Std dev (mV): ')
-        self.StdValueLabel.setFont(QtGui.QFont(font_family, fontsize))
-        self.signalStdValue = QtGui.QLabel('0.000')
-        self.signalStdValue.setFont(QtGui.QFont(font_family, fontsize))
-        
-        # Y range 
-        self.min_y_range = initial_min_y_range
-        self.max_y_range = initial_max_y_range
-        self.minYRangeLabel = QtGui.QLabel('Min Y range (V): ')
-        self.maxYRangeLabel = QtGui.QLabel('Max Y range (V): ')
-        self.minYRangeValue = QtGui.QLineEdit(str(self.min_y_range))
-        self.minYRangeValue.setValidator(QtGui.QDoubleValidator(-10, 10, 6))
-        self.maxYRangeValue = QtGui.QLineEdit(str(self.max_y_range))
-        self.maxYRangeValue.setValidator(QtGui.QDoubleValidator(-10, 10, 6))
-        self.minYRangeValue.editingFinished.connect(self.set_y_range)
-        self.maxYRangeValue.editingFinished.connect(self.set_y_range)
-        
         # center-on-the-mean-value-of-the-signal button
-        self.centerOnMeanButton = QtGui.QPushButton('Center signal')
+        self.centerOnMeanButton = QtGui.QPushButton('Center signals')
         self.centerOnMeanButton.clicked.connect(self.center_signal)
         self.centerOnMeanButton.setStyleSheet(
             "QPushButton { background-color: lightgray; }"
@@ -260,40 +297,51 @@ class Frontend(QtGui.QFrame):
         self.paramAcqWidget.setLayout(subgridAcq_layout)
         subgridAcq_layout.addWidget(self.traceButton, 0, 0)
         subgridAcq_layout.addWidget(self.traceContinuouslyBox, 0, 1)
-        subgridAcq_layout.addWidget(self.saveButton, 0, 2)
-        subgridAcq_layout.addWidget(self.saveContinuouslyBox, 0, 3)
-        subgridAcq_layout.addWidget(self.working_dir_label, 1, 0)
-        subgridAcq_layout.addWidget(self.working_dir_path, 1, 1, 1, 3)
-        subgridAcq_layout.addWidget(self.working_dir_button, 1, 4)
-        subgridAcq_layout.addWidget(self.filename_label, 2, 0)
-        subgridAcq_layout.addWidget(self.filename_name, 2, 1, 1, 3)
-        subgridAcq_layout.addWidget(self.maxVoltageRangeLabel, 3, 0)
-        subgridAcq_layout.addWidget(self.maxVoltageRangeList, 3, 1)
-        subgridAcq_layout.addWidget(self.samplingRateLabel, 4, 0)
-        subgridAcq_layout.addWidget(self.samplingRateValue, 4, 1)
-        subgridAcq_layout.addWidget(self.durationLabel, 5, 0)
-        subgridAcq_layout.addWidget(self.durationValue, 5, 1)
-        subgridAcq_layout.addWidget(self.comments_label, 6, 0)
-        subgridAcq_layout.addWidget(self.comments, 7, 0, 1, 5)
+        subgridAcq_layout.addWidget(self.saveButton, 1, 0)
+        subgridAcq_layout.addWidget(self.saveContinuouslyBox, 1, 1)
+        subgridAcq_layout.addWidget(self.saveASCIIBox, 1, 2)
+        subgridAcq_layout.addWidget(self.working_dir_label, 3, 0)
+        subgridAcq_layout.addWidget(self.working_dir_path, 3, 1, 1, 2)
+        subgridAcq_layout.addWidget(self.working_dir_button, 2, 0)
+        subgridAcq_layout.addWidget(self.filename_label, 4, 0)
+        subgridAcq_layout.addWidget(self.filename_name, 4, 1, 1, 2)
+        subgridAcq_layout.addWidget(self.maxVoltageRangeLabel, 5, 0)
+        subgridAcq_layout.addWidget(self.maxVoltageRangeList, 5, 1)
+        subgridAcq_layout.addWidget(self.samplingRateLabel, 6, 0)
+        subgridAcq_layout.addWidget(self.samplingRateValue, 6, 1)
+        subgridAcq_layout.addWidget(self.durationLabel, 7, 0)
+        subgridAcq_layout.addWidget(self.durationValue, 7, 1)
+        subgridAcq_layout.addWidget(self.comments_label, 8, 0)
+        subgridAcq_layout.addWidget(self.comments, 8, 1, 1, 2)
          
         # Layout for display controls widget
         self.paramDisplayWidget = QtGui.QWidget()
         subgridDisp_layout = QtGui.QGridLayout()
         self.paramDisplayWidget.setLayout(subgridDisp_layout)
-        subgridDisp_layout.addWidget(self.MeanValueLabel, 0, 0)
-        subgridDisp_layout.addWidget(self.signalMeanValue, 0, 1)
-        subgridDisp_layout.addWidget(self.StdValueLabel, 0, 2)
-        subgridDisp_layout.addWidget(self.signalStdValue, 0, 3)
-        subgridDisp_layout.addWidget(self.maxYRangeLabel, 1, 0)
-        subgridDisp_layout.addWidget(self.maxYRangeValue, 1, 1)
-        subgridDisp_layout.addWidget(self.minYRangeLabel, 2, 0)
-        subgridDisp_layout.addWidget(self.minYRangeValue, 2, 1)
-        subgridDisp_layout.addWidget(self.centerOnMeanButton, 1, 2, 2, 1)
-        subgridDisp_layout.addWidget(self.downsamplingLabel, 3, 0)
-        subgridDisp_layout.addWidget(self.downsamplingValue, 3, 1)
-        subgridDisp_layout.addWidget(self.timeViewboxLength_label, 4, 0)
-        subgridDisp_layout.addWidget(self.timeViewboxLength_value, 4, 1)
-        subgridDisp_layout.addWidget(self.displayRateLabel, 5, 0, 1, 3)
+        # transmission APD
+        subgridDisp_layout.addWidget(header_col_0, 0, 0)
+        subgridDisp_layout.addWidget(header_col_1, 0, 1)
+        subgridDisp_layout.addWidget(header_col_2, 0, 2)
+        subgridDisp_layout.addWidget(self.label_apd, 1, 0)
+        subgridDisp_layout.addWidget(self.signalMeanValue_apd, 1, 1)
+        subgridDisp_layout.addWidget(self.signalStdValue_apd, 1, 2)
+        # monitor APD
+        subgridDisp_layout.addWidget(self.label_monitor, 2, 0)
+        subgridDisp_layout.addWidget(self.signalMeanValue_monitor, 2, 1)
+        subgridDisp_layout.addWidget(self.signalStdValue_monitor, 2, 2)
+        # display ranges
+        subgridDisp_layout.addWidget(self.minmax_apd_RangeLabel, 3, 0)
+        subgridDisp_layout.addWidget(self.minYRangeValue_apd, 3, 1)
+        subgridDisp_layout.addWidget(self.maxYRangeValue_apd, 3, 2)
+        subgridDisp_layout.addWidget(self.minmax_monitor_RangeLabel, 4, 0)
+        subgridDisp_layout.addWidget(self.minYRangeValue_monitor, 4, 1)
+        subgridDisp_layout.addWidget(self.maxYRangeValue_monitor, 4, 2)
+        subgridDisp_layout.addWidget(self.centerOnMeanButton, 5, 0, 1, 3)
+        subgridDisp_layout.addWidget(self.downsamplingLabel, 6, 0)
+        subgridDisp_layout.addWidget(self.downsamplingValue, 6, 1)
+        subgridDisp_layout.addWidget(self.timeViewboxLength_label, 7, 0)
+        subgridDisp_layout.addWidget(self.timeViewboxLength_value, 7, 1)
+        subgridDisp_layout.addWidget(self.displayRateLabel, 8, 0, 1, 3)
         
         # widget for the data
         self.viewTraceWidget = pg.GraphicsLayoutWidget()
@@ -312,27 +360,29 @@ class Frontend(QtGui.QFrame):
         self.monitor_plot.setLabel('bottom', 'Time (s)')
         
         # Docks
-        hbox = QtGui.QHBoxLayout(self)
-        dockArea = DockArea()
+        gridbox = QtGui.QGridLayout(self)
+        dockArea1 = DockArea()
+        dockArea2 = DockArea()
         
-        acqTraceDock = Dock('Acquisition controls', size = (10,1))
+        acqTraceDock = Dock('Acquisition controls', size=(10,1))
         acqTraceDock.addWidget(self.paramAcqWidget)
-        dockArea.addDock(acqTraceDock)
+        dockArea1.addDock(acqTraceDock)
 
-        displayCtrlDock = Dock('Display controls', size = (10,1))
+        displayCtrlDock = Dock('Display controls', size=(10,1))
         displayCtrlDock.addWidget(self.paramDisplayWidget)
-        dockArea.addDock(displayCtrlDock, 'bottom', acqTraceDock)        
+        dockArea1.addDock(displayCtrlDock, 'right', acqTraceDock)        
 
-        viewTraceDock = Dock('Trace viewbox', size = (1000,10))
+        viewTraceDock = Dock('Trace viewbox', size=(1,1000))
         viewTraceDock.addWidget(self.viewTraceWidget)
-        dockArea.addDock(viewTraceDock, 'bottom', displayCtrlDock)
+        dockArea2.addDock(viewTraceDock)
 
-        monitorTraceDock = Dock('Trace viewbox', size = (1000,10))
+        monitorTraceDock = Dock('Trace viewbox', size=(1,1000))
         monitorTraceDock.addWidget(self.monitorTraceWidget)
-        dockArea.addDock(monitorTraceDock, 'bottom', viewTraceDock)
+        dockArea2.addDock(monitorTraceDock, 'bottom', viewTraceDock)
 
-        hbox.addWidget(dockArea) 
-        self.setLayout(hbox)
+        gridbox.addWidget(dockArea1, 0, 0) 
+        gridbox.addWidget(dockArea2, 1, 0) 
+        self.setLayout(gridbox)
         return
 
     def set_working_dir(self):
@@ -427,6 +477,13 @@ class Frontend(QtGui.QFrame):
             self.saveTraceContSignal.emit(False) 
         return
     
+    def set_save_in_ascii(self):
+        if self.saveASCIIBox.isChecked():
+            self.saveTraceASCIISignal.emit(True)
+        else:
+            self.saveTraceASCIISignal.emit(False) 
+        return
+    
     def downsampling_changed(self):
         downsampling_period = int(self.downsamplingValue.text())
         if downsampling_period != self.downsampling_period:
@@ -438,7 +495,7 @@ class Frontend(QtGui.QFrame):
         self.display_rate = self.sampling_rate/downsampling_period
         self.points_displayed = np.floor(self.display_rate*1e3*self.viewbox_length)
         print('\nDisplaying at {} kS/s'.format(self.display_rate))
-        new_text = 'Display rate: {:.3f} kS/s. Display period: {:.3f} ms. Points displayed: {:.0f}'.format(self.display_rate, 1/self.display_rate, self.points_displayed)
+        new_text = 'Display rate: {:.3f} kS/s    Display period: {:.3f} ms \nPoints displayed: {:.0f}'.format(self.display_rate, 1/self.display_rate, self.points_displayed)
         self.displayRateLabel.setText(new_text)
         self.downsampling_period = downsampling_period
         return
@@ -463,8 +520,10 @@ class Frontend(QtGui.QFrame):
         return
     
     def set_y_range(self):
-        self.signal_plot.setYRange(float(self.minYRangeValue.text()), 
-                                   float(self.maxYRangeValue.text()))
+        self.signal_plot.setYRange(float(self.minYRangeValue_apd.text()), 
+                                   float(self.maxYRangeValue_apd.text()))
+        self.monitor_plot.setYRange(float(self.minYRangeValue_monitor.text()), 
+                                   float(self.maxYRangeValue_monitor.text()))
         return
     
     def center_signal(self):
@@ -479,15 +538,21 @@ class Frontend(QtGui.QFrame):
         data_apd_array = data[0,:]
         monitor_array = data[1,:]
         # do some minor stats
-        self.mean_value_apd = np.mean(data_apd_array)
-        self.sd_value_apd = np.std(data_apd_array, ddof = 1)
-        self.mean_value_monitor = np.mean(monitor_array)
-        self.sd_value_monitor = np.std(monitor_array, ddof = 1)
+        # use nanmean and nanstd, allocation is performed with nan values
+        self.mean_value_apd = np.nanmean(data_apd_array)
+        self.sd_value_apd = np.nanstd(data_apd_array, ddof = 0)
+        self.mean_value_monitor = np.nanmean(monitor_array)
+        self.sd_value_monitor = np.nanstd(monitor_array, ddof = 0)
         # update value labels
+        # transmission APD
         sd_mV_apd = self.sd_value_apd*1000 # to mV
-        self.signalMeanValue.setText('{:.3f}'.format(self.mean_value_apd))
-        self.signalStdValue.setText('{:.3f}'.format(sd_mV_apd))
-
+        self.signalMeanValue_apd.setText('{:.3f}'.format(self.mean_value_apd))
+        self.signalStdValue_apd.setText('{:.3f}'.format(sd_mV_apd))
+        # monnitor APD
+        sd_mV_monitor = self.sd_value_monitor*1000 # to mV
+        self.signalMeanValue_monitor.setText('{:.3f}'.format(self.mean_value_monitor))
+        self.signalStdValue_monitor.setText('{:.3f}'.format(sd_mV_monitor))
+        
         # build time array
         start = i
         end = i + n_read
@@ -587,10 +652,10 @@ class Frontend(QtGui.QFrame):
                                            QtGui.QMessageBox.Yes)
         if reply == QtGui.QMessageBox.Yes:
             event.accept()
-            self.closeSignal.emit()
-            tm.sleep(1)
             print('Closing GUI...')
             self.close()
+            self.closeSignal.emit()
+            tm.sleep(1) # needed to close properly all modules
             app.quit()
         else:
             event.ignore()
@@ -643,6 +708,8 @@ class Backend(QtCore.QObject):
         self.filename = initial_filename
         self.params_to_be_saved = ''
         self.comment = ''
+        self.acquisition_flag = False
+        self.save_in_ascii = False
         return
 
     @pyqtSlot(bool)
@@ -666,11 +733,21 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool)
     def save_continuously_check(self, save_bool):
         if save_bool:
-            print('Signal will be save automatically.')
+            print('Signal will be saved automatically.')
             self.save_continuously_bool = True
         else:
-            print('Signal will not be save automatically.')
+            print('Signal will not be saved automatically.')
             self.save_continuously_bool = False
+        return
+    
+    @pyqtSlot(bool)
+    def save_ascii(self, save_ascii_bool):
+        if save_ascii_bool:
+            print('Signal will be saved in ASCII also.')
+            self.save_in_ascii = True
+        else:
+            print('Signal will not be saved in ASCII.')
+            self.save_in_ascii = False
         return
     
     def start_trace(self):
@@ -692,13 +769,16 @@ class Backend(QtCore.QObject):
         self.APD_task.start()
         # start timer to retrieve data periodically
         self.updateTimer.start()
+        self.acquisition_flag = True
         return
     
     def stop_trace(self):
+        self.acquisition_flag = False
         # stop timer signal
         self.stopTimerSignal.emit()
         # flush DAQ buffer
         self.data_array.flush()
+        self.monitor_array.flush()
         print('\nStopping acquisition at {}'.format(timer()))
         print('Total time recording: {:.3f} s'.format(self.total_time))
         if not self.APD_task.is_task_done():
@@ -708,32 +788,38 @@ class Backend(QtCore.QObject):
         return
                     
     def trace_update(self):
-        # perform the measurement 
-        if ( not self.APD_task.is_task_done() and self.i < self.number_of_points ):
-            # read a short stream
-            n_available_per_ch, data = daq.measure_one_loop(self.APD_stream_reader, \
-                                                     number_of_channels, \
-                                                     self.number_of_points, \
-                                                     self.i)
-            data_APD = data[0,:]
-            # assign
-            self.data_array[self.i:self.i + n_available_per_ch] = data_APD
-            # send
-            self.dataSignal.emit(data, self.i_to_send, n_available_per_ch)
-            self.i += n_available_per_ch
-            self.i_to_send += n_available_per_ch
-        else:
-            if self.save_continuously_bool:
-                # flush array at buffer into the disk (because it was a memmap array)
-                self.data_array.flush()
-                self.save_trace()
-            if self.acquire_continuously_bool:
-                # reset counter
-                self.i = 0
-                self.trace_number += 1
-            else:                
-                self.stop_trace()
-                print('\n--- Acquisition finished at {}\n'.format(timer()))
+        if self.acquisition_flag:
+            # perform the measurement 
+            if ( not self.APD_task.is_task_done() and self.i < self.number_of_points ):
+                # read a short stream
+                n_available_per_ch, data = daq.measure_one_loop(self.APD_stream_reader, \
+                                                         number_of_channels, \
+                                                         self.number_of_points, \
+                                                         self.i)
+                data_APD = data[0,:]
+                data_monitor = data[1,:]
+                # assign 
+                self.data_array[self.i:self.i + n_available_per_ch] = data_APD
+                self.monitor_array[self.i:self.i + n_available_per_ch] = data_monitor
+                # send all channels
+                self.dataSignal.emit(data, self.i_to_send, n_available_per_ch)
+                self.i += n_available_per_ch
+                self.i_to_send += n_available_per_ch
+            else:
+                if self.save_continuously_bool:
+                    self.acquisition_flag = False
+                    # flush array at buffer into the disk (because it was a memmap array)
+                    self.data_array.flush()
+                    self.monitor_array.flush()
+                    self.save_trace()
+                if self.acquire_continuously_bool:
+                    # reset counter
+                    self.i = 0
+                    self.trace_number += 1
+                else:                
+                    self.acquisition_flag = False
+                    self.stop_trace()
+                    print('\n--- Acquisition finished at {}\n'.format(timer()))
         return
     
     @pyqtSlot()
@@ -745,26 +831,35 @@ class Backend(QtCore.QObject):
     def save_trace(self):
         # check if all data has been written correctly from DAQ board to RAM
         assert np.all(self.data_array > -1000), 'data_array was not written correctly'
+        assert np.all(self.monitor_array > -1000), 'monitor_array was not written correctly'
         # prepare full filepath
         filepath = self.filepath
-        filename = self.filename
+        filename_data = self.filename
+        filename_monitor = self.filename + '_monitor'
         if self.save_continuously_bool:
-            filename += '_{:03d}'.format(self.trace_number)
+            filename_data += '_{:03d}'.format(self.trace_number)
+            filename_monitor += '_{:03d}'.format(self.trace_number)
         # add time string to the filename
         timestr = tm.strftime("_%Y%m%d_%H%M%S")
-        filename += timestr
+        filename_data += timestr
+        filename_monitor += timestr
         # save data
-        full_filepath = os.path.join(filepath, filename)
-        np.save(full_filepath, np.transpose(self.data_array), allow_pickle = False)
-        # uncomment the line below to debug saving procedure
-        # it will save an ASCII encoded text file
-        # np.savetxt(os.path.join(full_filepath,'.dat'), np.transpose(self.data_array))
+        full_filepath_data = os.path.join(filepath, filename_data)
+        full_filepath_monitor = os.path.join(filepath, filename_monitor)
+        np.save(full_filepath_data, np.transpose(self.data_array), allow_pickle = False)
+        np.save(full_filepath_monitor, np.transpose(self.monitor_array), allow_pickle = False)
+        if self.save_in_ascii:
+            # it will save an ASCII encoded text file
+            data_to_save = np.transpose(np.vstack((self.data_array, self.monitor_array)))
+            header_txt = 'transmission monitor\n%d Hz' % self.sampling_rate
+            ascii_full_filepath = full_filepath_data + '.dat'
+            np.savetxt(ascii_full_filepath, data_to_save, fmt='%.6f', header=header_txt)
         # save measurement parameters and comments
-        full_filepath_params = os.path.join(filepath, filename + '_params.txt')
+        full_filepath_params = os.path.join(filepath, filename_data + '_params.txt')
         self.params_to_be_saved = self.get_params_to_be_saved()
         with open(full_filepath_params, 'w') as f:
             print(self.params_to_be_saved, file = f)
-        print('Data %s has been saved.' % filename)
+        print('Data %s has been saved.' % filename_data)
         return
     
     @pyqtSlot(float)    
@@ -878,6 +973,7 @@ class Backend(QtCore.QObject):
         frontend.traceSignal.connect(self.play_pause)
         frontend.makeTraceContSignal.connect(self.acquire_continuously_check)
         frontend.saveTraceContSignal.connect(self.save_continuously_check)
+        frontend.saveTraceASCIISignal.connect(self.save_ascii)
         frontend.setSamplingRateSignal.connect(self.change_sampling_rate) 
         frontend.setDurationSignal.connect(self.change_duration) 
         frontend.setVoltageRangeSignal.connect(self.change_voltage_range)

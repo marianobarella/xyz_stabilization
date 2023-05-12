@@ -39,8 +39,11 @@ mono_to_color_processor = tl_cam.init_Thorlabs_color_camera(camera_constructor)
 
 camera = color_cam
 pixel_size = color_cam_sensor_pixel_width_um
-initial_filepath = 'D:\\daily_data' # save in SSD for fast and daily use
+initial_filepath = 'D:\\daily_data\\inspection_cam' # save in SSD for fast and daily use
 initial_filename = 'image_Thorcam'
+
+# initial fake image
+initial_image_np = 128*np.ones((1080, 1440, 3))
 
 #=====================================
 
@@ -53,7 +56,7 @@ class Frontend(QtGui.QFrame):
     liveViewSignal = pyqtSignal(bool, float)
     moveSignal = pyqtSignal(float, float, float, float)
     fixcursorSignal = pyqtSignal(float, float)
-    # closeSignal = pyqtSignal()
+    closeSignal = pyqtSignal()
     exposureChangedSignal = pyqtSignal(bool, float)
     takePictureSignal = pyqtSignal(bool, float)
     saveSignal = pyqtSignal()
@@ -62,9 +65,12 @@ class Frontend(QtGui.QFrame):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setUpGUI()
+        self.setGeometry(5, 30, 1500, 800) # x pos, y pos, width, height
         # set the title of thw window
         title = "Live view module"
         self.setWindowTitle(title)
+        self.get_image(initial_image_np)
+        self.hist._updateView
         return
             
     def setUpGUI(self):
@@ -76,16 +82,15 @@ class Frontend(QtGui.QFrame):
         imageWidget = pg.GraphicsLayoutWidget()
         self.vb = imageWidget.addPlot()
         self.img = pg.ImageItem()
+        self.vb.setAspectLocked()
         self.img.setOpts(axisOrder = 'row-major')
         self.vb.addItem(self.img)
         self.hist = pg.HistogramLUTItem(image = self.img, levelMode = 'mono')
         self.hist.gradient.loadPreset('grey')
         self.hist.disableAutoHistogramRange()
-        # 'thermal', 'flame', 'yellowy', 'bipolar', 'spectrum',
-        # 'cyclic', 'greyclip', 'grey'
-        self.hist.vb.setLimits(yMin = 0, yMax = 1024) # 10-bit camera
+        self.hist.vb.setRange(yRange=[0,256])
+        self.hist.vb.setLimits(yMin = 0, yMax = 256) # 10-bit camera
         imageWidget.addItem(self.hist, row = 0, col = 1)
-        # TODO: if performance is an issue, try scaleToImage
 
         self.autolevel_tickbox = QtGui.QCheckBox('Autolevel')
         self.initial_autolevel_state = True
@@ -138,7 +143,7 @@ class Frontend(QtGui.QFrame):
         self.working_dir_path.setReadOnly(True) 
         
         # Cursor controls
-        self.fix_cursor_button = QtGui.QPushButton('Fix cursor')
+        self.fix_cursor_button = QtGui.QPushButton('Lock cursor')
         self.fix_cursor_button.setCheckable(True)
         self.fix_cursor_button.clicked.connect(self.fix_cursor)
         
@@ -147,7 +152,7 @@ class Frontend(QtGui.QFrame):
                                              symbol = 'crosshair', 
                                              pen = 'w',
                                              brush = None)
-        self.point_graph_cursor.setData([0], [0])
+        self.point_graph_cursor.setData([int(max_y_cursor/2)], [int(max_x_cursor/2)])
         self.vb.addItem(self.point_graph_cursor)
 
         self.mov_x_sl = QtGui.QSlider(QtCore.Qt.Horizontal)
@@ -171,8 +176,8 @@ class Frontend(QtGui.QFrame):
         cursor_y_label = QtGui.QLabel('Cursor Y')
         self.cursor_y = QtGui.QLabel('NaN')
 
-        self.cursor_x.setText(format(int(self.mov_x_sl.value())))
-        self.cursor_y.setText(format(int(self.mov_y_sl.value())))
+        self.cursor_x.setText('%d' % int(self.mov_x_sl.value()))
+        self.cursor_y.setText('%d' % int(self.mov_y_sl.value()))
 
         self.x_cursor = float(self.cursor_x.text())
         self.y_cursor = float(self.cursor_y.text())
@@ -185,17 +190,18 @@ class Frontend(QtGui.QFrame):
         # place Live view button and Take a Picture button
         layout_liveview.addWidget(self.working_dir_button, 0, 0, 1, 2)
         layout_liveview.addWidget(self.working_dir_label, 1, 0, 1, 2)
-        layout_liveview.addWidget(self.live_view_button, 2, 0)
-        layout_liveview.addWidget(self.take_picture_button, 2, 1)
-        layout_liveview.addWidget(self.save_picture_button, 3, 1)
+        layout_liveview.addWidget(self.working_dir_path, 2, 0, 1, 2)
+        layout_liveview.addWidget(self.live_view_button, 3, 0, 1, 2)
+        layout_liveview.addWidget(self.take_picture_button, 4, 0, 1, 2)
+        layout_liveview.addWidget(self.save_picture_button, 5, 0, 1, 2)
         # Exposure time box
-        layout_liveview.addWidget(exp_time_label,              4, 0)
-        layout_liveview.addWidget(self.exp_time_edit,          4, 1)
+        layout_liveview.addWidget(exp_time_label,              6, 0)
+        layout_liveview.addWidget(self.exp_time_edit,          6, 1)
         # auto level
-        layout_liveview.addWidget(self.autolevel_tickbox,      5, 0)
+        layout_liveview.addWidget(self.autolevel_tickbox,      7, 0)
         # pixel size
-        layout_liveview.addWidget(pixel_size_Label,      6, 0)
-        layout_liveview.addWidget(self.pixel_size,        6, 1)
+        layout_liveview.addWidget(pixel_size_Label,      8, 0)
+        layout_liveview.addWidget(self.pixel_size,        8, 1)
 
         # Cursor dock
         self.cursorWidget = QtGui.QWidget()
@@ -303,8 +309,10 @@ class Frontend(QtGui.QFrame):
     def get_cursor_values(self, data_cursor):
         point_cursor_x = data_cursor[0]
         point_cursor_y = data_cursor[1]
-        self.cursor_x.setText(format(point_cursor_x))
-        self.cursor_y.setText(format(point_cursor_y))
+        self.cursor_x.setText('%d' % int(point_cursor_x))
+        self.cursor_y.setText('%d' % int(point_cursor_y))
+        # self.cursor_x.setText(format(point_cursor_x))
+        # self.cursor_y.setText(format(point_cursor_y))
         self.point_graph_cursor.setData([point_cursor_y], [point_cursor_x])
         self.point_graph_cursor._updateView()
         return
@@ -337,11 +345,10 @@ class Frontend(QtGui.QFrame):
                                            QtGui.QMessageBox.No |
                                            QtGui.QMessageBox.Yes)
         if reply == QtGui.QMessageBox.Yes:
-            tl_cam.dispose_cam(color_cam)
-            tl_cam.dispose_sdk(camera_constructor)
             event.accept()
             print('Closing GUI...')
             self.close()
+            self.closeSignal.emit()
             tm.sleep(1)
             app.quit()
         else:
@@ -376,7 +383,8 @@ class Backend(QtCore.QObject):
         self.y_cursor_reference = 0
         self.viewTimer = QtCore.QTimer()
         self.viewTimer.timeout.connect(self.update_view)   
-        self.image_np = None
+        self.image_np = initial_image_np
+        self.file_path = initial_filepath
         return
     
     def go_initial_cursor(self):
@@ -458,7 +466,7 @@ class Backend(QtCore.QObject):
         timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
         filename = "inspec_cam_pic_" + timestr + ".jpg"
         full_filename = os.path.join(self.file_path, filename)
-        image_to_save = Image.fromarray(self.image_np)
+        image_to_save = Image.fromarray(np.flipud(self.image_np))
         image_to_save.save(full_filename) 
         print('Image %s saved' % filename)
         return
@@ -475,6 +483,17 @@ class Backend(QtCore.QObject):
             self.filePathSignal.emit(self.file_path)
         return
     
+    @pyqtSlot()
+    def closeBackend(self):
+        print('Dispossing camera objects...')
+        tl_cam.dispose_cam(color_cam)
+        tl_cam.dispose_sdk(camera_constructor)
+        print('Stopping updater (QtTimer)...')
+        self.viewTimer.stop()
+        print('Exiting thread...')
+        workerThread.exit()
+        return
+    
     def make_connections(self, frontend):
         frontend.exposureChangedSignal.connect(self.change_exposure)
         frontend.liveViewSignal.connect(self.liveview) 
@@ -483,6 +502,7 @@ class Backend(QtCore.QObject):
         frontend.fixcursorSignal.connect(self.fix_cursor_reference)
         frontend.saveSignal.connect(self.save_picture)
         frontend.setWorkDirSignal.connect(self.set_working_folder)
+        frontend.closeSignal.connect(self.closeBackend)
         return
     
 #=====================================

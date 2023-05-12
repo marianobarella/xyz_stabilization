@@ -261,10 +261,6 @@ class Backend(QtCore.QObject):
         self.lasersWorker = laser_control_GUI.Backend()
         self.apdWorker = apd_trace_GUI.Backend()
         self.piezoWorker = piezo_stage_GUI.Backend(self.piezo_stage)
-        # self.confocalWorker = Confocal.Backend(pi_device, task_nidaqmx)
-        # self.printingWorker = Printing.Backend(pi_device, task_nidaqmx)
-        # self.dimersWorker = Dimers.Backend(pi_device, task_nidaqmx)
-        # self.cursorWorker = Cursor.Backend(pi_device)
         return
     
     # @pyqtSlot()    
@@ -323,18 +319,25 @@ class Backend(QtCore.QObject):
             
     @pyqtSlot()
     def close_all_backends(self):
-        print('Shutting down piezo stage...')
-        self.piezo_stage.shutdown()
-        laser_control_GUI.laser488.close()
-        laser_control_GUI.laser532.close()
-        laser_control_GUI.flipperMirror.close()
-        print('Laser\'s shutters closed.') 
-        self.apdWorker.APD_task.close()
-        print('Task closed.') 
-        print('Stopping timers...')
-        self.lasersWorker.updateTimer.stop()
-        self.apdWorker.updateTimer.stop()
-        self.piezoWorker.updateTimer.stop()
+        print('Closing all Backends...')
+        self.piezo_stage.closeBackend()
+        self.livewviewWorker.closeBackend()
+        self.lasersWorker.closeBackend()
+        self.apdWorker.closeBackend()
+        self.apdWorker.closeBackend()
+        
+        # print('Shutting down piezo stage...')
+        # self.piezo_stage.shutdown()
+        # laser_control_GUI.laser488.close()
+        # laser_control_GUI.laser532.close()
+        # laser_control_GUI.flipperMirror.close()
+        # print('Laser\'s shutters closed.') 
+        # self.apdWorker.APD_task.close()
+        # print('Task closed.') 
+        # print('Stopping timers...')
+        # self.lasersWorker.updateTimer.stop()
+        # self.apdWorker.updateTimer.stop()
+        # self.piezoWorker.updateTimer.stop()
         print('Exiting threads...')
         lasersThread.exit()
         livewviewThread.exit()
@@ -364,7 +367,7 @@ if __name__ == '__main__':
     # for lasers
     lasersThread = QtCore.QThread()
     worker.lasersWorker.moveToThread(lasersThread)
-    worker.lasersWorker.updateTimer.moveToThread(lasersThread)  
+    worker.lasersWorker.scanTimer.moveToThread(lasersThread)  
     
     # for liveview camera
     livewviewThread = QtCore.QThread()

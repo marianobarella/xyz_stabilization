@@ -28,7 +28,7 @@ print('Ports available:', list_of_serial_ports)
 # build laser objects 
 laser532 = laserToolbox.oxxius_laser(debug_mode = False)
 laser488 = laserToolbox.toptica_laser(debug_mode = False)
-laserTisa = laserToolbox.M2_laser(debug_mode = False)
+laserTisa = laserToolbox.M2_laser(debug_mode = True, timeout = 10.0)
 shutterTisa = laserToolbox.Thorlabs_shutter(debug_mode = False)
 # build flippers objects
 COM_port_flipper_cam_Thorlabs = 'COM5' # Serial number: 37004922
@@ -124,6 +124,7 @@ class Frontend(QtGui.QFrame):
         self.flipperCamButton = Toggle(bar_color=QtGui.QColor(42,81,156), 
                                         handle_color=QtGui.QColor(14,73,140), 
                                         checked_color="#bd1e1e")
+        self.flipperCamButton._handle_position = 1
         self.flipperCamButton.clicked.connect(self.flipperCamButton_check)
         self.flipperCamButton.setToolTip('Up/Down flipper mirror')              
         # apd attenuation
@@ -131,7 +132,9 @@ class Frontend(QtGui.QFrame):
         self.flipperAPDButton_label = QtGui.QLabel('Filter IN')
         self.flipperAPDButton = Toggle(bar_color=QtGui.QColor(186,186,186), 
                                         handle_color=QtGui.QColor(150,150,150), 
-                                        checked_color=QtGui.QColor(50,50,50))
+                                        checked_color=QtGui.QColor(50,50,50)
+                                        )
+        self.flipperAPDButton._handle_position = 1
         self.flipperAPDButton.clicked.connect(self.flipperAPDButton_check)
         self.flipperAPDButton.setToolTip('Up/Down flipper APD')
         # tisa attenuation
@@ -140,6 +143,7 @@ class Frontend(QtGui.QFrame):
         self.flipperTisaButton = Toggle(bar_color=QtGui.QColor(220,15,250), 
                                         handle_color=QtGui.QColor(200,20,210), 
                                         checked_color=QtGui.QColor(80,18,100))
+        self.flipperTisaButton._handle_position = 1
         self.flipperTisaButton.clicked.connect(self.flipperTisaButton_check)
         self.flipperTisaButton.setToolTip('Up/Down flipper APD')     
         
@@ -605,25 +609,30 @@ class Backend(QtCore.QObject):
             print('\nStopping QtTimer...')
             self.scanTimer.stop()
             print('Stop wavelength tuning. Stop scanning...')
-            # laserTisa.stop_coarse_tuning()
             self.counter = 0
             self.scan_flag = False
         return 
     
     def scan(self):
-        status = laserTisa.get_tuning_status()
         if self.scan_flag:
+            status = laserTisa.get_tuning_status()
             if status == 1:
                 if self.counter < len(self.wavelength_scan_array):
-                    wavelength = self.wavelength_scan_array[self.counter]
-                    print('\nScan: wavelength set to %.2f nm' % wavelength)
-                    self.change_wavelength(wavelength)
-                    self.counter += 1
+                    self.perform_measurement()
                 else:
                     self.scan_flag = False
                     self.scan_finished_signal.emit()
             else:
+                print('\nWavelength has not been changed.')
                 print('Ti:Sa status: ', status)
+        return
+    
+    def perform_measurement(self):
+        wavelength = self.wavelength_scan_array[self.counter]
+        # print('\nScan: wavelength set to %.2f nm' % wavelength)
+        self.change_wavelength(wavelength)
+        self.measure_apd_signal.emit()
+        self.counter += 1
         return
     
     @pyqtSlot()
