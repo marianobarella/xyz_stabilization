@@ -119,7 +119,8 @@ class Frontend(QtGui.QFrame):
         self.set_working_dir()
         self.set_filename()
         self.sampling_rate_changed()
-
+        return
+    
     def setUpGUI(self):
 
         # Single acquisition button
@@ -153,7 +154,7 @@ class Frontend(QtGui.QFrame):
         self.saveContinuouslyBox.setToolTip('Set/Tick to save data continuously. Filenames will be sequential.')
         
         # Save in ASCII tick box
-        self.saveASCIIBox = QtGui.QCheckBox('Save in ASCII (<b>not</b> recommended)')
+        self.saveASCIIBox = QtGui.QCheckBox('Save in ASCII (not recommended)')
         self.saveASCIIBox.setChecked(False)
         self.saveASCIIBox.stateChanged.connect(self.set_save_in_ascii)
         self.saveASCIIBox.setToolTip('Set/Tick to save data in ASCII. WARNING: files will be heavier than in binary (4.5 times more).')
