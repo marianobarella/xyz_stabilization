@@ -149,7 +149,7 @@ class Frontend(QtGui.QFrame):
         
         # Save continuously tick box
         self.saveContinuouslyBox = QtGui.QCheckBox('Save automatically?')
-        self.saveContinuouslyBox.setChecked(False)
+        self.saveContinuouslyBox.setChecked(True)
         self.saveContinuouslyBox.stateChanged.connect(self.set_save_continuously)
         self.saveContinuouslyBox.setToolTip('Set/Tick to save data continuously. Filenames will be sequential.')
         
@@ -600,15 +600,12 @@ class Frontend(QtGui.QFrame):
         item_raw_monitor_data_curve = FastLine(self.time_array_to_plot, self.monitor_array_to_plot, 'w')
         
         # plot mean of data (using previous arrays)
-        # mean_array_to_plot = np.copy(data_array_to_plot)
         self.mean_apd_array_to_plot[-n_roll:] = self.mean_value_apd
         item_mean_apd_data_curve = FastLine(self.time_array_to_plot, self.mean_apd_array_to_plot, 'b')
         self.mean_monitor_array_to_plot[-n_roll:] = self.mean_value_monitor
         item_mean_monitor_data_curve = FastLine(self.time_array_to_plot, self.mean_monitor_array_to_plot, 'y')
         
         # plot std dev of the data (using previous arrays)
-        # std_plus_array_to_plot = np.copy(data_array_to_plot)
-        # std_minus_array_to_plot = np.copy(data_array_to_plot)
         self.std_apd_plus_array_to_plot[-n_roll:] = self.mean_value_apd + 3*self.sd_value_apd # 3 sigma means 99.73%
         self.std_apd_minus_array_to_plot[-n_roll:] = self.mean_value_apd - 3*self.sd_value_apd # 3 sigma means 99.73%
         item_std_apd_plus_data_curve = FastLine(self.time_array_to_plot, self.std_apd_plus_array_to_plot, 'g')
@@ -680,10 +677,12 @@ class Backend(QtCore.QObject):
     dataSignal = pyqtSignal(np.ndarray, int, int)
     filepathSignal = pyqtSignal(str)
     acqStopped = pyqtSignal()
+    startTimerSignal = pyqtSignal()
     stopTimerSignal = pyqtSignal()
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, common_variable = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.common_variable = common_variable
         # set timer to plot the data and check buttons
         self.updateTimer = QtCore.QTimer()
         self.updateTimer.timeout.connect(self.trace_update) 
@@ -704,7 +703,7 @@ class Backend(QtCore.QObject):
                                                             acquisition_mode, \
                                                             debug = True)
         self.acquire_continuously_bool = False
-        self.save_continuously_bool = False
+        self.save_continuously_bool = True
         self.filepath = initial_filepath
         self.filename = initial_filename
         self.params_to_be_saved = ''
@@ -750,10 +749,8 @@ class Backend(QtCore.QObject):
             print('Signal will not be saved in ASCII.')
             self.save_in_ascii = False
         return
-    
+      
     def start_trace(self):
-        print('\nAcquisition started at {}'.format(timer()))
-        self.init_time = timer()
         # allocate arrays
         self.data_array_filepath, self.data_array = daq.allocate_datafile(self.number_of_points)
         self.monitor_array_filepath, self.monitor_array = daq.allocate_datafile(self.number_of_points)
@@ -769,6 +766,13 @@ class Backend(QtCore.QObject):
             self.APD_task.stop()
         self.APD_task.start()
         # start timer to retrieve data periodically
+        self.start_timer()
+        return
+    
+    @pyqtSlot()
+    def start_timer(self):
+        self.init_time = timer()
+        print('\nAcquisition started at {}'.format(self.init_time))
         self.updateTimer.start()
         self.acquisition_flag = True
         return
@@ -808,7 +812,6 @@ class Backend(QtCore.QObject):
                 self.i_to_send += n_available_per_ch
             else:
                 if self.save_continuously_bool:
-                    self.acquisition_flag = False
                     # flush array at buffer into the disk (because it was a memmap array)
                     self.data_array.flush()
                     self.monitor_array.flush()
@@ -827,6 +830,7 @@ class Backend(QtCore.QObject):
     def stop_timer(self):
         self.updateTimer.stop()
         self.total_time = timer() - self.init_time
+        return
     
     @pyqtSlot()
     def save_trace(self):
@@ -835,32 +839,32 @@ class Backend(QtCore.QObject):
         assert np.all(self.monitor_array > -1000), 'monitor_array was not written correctly'
         # prepare full filepath
         filepath = self.filepath
-        filename_data = self.filename
-        filename_monitor = self.filename + '_monitor'
         if self.save_continuously_bool:
-            filename_data += '_{:03d}'.format(self.trace_number)
-            filename_monitor += '_{:03d}'.format(self.trace_number)
+            self.filename += '_{:03d}'.format(self.trace_number)
         # add time string to the filename
         timestr = tm.strftime("_%Y%m%d_%H%M%S")
-        filename_data += timestr
-        filename_monitor += timestr
+        self.filename += timestr
+        filename_data = self.filename + '_transmission'
+        filename_monitor = self.filename + '_monitor'
+        filename_params = self.filename + '_params.txt'
         # save data
         full_filepath_data = os.path.join(filepath, filename_data)
         full_filepath_monitor = os.path.join(filepath, filename_monitor)
+        full_filepath_params = os.path.join(filepath, filename_params)
+        # save data
         np.save(full_filepath_data, np.transpose(self.data_array), allow_pickle = False)
         np.save(full_filepath_monitor, np.transpose(self.monitor_array), allow_pickle = False)
+        # save measurement parameters and comments
+        self.params_to_be_saved = self.get_params_to_be_saved()
+        with open(full_filepath_params, 'w') as f:
+            print(self.params_to_be_saved, file = f)
+        print('Data %s has been saved.' % filename_data)
         if self.save_in_ascii:
             # it will save an ASCII encoded text file
             data_to_save = np.transpose(np.vstack((self.data_array, self.monitor_array)))
             header_txt = 'transmission monitor\n%d Hz' % self.sampling_rate
             ascii_full_filepath = full_filepath_data + '.dat'
             np.savetxt(ascii_full_filepath, data_to_save, fmt='%.6f', header=header_txt)
-        # save measurement parameters and comments
-        full_filepath_params = os.path.join(filepath, filename_data + '_params.txt')
-        self.params_to_be_saved = self.get_params_to_be_saved()
-        with open(full_filepath_params, 'w') as f:
-            print(self.params_to_be_saved, file = f)
-        print('Data %s has been saved.' % filename_data)
         return
     
     @pyqtSlot(float)    
@@ -983,8 +987,15 @@ class Backend(QtCore.QObject):
         frontend.setWorkDirSignal.connect(self.set_working_folder)
         frontend.filenameSignal.connect(self.set_filename)
         frontend.commentSignal.connect(self.set_comment)
+        self.startTimerSignal.connect(self.start_timer)
         self.stopTimerSignal.connect(self.stop_timer)
         return
+
+#=====================================
+
+#  Main program
+
+#=====================================
     
 if __name__ == '__main__':
     # make application

@@ -14,11 +14,8 @@ Adolphe Merkle Institute - University of Fribourg
 Fribourg, Switzerland
 """
 
-# import os
+from queue import Queue
 import time as tm
-# from tkinter import filedialog
-# import tkinter as tk
-# import numpy as np
 from pyqtgraph.Qt import QtGui, QtCore
 from pyqtgraph.dockarea import DockArea, Dock
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
@@ -42,7 +39,7 @@ class Frontend(QtGui.QMainWindow):
         self.setCentralWidget(self.cwidget)
         self.setWindowTitle('pyTrap')
         self.setUpGUI()
-        self.setGeometry(5, 30, 1800, 1000) # x pos, y pos, width, height
+        self.setGeometry(150, 30, 1500, 950) # x pos, y pos, width, height
         return
     
     def setUpGUI(self):
@@ -102,29 +99,34 @@ class Frontend(QtGui.QMainWindow):
         
 class Backend(QtCore.QObject):
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, common_variable = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.lasersWorker = laser_control_GUI.Backend()
-        self.apdWorker = apd_trace_GUI.Backend()
+        self.common_variable = common_variable
+        self.lasersWorker = laser_control_GUI.Backend(self.common_variable)
+        self.apdWorker = apd_trace_GUI.Backend(self.common_variable)
+        self.scanTimer = QtCore.QTimer()
+        # self.scanTimer.timeout.connect(self.scan) # funciton to connect after each interval
+        # self.scanTimer.setInterval(self.integration_time_ms) # in ms
         return
-            
+        
+    @pyqtSlot(bool)    
+    def acquire_spectrum(self, acq_spec_flag):
+        if acq_spec_flag:
+            print('\nStarting acquisition of the spectrum...')
+            # self.apdWorker.change_duration(self.lasersWorker.integration_time)
+            # self.start_trace()
+        else:
+            print('\nAbort acquisition of the spectrum...')
+        return
+
+    
     @pyqtSlot()
     def close_all_backends(self):
         print('Closing all Backends...')
         self.lasersWorker.closeBackend()
         self.apdWorker.closeBackend()
-        # print('Shutting down piezo stage...')
-        # self.piezo_stage.shutdown()
-        # laser_control_GUI.laser488.close()
-        # laser_control_GUI.laser532.close()
-        # laser_control_GUI.flipperMirror.close()
-        # print('Laser\'s shutters closed.') 
-        # self.apdWorker.APD_task.close()
-        # print('Task closed.') 
-        # print('Stopping timers...')
-        # self.lasersWorker.updateTimer.stop()
-        # self.apdWorker.updateTimer.stop()
-        # self.piezoWorker.updateTimer.stop()
+        print('Stopping updater (QtTimer)...')
+        self.scanTimer.stop()
         print('Exiting threads...')
         lasersThread.exit()
         apdThread.exit()
@@ -135,28 +137,43 @@ class Backend(QtCore.QObject):
         # connect Backend modules with their respectives Frontend modules
         frontend.apdWidget.make_connections(self.apdWorker)
         frontend.lasersWidget.make_connections(self.lasersWorker)
+        # connection that triggers measurement
+        frontend.lasersWidget.acquire_spectrum_button_signal.connect(self.acquire_spectrum)
         return
+    
+#=====================================
+
+#  Main program
+
+#=====================================
       
 if __name__ == '__main__':
     # make application
     app = QtGui.QApplication([])
 
+    # create common variable for both threads
+    scanning_flag = Queue()
     # create both classes
     gui = Frontend()
-    worker = Backend()
+    worker = Backend(common_variable = scanning_flag)
        
     ###################################
     # move modules and their timers to different threads
-    
-    # for lasers
-    lasersThread = QtCore.QThread()
-    worker.lasersWorker.moveToThread(lasersThread)
-    worker.lasersWorker.scanTimer.moveToThread(lasersThread)  
-    
+        
     # for APD signal displaying
     apdThread = QtCore.QThread()
     worker.apdWorker.moveToThread(apdThread)
     worker.apdWorker.updateTimer.moveToThread(apdThread)
+    # worker.apdWorker.started.connect(start_timer)
+    # worker.apdWorker.finished.connect(stop_timer)
+
+    # for lasers
+    lasersThread = QtCore.QThread()
+    worker.lasersWorker.moveToThread(apdThread)
+    # worker.lasersWorker.scanTimer.moveToThread(lasersThread)
+    
+    # worker.scanTimer.moveToThread(workerThread)
+
 
     ###################################
 
@@ -170,4 +187,5 @@ if __name__ == '__main__':
     
     gui.show()
     app.exec()
+    
     

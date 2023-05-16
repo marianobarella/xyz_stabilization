@@ -41,13 +41,12 @@ flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
 flipperTisaFilter = laserToolbox.motorized_flipper(debug_mode = False, \
                                                   serial_port = COM_port_flipper_tisa_Thorlabs)
 # set initial paramters
-# updateParams_period = 2000 # in ms
 initial_blue_power = 1.4 # in mW
 initial_wavelength = 780.00 # in nm
 starting_wavelength = 700.00 # in nm
 ending_wavelength = 800.00 # in nm
 step_wavelength = 10.00 # in nm
-initial_integration_time = 1.00 # in s
+initial_integration_time = 1 # in s
 
 #=====================================
 
@@ -69,9 +68,10 @@ class Frontend(QtGui.QFrame):
     read_wavelength_signal =  pyqtSignal()
     scanRangeChangedSignal = pyqtSignal(list)
     intTimeChangedSignal = pyqtSignal(bool, float)
-    scan_signal = pyqtSignal(bool)
+    scan_button_signal = pyqtSignal(bool)
     closeSignal = pyqtSignal()
     updateParams_signal = pyqtSignal()
+    acquire_spectrum_button_signal = pyqtSignal(bool)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -185,13 +185,21 @@ class Frontend(QtGui.QFrame):
         self.integration_time_edit_previous = float(self.integration_time_edit.text())
         self.integration_time_edit.editingFinished.connect(self.integration_time_changed_check)
         self.integration_time_edit.setValidator(QtGui.QDoubleValidator(0.00, 3600.00, 2))
+        self.integration_time_comment = QtGui.QLabel('Attention: It overrides Duration variable of the APD trace.')
         # start scan
         self.scanButton = QtGui.QPushButton('Run wavelength scan')
         self.scanButton.setCheckable(True)
         self.scanButton.clicked.connect(self.scan_button_check)
         self.scanButton.setStyleSheet(
                 "QPushButton { background-color: lightgray; }"
-                "QPushButton::checked { background-color: lightcoral; }")
+                "QPushButton::checked { background-color: turquoise; }")
+        # start spectrum acquisition
+        self.acquire_spectrum_button = QtGui.QPushButton('Acquire spectrum')
+        self.acquire_spectrum_button.setCheckable(True)
+        self.acquire_spectrum_button.clicked.connect(self.acquire_spectrum_button_check)
+        self.acquire_spectrum_button.setStyleSheet(
+                "QPushButton { background-color: lightgray; }"
+                "QPushButton::checked { background-color: red; }")        
         
         # 488 power
         power488_label = QtGui.QLabel('Power 488 (mW):')
@@ -215,7 +223,6 @@ class Frontend(QtGui.QFrame):
         self.statusBlockTisa = QtGui.QLabel(self.no_textTisa)
         self.statusBlockDefinitions = QtGui.QLabel(self.tab_text)
         
-        
         # Ti:Sa box
         self.tisa_box = QtGui.QWidget()
         tisa_box_layout = QtGui.QGridLayout()
@@ -234,7 +241,9 @@ class Frontend(QtGui.QFrame):
         tisa_box_layout.addWidget(self.step_wavelength_edit, 2, 5)
         tisa_box_layout.addWidget(integration_time_label, 3, 0)
         tisa_box_layout.addWidget(self.integration_time_edit, 3, 1)
+        tisa_box_layout.addWidget(self.integration_time_comment, 3, 2, 1, 4)
         tisa_box_layout.addWidget(self.scanButton, 4, 0, 1, 6)
+        tisa_box_layout.addWidget(self.acquire_spectrum_button, 5, 0, 1, 6)
         
         # 488 box
         self.blue_laser_box = QtGui.QWidget()
@@ -304,6 +313,13 @@ class Frontend(QtGui.QFrame):
         return
     
     # Functions and signals 
+    def acquire_spectrum_button_check(self):
+        if self.acquire_spectrum_button.isChecked():
+           self.acquire_spectrum_button_signal.emit(True)
+        else:
+           self.acquire_spectrum_button_signal.emit(False)
+        return
+    
     def control_tisa_button_check(self):
         if self.shutterTisaButton.isChecked():
            self.shutterTisa_signal.emit(True)
@@ -392,14 +408,14 @@ class Frontend(QtGui.QFrame):
 
     def scan_button_check(self):
         if self.scanButton.isChecked():
-            self.scan_signal.emit(True)
+            self.scan_button_signal.emit(True)
         else:
-            self.scan_signal.emit(False)
+            self.scan_button_signal.emit(False)
         return
     
     def scan_finished(self):
         self.scanButton.setChecked(False)
-        self.scan_signal.emit(False)
+        self.scan_button_signal.emit(False)
         return
     
     def read_wavelength_button(self):
@@ -460,15 +476,13 @@ class Backend(QtCore.QObject):
     
     paramSignal = pyqtSignal(list, list, list)
     passWavelengthSignal = pyqtSignal(float)
+    start_scan_signal = pyqtSignal()
     scan_finished_signal = pyqtSignal()
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, common_variable = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # set timer to update lasers status
-        self.integration_time_ms = int(initial_integration_time*1000) # in ms
-        self.scanTimer = QtCore.QTimer()
-        self.scanTimer.timeout.connect(self.scan) # funciton to connect after each interval
-        self.scanTimer.setInterval(self.integration_time_ms) # in ms
+        self.common_variable = common_variable
+        self.integration_time = initial_integration_time # in s
         self.change_power(initial_blue_power)
         self.change_wavelength(initial_wavelength)
         self.starting_wavelength = starting_wavelength
@@ -480,6 +494,7 @@ class Backend(QtCore.QObject):
                                                )
         self.counter = 0
         self.scan_flag = False
+        self.update_tisa_status()
         return
 
     @pyqtSlot(bool)
@@ -546,26 +561,11 @@ class Backend(QtCore.QObject):
         self.power488_mW = power488_mW # in mW, is float
         laser488.set_power(self.power488_mW)
         return
-    
-    # @pyqtSlot(bool)    
-    # def start_updating_params(self, updatebool):
-    #     if updatebool:
-    #         print('Starting updater (QtTimer)... Update period: %.1f s' % (updateParams_period/1000))
-    #         self.updateTimer.start()
-    #     else:
-    #         print('Stopping updater (QtTimer)...')
-    #         self.updateTimer.stop()
-    #     return
         
     @pyqtSlot(bool, float)
     def set_integration_time(self, run_scan_instruction, integration_time):
         print('\nIntegration time set to %.2f s ...' % integration_time)
-        self.integration_time_ms = int(integration_time*1000) # in ms
-        if run_scan_instruction:
-            print('Stopping QtTimer...')
-            self.scanTimer.stop()
-        print('Changing QtTimer update interval...')
-        self.scanTimer.setInterval(self.integration_time_ms) # in ms
+        self.integration_time = integration_time # in s
         return  
     
     def change_wavelength(self, target_wavelength):
@@ -600,39 +600,67 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool)
     def run_stop_scan(self, run_scan_instruction):
         if run_scan_instruction:
-            print('\nStarting QtTimer...')
-            print('Starting scan...')
-            self.scanTimer.start()
+            print('\nStarting scan...')
             self.counter = 0
             self.scan_flag = True
+            self.start_scan_signal.emit() # triggers scan() function
         else:
-            print('\nStopping QtTimer...')
-            self.scanTimer.stop()
-            print('Stop wavelength tuning. Stop scanning...')
+            print('\nStop wavelength tuning. Stop scanning...')
             self.counter = 0
             self.scan_flag = False
         return 
     
+    def update_tisa_status(self):
+        # get laser status (if is tuning wavelength or not)
+        self.status = laserTisa.get_tuning_status()
+        return
+    
     def scan(self):
-        if self.scan_flag:
-            status = laserTisa.get_tuning_status()
-            if status == 1:
+        while self.scan_flag:
+            # check status to see what to do
+            self.update_tisa_status()
+            if self.status == 1:
+                # try to measure or check if we're done
                 if self.counter < len(self.wavelength_scan_array):
-                    self.perform_measurement()
+                    # still scanning
+                    # change wavelength
+                    wavelength = self.wavelength_scan_array[self.counter]
+                    # print('\nScan: wavelength set to %.2f nm' % wavelength)
+                    self.change_wavelength(wavelength)
+                    self.counter += 1
+                    tm.sleep(self.integration_time)
                 else:
+                    # no more points to scan
                     self.scan_flag = False
                     self.scan_finished_signal.emit()
             else:
                 print('\nWavelength has not been changed.')
-                print('Ti:Sa status: ', status)
+                print('Ti:Sa status: ', self.status)
         return
     
+    # def spectrum_scan(self):
+    #     if self.scan_flag:
+    #         # check status to see what to do
+    #         self.update_tisa_status()
+    #         if self.status == 1:
+    #             # try to measure or check if we're done
+    #             if self.counter < len(self.wavelength_scan_array):
+    #                 # still scanning
+    #                 self.perform_measurement()
+    #             else:
+    #                 # no more points to scan
+    #                 self.scan_flag = False
+    #                 self.scan_finished_signal.emit()
+    #         else:
+    #             print('\nWavelength has not been changed.')
+    #             print('Ti:Sa status: ', self.status)
+    #     return
+    
     def perform_measurement(self):
-        wavelength = self.wavelength_scan_array[self.counter]
-        # print('\nScan: wavelength set to %.2f nm' % wavelength)
-        self.change_wavelength(wavelength)
-        self.measure_apd_signal.emit()
-        self.counter += 1
+        # self.measure_apd_signal.emit(self.integration_time)
+        print('midiendo.........oooooooooooooo')
+        tm.sleep(self.integration_time)
+        # print('midiendo.........listo')
         return
     
     @pyqtSlot()
@@ -672,9 +700,6 @@ class Backend(QtCore.QObject):
         flipperMirror.close()
         flipperAPDFilter.close()
         flipperTisaFilter.close()
-        print('Stopping updater (QtTimer)...')
-        self.scanTimer.stop()
-        # self.updateTimer.stop()
         print('Exiting thread...')
         workerThread.exit()
         return
@@ -692,7 +717,8 @@ class Backend(QtCore.QObject):
         frontend.scanRangeChangedSignal.connect(self.scan_parameters_changed)
         frontend.read_wavelength_signal.connect(self.read_wavelength)
         frontend.intTimeChangedSignal.connect(self.set_integration_time)
-        frontend.scan_signal.connect(self.run_stop_scan)
+        frontend.scan_button_signal.connect(self.run_stop_scan)
+        self.start_scan_signal.connect(self.scan)
         frontend.closeSignal.connect(self.closeBackend)
         frontend.updateParams_signal.connect(self.update_params)
         return
@@ -714,8 +740,6 @@ if __name__ == '__main__':
     # thread that run in background
     workerThread = QtCore.QThread()
     worker.moveToThread(workerThread)
-    worker.scanTimer.moveToThread(workerThread)
-    # worker.updateTimer.moveToThread(workerThread)
 
     # connect both classes
     worker.make_connections(gui)
