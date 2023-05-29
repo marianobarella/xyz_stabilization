@@ -65,7 +65,7 @@ initial_mean_value = 0
 initial_sd_value = 0.2
 # initial filepath and filename
 initial_filepath = 'D:\\daily_data\\apd_traces' # save in SSD for fast and daily use
-initial_filename = 'signal_XX'
+initial_filename = 'signal'
 
 #=====================================
 
@@ -148,10 +148,10 @@ class Frontend(QtGui.QFrame):
         self.saveButton.setToolTip('Save the trace that was <b>fully</b> acquired in the last seconds (defined by <b>duration</b> variable).')
         
         # Save continuously tick box
-        self.saveContinuouslyBox = QtGui.QCheckBox('Save automatically?')
-        self.saveContinuouslyBox.setChecked(True)
-        self.saveContinuouslyBox.stateChanged.connect(self.set_save_continuously)
-        self.saveContinuouslyBox.setToolTip('Set/Tick to save data continuously. Filenames will be sequential.')
+        self.saveAutomaticallyBox = QtGui.QCheckBox('Save automatically?')
+        self.saveAutomaticallyBox.setChecked(True)
+        self.saveAutomaticallyBox.stateChanged.connect(self.set_save_continuously)
+        self.saveAutomaticallyBox.setToolTip('Set/Tick to save data continuously. Filenames will be sequential.')
         
         # Save in ASCII tick box
         self.saveASCIIBox = QtGui.QCheckBox('Save in ASCII (not recommended)')
@@ -299,7 +299,7 @@ class Frontend(QtGui.QFrame):
         subgridAcq_layout.addWidget(self.traceButton, 0, 0)
         subgridAcq_layout.addWidget(self.traceContinuouslyBox, 0, 1)
         subgridAcq_layout.addWidget(self.saveButton, 1, 0)
-        subgridAcq_layout.addWidget(self.saveContinuouslyBox, 1, 1)
+        subgridAcq_layout.addWidget(self.saveAutomaticallyBox, 1, 1)
         subgridAcq_layout.addWidget(self.saveASCIIBox, 1, 2)
         subgridAcq_layout.addWidget(self.working_dir_label, 3, 0)
         subgridAcq_layout.addWidget(self.working_dir_path, 3, 1, 1, 2)
@@ -472,7 +472,7 @@ class Frontend(QtGui.QFrame):
         return
     
     def set_save_continuously(self):
-        if self.saveContinuouslyBox.isChecked():
+        if self.saveAutomaticallyBox.isChecked():
             self.saveTraceContSignal.emit(True)
         else:
             self.saveTraceContSignal.emit(False) 
@@ -679,6 +679,7 @@ class Backend(QtCore.QObject):
     acqStopped = pyqtSignal()
     startTimerSignal = pyqtSignal()
     stopTimerSignal = pyqtSignal()
+    fileSavedSignal = pyqtSignal(str)
 
     def __init__(self, common_variable = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -703,13 +704,14 @@ class Backend(QtCore.QObject):
                                                             acquisition_mode, \
                                                             debug = True)
         self.acquire_continuously_bool = False
-        self.save_continuously_bool = True
+        self.save_automatically_bool = True
         self.filepath = initial_filepath
         self.filename = initial_filename
         self.params_to_be_saved = ''
         self.comment = ''
         self.acquisition_flag = False
         self.save_in_ascii = False
+        self.spectrum_suffix = '' # for integration with specturm acquisition
         return
 
     @pyqtSlot(bool)
@@ -731,13 +733,13 @@ class Backend(QtCore.QObject):
         return
     
     @pyqtSlot(bool)
-    def save_continuously_check(self, save_bool):
+    def save_automatically_check(self, save_bool):
         if save_bool:
             print('Signal will be saved automatically.')
-            self.save_continuously_bool = True
+            self.save_automatically_bool = True
         else:
             print('Signal will not be saved automatically.')
-            self.save_continuously_bool = False
+            self.save_automatically_bool = False
         return
     
     @pyqtSlot(bool)
@@ -765,22 +767,23 @@ class Backend(QtCore.QObject):
         if not self.APD_task.is_task_done():
             self.APD_task.stop()
         self.APD_task.start()
-        # start timer to retrieve data periodically
-        self.start_timer()
+        # start timer signal to retrieve data periodically
+        self.startTimerSignal.emit()
         return
     
     @pyqtSlot()
     def start_timer(self):
-        self.init_time = timer()
-        print('\nAcquisition started at {}'.format(self.init_time))
         self.updateTimer.start()
         self.acquisition_flag = True
+        self.init_time = timer()
+        print('\nAcquisition started at {}'.format(self.init_time))
         return
     
     def stop_trace(self):
-        self.acquisition_flag = False
         # stop timer signal
         self.stopTimerSignal.emit()
+        # set flag to false to indicate acquisition has finished
+        self.acquisition_flag = False
         # flush DAQ buffer
         self.data_array.flush()
         self.monitor_array.flush()
@@ -811,25 +814,23 @@ class Backend(QtCore.QObject):
                 self.i += n_available_per_ch
                 self.i_to_send += n_available_per_ch
             else:
-                if self.save_continuously_bool:
-                    # flush array at buffer into the disk (because it was a memmap array)
-                    self.data_array.flush()
-                    self.monitor_array.flush()
-                    self.save_trace()
                 if self.acquire_continuously_bool:
                     # reset counter
                     self.i = 0
                     self.trace_number += 1
                 else:                
-                    self.acquisition_flag = False
                     self.stop_trace()
-                    print('\n--- Acquisition finished at {}\n'.format(timer()))
+                if self.save_automatically_bool:
+                    # flush array at buffer into the disk (because it was a memmap array)
+                    self.data_array.flush()
+                    self.monitor_array.flush()
+                    self.save_trace()
         return
     
     @pyqtSlot()
     def stop_timer(self):
-        self.updateTimer.stop()
         self.total_time = timer() - self.init_time
+        self.updateTimer.stop()
         return
     
     @pyqtSlot()
@@ -839,14 +840,20 @@ class Backend(QtCore.QObject):
         assert np.all(self.monitor_array > -1000), 'monitor_array was not written correctly'
         # prepare full filepath
         filepath = self.filepath
-        if self.save_continuously_bool:
-            self.filename += '_{:03d}'.format(self.trace_number)
+        if self.save_automatically_bool:
+            if self.acquire_continuously_bool:
+                self.suffix = '_{:04d}'.format(self.trace_number)
+            else:
+                self.suffix = self.spectrum_suffix
+        else:
+            self.suffix = ''
+        filename = self.filename + self.suffix
         # add time string to the filename
         timestr = tm.strftime("_%Y%m%d_%H%M%S")
-        self.filename += timestr
-        filename_data = self.filename + '_transmission'
-        filename_monitor = self.filename + '_monitor'
-        filename_params = self.filename + '_params.txt'
+        filename_timestamped = filename + timestr
+        filename_data = filename_timestamped + '_transmission'
+        filename_monitor = filename_timestamped + '_monitor'
+        filename_params = filename_timestamped + '_params.txt'
         # save data
         full_filepath_data = os.path.join(filepath, filename_data)
         full_filepath_monitor = os.path.join(filepath, filename_monitor)
@@ -858,14 +865,16 @@ class Backend(QtCore.QObject):
         self.params_to_be_saved = self.get_params_to_be_saved()
         with open(full_filepath_params, 'w') as f:
             print(self.params_to_be_saved, file = f)
-        print('Data %s has been saved.' % filename_data)
+        print('Data %s has been saved.' % filename_timestamped)
+        # emit signal for any other module that is importing this function
+        self.fileSavedSignal.emit(full_filepath_data + '.npy')
         if self.save_in_ascii:
             # it will save an ASCII encoded text file
             data_to_save = np.transpose(np.vstack((self.data_array, self.monitor_array)))
             header_txt = 'transmission monitor\n%d Hz' % self.sampling_rate
             ascii_full_filepath = full_filepath_data + '.dat'
             np.savetxt(ascii_full_filepath, data_to_save, fmt='%.6f', header=header_txt)
-        return
+        return 
     
     @pyqtSlot(float)    
     def change_voltage_range(self, voltage_range):
@@ -977,7 +986,7 @@ class Backend(QtCore.QObject):
     def make_connections(self, frontend):
         frontend.traceSignal.connect(self.play_pause)
         frontend.makeTraceContSignal.connect(self.acquire_continuously_check)
-        frontend.saveTraceContSignal.connect(self.save_continuously_check)
+        frontend.saveTraceContSignal.connect(self.save_automatically_check)
         frontend.saveTraceASCIISignal.connect(self.save_ascii)
         frontend.setSamplingRateSignal.connect(self.change_sampling_rate) 
         frontend.setDurationSignal.connect(self.change_duration) 

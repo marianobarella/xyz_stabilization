@@ -13,9 +13,9 @@ import glob
 import serial
 import re
 import time
-# from pylablib.devices import Thorlabs
-from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper
-from pylablib.devices import M2
+from instruments import thorlabs as instThorlabs # for SC10 shutter controller
+from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper # for flipper
+from pylablib.devices import M2 # Ti:Sa laser module
 from timeit import default_timer as timer
 
 #=====================================
@@ -26,14 +26,14 @@ from timeit import default_timer as timer
 # after sending the instruction, number of bytes
 # to read during serial communication (max length message received)
 # modify if it's not enoough
-bytesToRead = 200
+bytesToRead = 250
 # COM ports
-COM_port_oxxius = 'COM4'
+COM_port_oxxius = 'COM4' # Oxxius Laser com port
 COM_port_flipper_cam_Thorlabs = 'COM5' # Serial number: 37004922
 COM_port_flipper_apd_Thorlabs = 'COM8' # Serial number: 37005240
 COM_port_flipper_tisa_Thorlabs = 'COM9' # Serial number: 37005241
-COM_port_shutter_Thorlabs = 'COM7'
-COM_port_toptica = 'COM6'
+COM_port_shutter_Thorlabs = 'COM11' # USB to Serial cable
+COM_port_toptica = 'COM6' # ATEN USB to Serial bridge
 
 def serial_ports():
     """ Lists serial port names
@@ -82,7 +82,7 @@ def sendCommand(command, serialInstace, debug_mode):
         reply = serialInstace.read(bytesToRead)
         reply_utf8 = reply.decode('utf-8')
         if debug_mode:
-            print("Reply: ", reply_utf8)
+            print('Reply: ' + reply_utf8)
         waitingForReply = False
         # serialInstace.flush() # clear channel
         # serialInstace.reset_input_buffer() # clear channel
@@ -218,14 +218,6 @@ class oxxius_laser(object):
         reply_clean_string = reply.rstrip('\r\n')
         return reply_clean_string
     
-    def check_comm(self):
-        flag_open = self.serialInstance.is_open
-        if flag_open:
-            print('Serial instance is open')
-        else:
-            print('Serial instance is NOT open')
-        return flag_open
-    
     def close(self):
         time.sleep(0.1)
         print('Closing 532 laser communication. Clearing serial buffer...')
@@ -346,12 +338,11 @@ class toptica_laser(object):
         return reply
     
     def check_comm(self):
-        flag_open = self.serialInstance.is_open
-        if flag_open:
+        if self.serialInstance.is_open:
             print('Serial instance is open')
         else:
             print('Serial instance is NOT open')
-        return flag_open
+        return self.serialInstance.is_open
     
     def close(self):
         time.sleep(0.1)
@@ -492,58 +483,81 @@ class motorized_flipper(object):
 #=====================================
 
 class Thorlabs_shutter(object):
+
     def __init__(self, debug_mode):
-        # Parameters for 1 inch Thorlabs shutter SH1
-        self.baudRate = 9600
-        self.serial_number = '68000970'
+        # Parameters for SC10 controller
+        self.baudRate = 9600 # default value for the SC10 unit
         self.serialPort = COM_port_shutter_Thorlabs
         self.debug_mode = debug_mode
-        # self.initialize()
-        
-    # def initialize(self):
-    #     self.serialInstance = motoFlipper(self.serialPort)
-    #     if self.serialInstance.is_opened:
-    #         print('Serial port ' + self.serialPort + ' opened.')
-    #     else:
-    #         print('Serial port ' + self.serialPort + ' has NOT been opened.')
-        
-#     def get_state(self):
-#         reply = self.serialInstance.get_state()
-#         if reply == 0:
-#             state = 'up'
-#         else:
-#             state = 'down'
-#         if self.debug_mode:
-#             print("State: ", state)
-#         return state
-
-    def shutter(self, action):
-        if action == 'close':
-            # command = 'la off\r\n'
-            # reply = sendCommand(command, self.serialInstance, self.debug_mode)
-            print('Ti:Sa shutter CLOSED')
-        elif action == 'open':
-            # command = 'la on\r\n'
-            # reply = sendCommand(command, self.serialInstance, self.debug_mode)
-            print('Ti:Sa shutter OPENED')
+        self.serialInstance = initSerial(self.serialPort, self.baudRate)
+        self.initialize()
+        return
+    
+    def initialize(self):
+        self.set_mode()
+        self.shutter('close')
+        return
+    
+    def ask_model(self):
+        command = 'id?\r'
+        reply = sendCommand(command, self.serialInstance, self.debug_mode)
+        reply_clean_string = reply.split('\r')[1]
+        return reply_clean_string
+    
+    def set_mode(self):
+        command = 'mode=1\r'
+        reply = sendCommand(command, self.serialInstance, self.debug_mode)
+        reply_clean_string = reply.split('\r')[1]
+        return reply_clean_string
+    
+    def toggle(self):
+        command = 'ens\r'
+        sendCommand(command, self.serialInstance, self.debug_mode)
+        return
+    
+    def get_state(self):
+        command = 'closed?\r'
+        reply = sendCommand(command, self.serialInstance, self.debug_mode)
+        reply_clean_string = reply.split('\r')[1]
+        state = int(reply_clean_string)
+        if reply_clean_string == '1':
+            if self.debug_mode:
+                print('Shutter is closed.')
+            # 1 means closed
+        elif reply_clean_string == '0':
+            if self.debug_mode:
+                print('Shutter is opened.')
+            # 0 means opened
         else:
-            print('Action was not determined. For precaution: shutter has been closed.')
-            # command = 'la off\r\n'
-            # reply = sendCommand(command, self.serialInstance, self.debug_mode)    
-        # return reply
-
-#     def set_inspect_cam_up(self):
-#         self.serialInstance.move_to_state(1)
-        
-#     def set_inspect_cam_down(self):
-#         self.serialInstance.move_to_state(0)
-        
-#     def close(self):
-#         print('Closing motorized flipper serial communication...')
-#         self.set_inspect_cam_down()
-#         self.serialInstance.close()
-#         time.sleep(0.2)
-#         return
+            if self.debug_mode:
+                print('Error! Shutter state cannot be determined.')
+            # other numbers mean undefined state
+        return state
+    
+    def shutter(self, action):
+        # ask state
+        state = self.get_state()
+        if action == 'close' and state == 1:
+            print('Ti:Sa shutter already closed')
+        elif action == 'close' and state == 0:
+            self.toggle()
+            print('Ti:Sa shutter closed')
+        elif action == 'open' and state == 1:
+            self.toggle()
+            print('Ti:Sa shutter opened')
+        elif action == 'open' and state == 0:
+            print('Ti:Sa shutter already opened')
+        else:
+            print('Action was not determined.')
+        return 
+    
+    def close(self):
+        time.sleep(0.1)
+        print('Closing Ti:Sa shutter communication. Clearing serial buffer...')
+        self.serialInstance.flush() # empty serial buffer
+        self.shutter('close')
+        closeSerial(self.serialInstance)
+        return
 
 #======================================
     
@@ -559,7 +573,9 @@ if __name__ == '__main__':
     
     # mff = motorized_flipper(debug_mode = False)
     
-    tisa = M2_laser(debug_mode = False)
+    tisa_shutter = Thorlabs_shutter(debug_mode = False)
+    
+    # tisa = M2_laser(debug_mode = False)
 
     # laser532.close()
 

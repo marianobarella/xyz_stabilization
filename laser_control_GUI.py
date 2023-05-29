@@ -180,12 +180,12 @@ class Frontend(QtGui.QFrame):
         self.step_wavelength_edit_previous = float(self.step_wavelength_edit.text())
         self.step_wavelength_edit.editingFinished.connect(self.wavelength_range_changed_check)
         self.step_wavelength_edit.setValidator(QtGui.QDoubleValidator(0.00, 100.00, 2))
-        integration_time_label = QtGui.QLabel('Integration time (s):')
+        self.integration_time_label = QtGui.QLabel('Step time (s):')
         self.integration_time_edit = QtGui.QLineEdit(str(initial_integration_time))
         self.integration_time_edit_previous = float(self.integration_time_edit.text())
         self.integration_time_edit.editingFinished.connect(self.integration_time_changed_check)
         self.integration_time_edit.setValidator(QtGui.QDoubleValidator(0.00, 3600.00, 2))
-        self.integration_time_comment = QtGui.QLabel('Attention: It overrides Duration variable of the APD trace.')
+        self.integration_time_comment = QtGui.QLabel('')
         # start scan
         self.scanButton = QtGui.QPushButton('Run wavelength scan')
         self.scanButton.setCheckable(True)
@@ -195,11 +195,19 @@ class Frontend(QtGui.QFrame):
                 "QPushButton::checked { background-color: turquoise; }")
         # start spectrum acquisition
         self.acquire_spectrum_button = QtGui.QPushButton('Acquire spectrum')
-        self.acquire_spectrum_button.setCheckable(True)
-        self.acquire_spectrum_button.clicked.connect(self.acquire_spectrum_button_check)
+        self.acquire_spectrum_button.setCheckable(False)
         self.acquire_spectrum_button.setStyleSheet(
-                "QPushButton { background-color: lightgray; }"
-                "QPushButton::checked { background-color: red; }")        
+                "QPushButton { background-color: darkgrey; }")    
+        # filename for the spectrum datafile
+        self.filename_label = QtGui.QLabel('')
+        self.filename = ''
+        self.filename_name = QtGui.QLineEdit(self.filename)
+        self.filename_name.setFixedWidth(0)
+        # process acquired spectrum
+        self.process_spectrum_button = QtGui.QPushButton('Process spectrum')
+        self.process_spectrum_button.setCheckable(False)
+        self.process_spectrum_button.setStyleSheet(
+                "QPushButton { background-color: darkgrey; }")    
         
         # 488 power
         power488_label = QtGui.QLabel('Power 488 (mW):')
@@ -239,11 +247,14 @@ class Frontend(QtGui.QFrame):
         tisa_box_layout.addWidget(self.ending_wavelength_edit, 2, 3)
         tisa_box_layout.addWidget(step_wavelength_label, 2, 4)
         tisa_box_layout.addWidget(self.step_wavelength_edit, 2, 5)
-        tisa_box_layout.addWidget(integration_time_label, 3, 0)
+        tisa_box_layout.addWidget(self.integration_time_label, 3, 0)
         tisa_box_layout.addWidget(self.integration_time_edit, 3, 1)
         tisa_box_layout.addWidget(self.integration_time_comment, 3, 2, 1, 4)
         tisa_box_layout.addWidget(self.scanButton, 4, 0, 1, 6)
         tisa_box_layout.addWidget(self.acquire_spectrum_button, 5, 0, 1, 6)
+        tisa_box_layout.addWidget(self.filename_label, 6, 0, 1, 6)
+        tisa_box_layout.addWidget(self.filename_name, 6, 1, 1, 6)
+        tisa_box_layout.addWidget(self.process_spectrum_button, 6, 4, 1, 2)
         
         # 488 box
         self.blue_laser_box = QtGui.QWidget()
@@ -612,14 +623,13 @@ class Backend(QtCore.QObject):
     
     def update_tisa_status(self):
         # get laser status (if is tuning wavelength or not)
-        self.status = laserTisa.get_tuning_status()
-        return
+        return laserTisa.get_tuning_status()
     
     def scan(self):
         while self.scan_flag:
             # check status to see what to do
-            self.update_tisa_status()
-            if self.status == 1:
+            status = self.update_tisa_status()
+            if status == 1:
                 # try to measure or check if we're done
                 if self.counter < len(self.wavelength_scan_array):
                     # still scanning
@@ -636,31 +646,6 @@ class Backend(QtCore.QObject):
             else:
                 print('\nWavelength has not been changed.')
                 print('Ti:Sa status: ', self.status)
-        return
-    
-    # def spectrum_scan(self):
-    #     if self.scan_flag:
-    #         # check status to see what to do
-    #         self.update_tisa_status()
-    #         if self.status == 1:
-    #             # try to measure or check if we're done
-    #             if self.counter < len(self.wavelength_scan_array):
-    #                 # still scanning
-    #                 self.perform_measurement()
-    #             else:
-    #                 # no more points to scan
-    #                 self.scan_flag = False
-    #                 self.scan_finished_signal.emit()
-    #         else:
-    #             print('\nWavelength has not been changed.')
-    #             print('Ti:Sa status: ', self.status)
-    #     return
-    
-    def perform_measurement(self):
-        # self.measure_apd_signal.emit(self.integration_time)
-        print('midiendo.........oooooooooooooo')
-        tm.sleep(self.integration_time)
-        # print('midiendo.........listo')
         return
     
     @pyqtSlot()
