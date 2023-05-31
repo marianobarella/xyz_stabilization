@@ -41,9 +41,11 @@ camera = color_cam
 pixel_size = color_cam_sensor_pixel_width_um
 initial_filepath = 'D:\\daily_data\\inspection_cam' # save in SSD for fast and daily use
 initial_filename = 'image_Thorcam'
+initial_gain = 240 # int
 
 # initial fake image
 initial_image_np = 128*np.ones((1080, 1440, 3))
+
 
 #=====================================
 
@@ -58,6 +60,7 @@ class Frontend(QtGui.QFrame):
     fixcursorSignal = pyqtSignal(float, float)
     closeSignal = pyqtSignal()
     exposureChangedSignal = pyqtSignal(bool, float)
+    gainChangedSignal = pyqtSignal(bool, int)
     takePictureSignal = pyqtSignal(bool, float)
     saveSignal = pyqtSignal()
     setWorkDirSignal = pyqtSignal()
@@ -71,6 +74,7 @@ class Frontend(QtGui.QFrame):
         self.setWindowTitle(title)
         self.get_image(initial_image_np)
         self.hist._updateView
+        self.gain = initial_gain
         return
             
     def setUpGUI(self):
@@ -127,6 +131,18 @@ class Frontend(QtGui.QFrame):
         self.exp_time_edit_previous = float(self.exp_time_edit.text())
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
         self.exp_time_edit.setValidator(QtGui.QIntValidator(1, 26843))
+        
+        # Exposure time
+        gain_label = QtGui.QLabel('Gain:')
+        self.gain_slider = QtGui.QSlider(QtCore.Qt.Horizontal)
+        self.gain_slider.setMinimum(0)
+        self.gain_slider.setMaximum(480)
+        self.gain_slider.setValue(initial_gain)
+        self.gain_slider.setTickPosition(QtGui.QSlider.TicksBelow)
+        self.gain_slider.setTickInterval(1)
+        self.gain_slider.sliderReleased.connect(self.gain_changed_check)
+        self.gain_value_label = QtGui.QLabel('0')
+        self.gain_value_label.setText('%d' % int(self.gain_slider.value()))
         
         pixel_size_Label = QtGui.QLabel('Pixel size (µm):')
         self.pixel_size = QtGui.QLabel(str(pixel_size))
@@ -197,11 +213,15 @@ class Frontend(QtGui.QFrame):
         # Exposure time box
         layout_liveview.addWidget(exp_time_label,              6, 0)
         layout_liveview.addWidget(self.exp_time_edit,          6, 1)
+        # Gain box
+        layout_liveview.addWidget(gain_label,              7, 0)
+        layout_liveview.addWidget(self.gain_value_label,   7, 1)
+        layout_liveview.addWidget(self.gain_slider,        8, 0, 1, 2)
         # auto level
-        layout_liveview.addWidget(self.autolevel_tickbox,      7, 0)
+        layout_liveview.addWidget(self.autolevel_tickbox,      9, 0)
         # pixel size
-        layout_liveview.addWidget(pixel_size_Label,      8, 0)
-        layout_liveview.addWidget(self.pixel_size,        8, 1)
+        layout_liveview.addWidget(pixel_size_Label,      10, 0)
+        layout_liveview.addWidget(self.pixel_size,       10, 1)
 
         # Cursor dock
         self.cursorWidget = QtGui.QWidget()
@@ -250,6 +270,15 @@ class Frontend(QtGui.QFrame):
                 self.exposureChangedSignal.emit(True, exposure_time_ms)
             else:
                 self.exposureChangedSignal.emit(False, exposure_time_ms)
+        return
+    
+    def gain_changed_check(self):
+        self.gain_value_label.setText(format(int(self.gain_slider.value())))
+        self.gain = int(self.gain_value_label.text())
+        if self.live_view_button.isChecked():
+            self.gainChangedSignal.emit(True, self.gain)
+        else:
+            self.gainChangedSignal.emit(False, self.gain)
         return
     
     def take_picture_button_check(self):
@@ -417,6 +446,16 @@ class Backend(QtCore.QObject):
             self.exposure_time_ms = exposure_time_ms
         return
     
+    @pyqtSlot(bool, int)    
+    def change_gain(self, livebool, gain):
+        if livebool:
+            self.stop_liveview()
+            tl_cam.set_gain(camera, gain)
+            self.start_liveview(self.exposure_time_ms)
+        else:
+            tl_cam.set_gain(camera, gain)
+        return
+    
     @pyqtSlot(bool, float)
     def take_picture(self, livebool, exposure_time_ms):
         print('\nPicture taken at', datetime.now())
@@ -496,6 +535,7 @@ class Backend(QtCore.QObject):
     
     def make_connections(self, frontend):
         frontend.exposureChangedSignal.connect(self.change_exposure)
+        frontend.gainChangedSignal.connect(self.change_gain)
         frontend.liveViewSignal.connect(self.liveview) 
         frontend.takePictureSignal.connect(self.take_picture) 
         frontend.moveSignal.connect(self.cursor)
@@ -521,9 +561,9 @@ if __name__ == '__main__':
     
     # thread that run in background
     workerThread = QtCore.QThread()
-    worker.moveToThread(workerThread)
     worker.viewTimer.moveToThread(workerThread)
-    
+    worker.moveToThread(workerThread)
+
     # connect both classes 
     worker.make_connections(gui)
     gui.make_connections(worker)
@@ -533,3 +573,4 @@ if __name__ == '__main__':
     
     gui.show()
     app.exec()
+    

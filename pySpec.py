@@ -2,8 +2,10 @@
 """
 Created on Thu April 22, 2022
 
-pyTrap is the control software of the 2nd gen Plasmonic Optical Tweezer setup
-Here, the Graphical User Interface of pyTrap integrates all microscope modules:
+pySpec is a control software of the 2nd gen Plasmonic Optical Tweezer setup that
+allows the user to acquire spectra of nanostructures using the tunable laser
+and the APDs
+Here, the Graphical User Interface of pySpec integrates the following modules:
     - lasers control
     - APD signal acquisition
 
@@ -40,12 +42,11 @@ class Frontend(QtGui.QMainWindow):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
         self.cwidget = QtGui.QWidget()
         self.setCentralWidget(self.cwidget)
-        self.setWindowTitle('pyTrap')
+        self.setWindowTitle('pySpec')
+        self.setGeometry(150, 30, 1400, 800) # x pos, y pos, width, height
         self.setUpGUI()
-        self.setGeometry(150, 30, 1500, 950) # x pos, y pos, width, height
         return
     
     def setUpGUI(self):
@@ -157,15 +158,15 @@ class Backend(QtCore.QObject):
     apd_acq_stopped_signal = pyqtSignal()
     spectrum_finished_signal = pyqtSignal()
     
-    def __init__(self, common_variable = None, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.common_variable = common_variable
         self.lasersWorker = laser_control_GUI.Backend(self.common_variable)
         self.apdWorker = apd_trace_GUI.Backend(self.common_variable)
         self.scanTimer = QtCore.QTimer()
         self.scanTimer.timeout.connect(self.continue_scan) # funciton to connect after each interval
         self.scanTimer.setInterval(check_button_state) # in ms
         self.list_of_transmission_files = []
+        self.list_of_monitor_files = []
         self.filename = initial_filename
         return
         
@@ -226,12 +227,13 @@ class Backend(QtCore.QObject):
             # - start over
         return
     
-    @pyqtSlot(str)
-    def append_saved_file(self, full_filepath):
-        self.list_of_transmission_files.append(full_filepath)
+    @pyqtSlot(str, str)
+    def append_saved_file(self, full_filepath_data, full_filepath_monitor):
+        self.list_of_transmission_files.append(full_filepath_data)
+        self.list_of_monitor_files.append(full_filepath_monitor)
         return
     
-    def process_transmission_signals(self, list_of_files):
+    def process_signals(self, list_of_files):
         mean_array = np.zeros(len(list_of_files))
         std_dev_array = np.zeros(len(list_of_files))
         for i in range(len(list_of_files)):
@@ -245,15 +247,18 @@ class Backend(QtCore.QObject):
     def process_acquired_spectrum(self):
         print('Processing all spectra...')
         # preapre arrays
-        x = self.lasersWorker.wavelength_scan_array
-        mean_y, std_dev_y = self.process_transmission_signals(self.list_of_transmission_files)
+        wavelength = self.lasersWorker.wavelength_scan_array
+        mean_data, std_dev_data = self.process_signals(self.list_of_transmission_files)
+        mean_monitor, std_dev_monitor = self.process_signals(self.list_of_monitor_files)
         # set filename
         filename_spectrum = self.filename
         timestr = tm.strftime("_%Y%m%d_%H%M%S")
         filename_spectrum = filename_spectrum + timestr
         # it will save an ASCII encoded text file
-        data_to_save = np.transpose(np.vstack((x, mean_y, std_dev_y)))
-        header_txt = 'wavelength mean std_dev\nnm V V'
+        data_to_save = np.transpose(np.vstack((wavelength, \
+                                               mean_data, std_dev_data, \
+                                               mean_monitor, std_dev_monitor)))
+        header_txt = 'wavelength transmission_mean transmission_std_dev monitor_mean monitor_std_dev\nnm V V V V'
         ascii_full_filepath = spectra_path + '\\' + filename_spectrum + '.dat'
         np.savetxt(ascii_full_filepath, data_to_save, fmt='%.6f', header=header_txt)
         print('Spectrum has been generated and saved with filename %s.dat' % filename_spectrum)

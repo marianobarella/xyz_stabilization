@@ -13,7 +13,6 @@ import glob
 import serial
 import re
 import time
-from instruments import thorlabs as instThorlabs # for SC10 shutter controller
 from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper # for flipper
 from pylablib.devices import M2 # Ti:Sa laser module
 from timeit import default_timer as timer

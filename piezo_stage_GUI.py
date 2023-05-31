@@ -467,8 +467,8 @@ if __name__ == '__main__':
     
     # # thread that run in background
     workerThread = QtCore.QThread()
-    worker.moveToThread(workerThread)
     worker.updateTimer.moveToThread(workerThread)
+    worker.moveToThread(workerThread)
 
     # connect both classes
     worker.make_connections(gui)

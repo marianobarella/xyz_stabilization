@@ -415,9 +415,9 @@ if __name__ == "__main__":
     
     # print(piezo_stage.get_axis_position('x'))
 
-    start = timer()
-    piezo_stage.estimate_precision([10,10,10])
-    print(timer()-start)
+    # start = timer()
+    # piezo_stage.estimate_precision([10,10,10])
+    # print(timer()-start)
     
     # piezo_stage.move_relative('x', 0.100)
     # pos = piezo_stage.get_axis_position('x')
@@ -432,5 +432,5 @@ if __name__ == "__main__":
     
 #%%
     # disconnect        
-    # piezo_stage.shutdown()
+    piezo_stage.shutdown()
     

@@ -679,7 +679,7 @@ class Backend(QtCore.QObject):
     acqStopped = pyqtSignal()
     startTimerSignal = pyqtSignal()
     stopTimerSignal = pyqtSignal()
-    fileSavedSignal = pyqtSignal(str)
+    fileSavedSignal = pyqtSignal(str, str)
 
     def __init__(self, common_variable = None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -867,7 +867,7 @@ class Backend(QtCore.QObject):
             print(self.params_to_be_saved, file = f)
         print('Data %s has been saved.' % filename_timestamped)
         # emit signal for any other module that is importing this function
-        self.fileSavedSignal.emit(full_filepath_data + '.npy')
+        self.fileSavedSignal.emit(full_filepath_data + '.npy', full_filepath_monitor + '.npy')
         if self.save_in_ascii:
             # it will save an ASCII encoded text file
             data_to_save = np.transpose(np.vstack((self.data_array, self.monitor_array)))
@@ -1016,8 +1016,8 @@ if __name__ == '__main__':
     
     # thread that run in background
     workerThread = QtCore.QThread()
-    worker.moveToThread(workerThread)
     worker.updateTimer.moveToThread(workerThread)
+    worker.moveToThread(workerThread)
     
     # connect both classes 
     worker.make_connections(gui)

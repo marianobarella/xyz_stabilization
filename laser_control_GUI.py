@@ -31,15 +31,12 @@ laser488 = laserToolbox.toptica_laser(debug_mode = False)
 laserTisa = laserToolbox.M2_laser(debug_mode = True, timeout = 10.0)
 shutterTisa = laserToolbox.Thorlabs_shutter(debug_mode = False)
 # build flippers objects
-COM_port_flipper_cam_Thorlabs = 'COM5' # Serial number: 37004922
-COM_port_flipper_apd_Thorlabs = 'COM8' # Serial number: 37005240
-COM_port_flipper_tisa_Thorlabs = 'COM9' # Serial number: 37005241
 flipperMirror = laserToolbox.motorized_flipper(debug_mode = False, \
-                                               serial_port = COM_port_flipper_cam_Thorlabs)
+                                               serial_port = laserToolbox.COM_port_flipper_cam_Thorlabs)
 flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
-                                                  serial_port = COM_port_flipper_apd_Thorlabs)
+                                                  serial_port = laserToolbox.COM_port_flipper_apd_Thorlabs)
 flipperTisaFilter = laserToolbox.motorized_flipper(debug_mode = False, \
-                                                  serial_port = COM_port_flipper_tisa_Thorlabs)
+                                                  serial_port = laserToolbox.COM_port_flipper_tisa_Thorlabs)
 # set initial paramters
 initial_blue_power = 1.4 # in mW
 initial_wavelength = 780.00 # in nm

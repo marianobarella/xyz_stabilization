@@ -11,20 +11,21 @@ Fribourg, Switzerland
 import os
 import numpy as np
 from datetime import datetime
+from timeit import default_timer as timer
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
-from PyQt5.QtWidgets import QFrame
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
 from pyqtgraph.dockarea import Dock, DockArea
-import thorlabs_camera_toolbox as tl_cam
 from PIL import Image
 from tkinter import filedialog
 import tkinter as tk
 import time as tm
-from timeit import default_timer as timer
 import piezo_stage_GUI
 import viewbox_tools
+
 from scipy import ndimage
+from PyQt5.QtWidgets import QFrame
+import thorlabs_camera_toolbox as tl_cam
 
 #=====================================
 
@@ -83,6 +84,7 @@ initial_conversion_factor = 0.0245 # nm/px
     
 class Frontend(QtGui.QFrame):
 
+    closeSignal = pyqtSignal()
     liveViewSignal = pyqtSignal(bool, float)
     exposureChangedSignal = pyqtSignal(bool, float)
     takePictureSignal = pyqtSignal(bool, float)
@@ -98,9 +100,8 @@ class Frontend(QtGui.QFrame):
     stabilizationStatusChangedSignal = pyqtSignal(bool)
     conversionFactorChangedSignal = pyqtSignal(float)
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, piezo_frontend, show_piezo_subGUI = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.setUpGUI()
         # set the title of thw window
         title = "Z stabilization module"
         self.setWindowTitle(title)
@@ -108,9 +109,10 @@ class Frontend(QtGui.QFrame):
         self.roi = {}
         self.image = np.array([])
         self.stabilize = False
+        self.setUpGUI(show_piezo_subGUI)
         return
             
-    def setUpGUI(self):
+    def setUpGUI(self, show_piezo_subGUI):
         
         optical_format = mono_cam_sensor_width_pixels/mono_cam_sensor_height_pixels
         
@@ -313,20 +315,6 @@ class Frontend(QtGui.QFrame):
         layout_zLock.addWidget(self.create_ROI_button,         5, 0, 1, 2)
         layout_zLock.addWidget(self.intensity_threshold_label,         6, 0)
         layout_zLock.addWidget(self.intensity_threshold_value,         6, 1)
-        # # lock and track buttons
-        # layout_zLock.addWidget(self.lock_z_position_button,         7, 0, 1, 2)
-        # layout_zLock.addWidget(self.conversion_label,         8, 0)
-        # layout_zLock.addWidget(self.conversion_value,         8, 1)
-        # layout_zLock.addWidget(self.tracking_period_label,         9, 0)
-        # layout_zLock.addWidget(self.tracking_period_value,         9, 1)
-        # layout_zLock.addWidget(self.stabilize_z_button,         10, 0, 1, 2)
-        # layout_zLock.addWidget(self.pid_label,         11, 0)
-        # layout_zLock.addWidget(self.kp_label,         12, 0)
-        # layout_zLock.addWidget(self.kp_value,         12, 1)
-        # layout_zLock.addWidget(self.ki_label,         13, 0)
-        # layout_zLock.addWidget(self.ki_value,         13, 1)
-        # layout_zLock.addWidget(self.kd_label,         14, 0)
-        # layout_zLock.addWidget(self.kd_value,         14, 1)
 
         # lock and track buttons
         self.separatorLine = QFrame()
@@ -370,11 +358,12 @@ class Frontend(QtGui.QFrame):
         zLockDock.addWidget(self.zLockWidget)
         dockArea.addDock(zLockDock, 'right', liveview_paramDock)
         
-        ## Add Piezo stage GUI module
-        piezoDock = Dock('Piezo stage')
-        self.piezoWidget = piezo_stage_GUI.Frontend()
-        piezoDock.addWidget(self.piezoWidget)
-        dockArea.addDock(piezoDock , 'right', zLockDock)
+        ## Add Piezo stage GUI module if asked
+        self.piezoWidget = piezo_frontend
+        if show_piezo_subGUI:
+            piezoDock = Dock('Piezo stage')
+            piezoDock.addWidget(self.piezoWidget)
+            dockArea.addDock(piezoDock , 'right', zLockDock)
         
         hbox.addWidget(dockArea)
         self.setLayout(hbox)
@@ -581,6 +570,7 @@ class Frontend(QtGui.QFrame):
             event.accept()
             print('Closing GUI...')
             self.close()
+            self.closeSignal.emit()
             tm.sleep(1)
             app.quit()
         else:
@@ -609,16 +599,16 @@ class Backend(QtCore.QObject):
     getReflectionDataSignal = pyqtSignal()
     sendFittedDataSignal = pyqtSignal(np.ndarray, np.ndarray, float)
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, piezo, piezo_backend, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.piezo_stage = piezo
+        self.piezoWorker = piezo_backend
         self.viewTimer = QtCore.QTimer()
         self.viewTimer.timeout.connect(self.update_view)   
         self.image_np = None
         self.trackingTimer = QtCore.QTimer()
         self.trackingTimer.timeout.connect(self.call_pid)
         self.tracking_period = initial_tracking_period
-        self.piezo_stage = piezo_stage_GUI.piezo_stage     
-        self.piezoWorker = piezo_stage_GUI.Backend(self.piezo_stage)
         self.threshold = initial_threshold
         self.file_path = initial_filepath
         self.pid_param_list = [initial_kp, initial_ki, initial_kd]
@@ -864,23 +854,24 @@ class Backend(QtCore.QObject):
             print('No folder selected!')
         else:
             self.file_path = file_path
-            self.filePathSignal.emit(self.file_path) # TODO Lo reciben los módulos de traza, confocal y printing
+            self.filePathSignal.emit(self.file_path) 
         return
 
     @pyqtSlot()
-    def close_all_backends(self):
-        # print('Shutting down piezo stage...')
-        # self.piezo_stage.shutdown()
+    def close_backend(self):
         print('Stopping timers...')
         self.piezoWorker.updateTimer.stop()
         self.viewTimer.stop()
         self.trackingTimer.stop()
+        print('Shutting down piezo stage...')
+        self.piezo_stage.shutdown()
         print('Exiting threads...')
         tm.sleep(1)
         workerThread.exit()
         return
 
     def make_connections(self, frontend):
+        frontend.closeSignal.connect(self.close_backend)
         frontend.exposureChangedSignal.connect(self.change_exposure)
         frontend.liveViewSignal.connect(self.liveview) 
         frontend.takePictureSignal.connect(self.take_picture) 
@@ -907,16 +898,21 @@ if __name__ == '__main__':
     # make application
     app = QtGui.QApplication([])
     
-    # create classes
-    gui = Frontend()
-    worker = Backend()
+    # init stage
+    piezo = piezo_stage_GUI.piezo_stage     
+    piezo_frontend = piezo_stage_GUI.Frontend()
+    piezo_backend = piezo_stage_GUI.Backend(piezo)
+    
+    # create both classes
+    gui = Frontend(piezo_frontend)
+    worker = Backend(piezo, piezo_backend)
     
     # for tracking and z camera
     workerThread = QtCore.QThread()
-    worker.moveToThread(workerThread)
     worker.trackingTimer.moveToThread(workerThread)
     worker.viewTimer.moveToThread(workerThread)
     worker.piezoWorker.updateTimer.moveToThread(workerThread)
+    worker.moveToThread(workerThread)
     
     # connect both classes
     worker.make_connections(gui)

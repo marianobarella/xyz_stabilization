@@ -139,7 +139,7 @@ def set_camera_one_picture_mode(camera):
     return
 
 def set_exp_time(camera, exposure_time_ms):
-    print('Setting camera parameters...')
+    print('Setting camera exposure time...')
     exposure_time_us = int(exposure_time_ms*1000)
     camera.exposure_time_us = exposure_time_us # has to be an int type variable
     frame_time = camera.frame_time_us/1e3
@@ -150,6 +150,16 @@ def set_exp_time(camera, exposure_time_ms):
     # you don't want to block the camera for long periods of time
     camera.image_poll_timeout_ms = round(frame_time*1.0)
     return frame_time
+
+def set_gain(camera, gain):
+    print('\nSetting camera gain...')
+    if 0 <= gain <= 480:
+        camera.gain = gain # has to be an int type variable
+        print('Gain set to', gain)
+    else:
+        print('Gain was not set. Gain has to be between 0 and 480.')
+    print('Current Gain is', camera.gain)
+    return
 
 def get_camera_param(camera):
     return camera.sensor_width_pixels, camera.sensor_height_pixels, \
@@ -233,9 +243,9 @@ def dispose_all(mono_cam_flag, mono_cam, color_cam_flag, color_cam, \
     if mono_cam_flag:
         dispose_cam(mono_cam)
     if color_cam_flag:
-        dispose_cam(color_cam)
         dispose_color_processor(mono_to_color_processor)
         dispose_color_sdk(mono_to_color_constructor)
+        dispose_cam(color_cam)
     dispose_sdk(camera_constructor)
     return
 
@@ -248,18 +258,28 @@ def dispose_all(mono_cam_flag, mono_cam, color_cam_flag, color_cam, \
 if __name__ == '__main__':
         
     camera_constructor = load_Thorlabs_SDK_cameras()
-    mono_cam, mono_cam_flag, color_cam, color_cam_flag = list_cameras(camera_constructor)
-    if mono_cam_flag:
-        mono_cam_sensor_width_pixels, mono_cam_sensor_height_pixels, \
-        mono_cam_sensor_pixel_width_um, mono_cam_sensor_pixel_height_um = get_camera_param(mono_cam)
-        mono_to_color_processor = None
-        mono_to_color_constructor = None
-        camera = mono_cam
-    if color_cam_flag:
-        color_cam_sensor_width_pixels, color_cam_sensor_height_pixels, \
-        color_cam_sensor_pixel_width_um, color_cam_sensor_pixel_height_um = get_camera_param(color_cam)
-        mono_to_color_constructor, mono_to_color_processor = init_Thorlabs_color_cameras(color_cam)
-        camera = color_cam
+    list_of_cameras = list_cameras(camera_constructor)
+    # color_cam, color_cam_flag = open_color_camera(camera_constructor, list_of_cameras)
+    # mono_cam, mono_cam_flag = open_mono_camera(camera_constructor, list_of_cameras)
+    mono_cam, \
+    mono_cam_flag, \
+    mono_cam_sensor_width_pixels, \
+    mono_cam_sensor_height_pixels, \
+    mono_cam_sensor_pixel_width_um, \
+    mono_cam_sensor_pixel_height_um = init_Thorlabs_mono_camera(camera_constructor)
+    # mono_to_color_processor = None
+    # mono_to_color_constructor = None
+    # camera = mono_cam
+    
+    color_cam, \
+    color_cam_flag, \
+    color_cam_sensor_width_pixels, \
+    color_cam_sensor_height_pixels, \
+    color_cam_sensor_pixel_width_um, \
+    color_cam_sensor_pixel_height_um, \
+    mono_to_color_constructor, \
+    mono_to_color_processor = init_Thorlabs_color_camera(camera_constructor)
+    # camera = color_cam
     
     if not (color_cam_flag or mono_cam_flag):
         print('\nNo cameras detected. Closing program...')
@@ -269,8 +289,8 @@ if __name__ == '__main__':
     exposure_time_ms = 53.05 # in ms   
     number_of_frames = 10 
 
-    # print(mono_cam.roi_range)
-    print('\nGetting images...')
+    # # print(mono_cam.roi_range)
+    # print('\nGetting images...')
 
     if mono_cam_flag:
         print('\nTaking pictures with MONO camera')
@@ -286,10 +306,12 @@ if __name__ == '__main__':
         for i in range(number_of_frames):
             color_image_np, _ = get_image(color_cam, mono_to_color_processor, 'color')
 
-    stop_camera(camera)
-    # camera.roi = old_roi  # reset the roi back to the original roi
     
-    dispose_all(mono_cam_flag, mono_cam, color_cam_flag, color_cam, \
-                mono_to_color_processor, mono_to_color_constructor, \
-                camera_constructor)
+    # stop_camera(mono_cam)
+    # stop_camera(color_cam)
+    # # # camera.roi = old_roi  # reset the roi back to the original roi
+    
+    # dispose_all(mono_cam_flag, mono_cam, color_cam_flag, color_cam, \
+    #             mono_to_color_processor, mono_to_color_constructor, \
+    #             camera_constructor)
 

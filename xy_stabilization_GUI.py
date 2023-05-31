@@ -16,14 +16,15 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
 from pyqtgraph.dockarea import Dock, DockArea
-import pco_camera_toolbox as pco
-import drift_correction_toolbox as drift
 from PIL import Image
 from tkinter import filedialog
 import tkinter as tk
 import time as tm
-import viewbox_tools
 import piezo_stage_GUI
+import viewbox_tools
+
+import pco_camera_toolbox as pco
+import drift_correction_toolbox as drift
 
 #=====================================
 
@@ -88,9 +89,8 @@ class Frontend(QtGui.QFrame):
     correctDriftSignal = pyqtSignal(bool)
     pidParamChangedSignal = pyqtSignal(bool, list)
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, piezo_frontend, show_piezo_subGUI = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.setUpGUI()
         # set the title of the window
         title = "XY stabilization module"
         self.setWindowTitle(title)
@@ -101,9 +101,10 @@ class Frontend(QtGui.QFrame):
         self.image = np.array([])
         self.roi = {}
         self.correct_drift_flag = False
+        self.setUpGUI(show_piezo_subGUI)
         return
             
-    def setUpGUI(self):
+    def setUpGUI(self, show_piezo_subGUI):
         
         # Image
         imageWidget = pg.GraphicsLayoutWidget()
@@ -118,7 +119,7 @@ class Frontend(QtGui.QFrame):
         # 'cyclic', 'greyclip', 'grey'
         self.hist.vb.setLimits(yMin = 0, yMax = 65536) # 16-bit camera
         imageWidget.addItem(self.hist, row = 0, col = 1)
-        # TODO: if performance is an issue, try scaleToImage
+        # if performance is an issue, try scaleToImage
         # add centers of fiducials over camera image
         self.xy_fiducials = pg.ScatterPlotItem(size = 5, pen = pg.mkPen('r', width = 1), 
                                          symbol = 'o', brush = pg.mkBrush('r'))
@@ -369,11 +370,12 @@ class Frontend(QtGui.QFrame):
         driftDock.addWidget(driftWidget)
         dockArea.addDock(driftDock, 'bottom', fiducialsDock)
         
-        ## Add Piezo stage GUI module
-        piezoDock = Dock('Piezo stage')
-        self.piezoWidget = piezo_stage_GUI.Frontend()
-        piezoDock.addWidget(self.piezoWidget)
-        dockArea.addDock(piezoDock , 'right', fiducialsDock)
+        ## Add Piezo stage GUI module if asked
+        self.piezoWidget = piezo_frontend
+        if show_piezo_subGUI:
+            piezoDock = Dock('Piezo stage')
+            piezoDock.addWidget(self.piezoWidget)
+            dockArea.addDock(piezoDock , 'right', fiducialsDock)
         
         hbox.addWidget(dockArea)
         self.setLayout(hbox)
@@ -641,10 +643,10 @@ class Backend(QtCore.QObject):
     tempSignal = pyqtSignal(list)
     filePathSignal = pyqtSignal(str)
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, piezo, piezo_backend, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.piezo_stage = piezo_stage_GUI.piezo_stage     
-        self.piezoWorker = piezo_stage_GUI.Backend(self.piezo_stage)
+        self.piezo_stage = piezo
+        self.piezoWorker = piezo_backend
         self.viewTimer = QtCore.QTimer()
         self.viewTimer.timeout.connect(self.update_view)   
         self.tempTimer = QtCore.QTimer()
@@ -965,16 +967,14 @@ class Backend(QtCore.QObject):
         return
     
     @pyqtSlot()
-    def closeBackend(self):
-        # laser488.close()
-        # laser532.close()
-        # flipperMirror.close()
+    def close_backend(self):
         cam.stop()
-        # self.piezo_stage.shutdown()
         print('Stopping QtTimers...')
         self.piezoWorker.updateTimer.stop()
         self.viewTimer.stop()
         self.tempTimer.stop()
+        print('Shutting down piezo stage...')
+        self.piezo_stage.shutdown()
         print('Exiting thread...')
         tm.sleep(1)
         workerThread.exit()
@@ -987,7 +987,7 @@ class Backend(QtCore.QObject):
         frontend.trackingPeriodChangedSignal.connect(self.change_tracking_period)
         frontend.liveViewSignal.connect(self.liveview) 
         frontend.takePictureSignal.connect(self.take_picture)
-        frontend.closeSignal.connect(self.closeBackend)
+        frontend.closeSignal.connect(self.close_backend)
         frontend.saveSignal.connect(self.save_picture)
         frontend.setWorkDirSignal.connect(self.set_working_folder)
         frontend.lockAndTrackSignal.connect(self.start_stop_tracking)
@@ -1008,17 +1008,22 @@ if __name__ == '__main__':
     # make application
     app = QtGui.QApplication([])
     
+    # init stage
+    piezo = piezo_stage_GUI.piezo_stage     
+    piezo_frontend = piezo_stage_GUI.Frontend()
+    piezo_backend = piezo_stage_GUI.Backend(piezo)
+    
     # create both classes
-    gui = Frontend()
-    worker = Backend()
+    gui = Frontend(piezo_frontend)
+    worker = Backend(piezo, piezo_backend)
     
     # thread that run in background
     workerThread = QtCore.QThread()
-    worker.moveToThread(workerThread)
     worker.viewTimer.moveToThread(workerThread)
     worker.tempTimer.moveToThread(workerThread)
     worker.trackingTimer.moveToThread(workerThread)
     worker.piezoWorker.updateTimer.moveToThread(workerThread)
+    worker.moveToThread(workerThread)
     
     # connect both classes 
     worker.make_connections(gui)
