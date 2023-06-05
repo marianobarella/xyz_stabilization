@@ -34,10 +34,10 @@ else:
 print(piezo_stage.get_info())
 print('Zeroing the piezo stage. This step takes around 30 s. Please wait...\n')
 # perform zero routine for all axis
-piezo_stage.zero('all')
+# piezo_stage.zero('all')
 
 # time period used to update stage position
-updatePosition_period = 500 # in ms
+initial_updatePosition_period = 500 # in ms
 
 #=====================================
 
@@ -52,10 +52,11 @@ class Frontend(QtGui.QFrame):
     go_to_pos_signal = pyqtSignal(list)
     feedbackLoopSignal = pyqtSignal(bool)
     # set_reference_signal = pyqtSignal()
-    closeSignal = pyqtSignal()
+    closeSignal = pyqtSignal(bool)
 
-    def __init__(self, *args, **kwargs):  
+    def __init__(self, main_app = True, *args, **kwargs):  
         super().__init__(*args, **kwargs)
+        self.main_app = main_app
         self.setUpGUI()
         self.go_to_action()
         return
@@ -327,7 +328,7 @@ class Frontend(QtGui.QFrame):
             event.accept()
             print('Closing GUI...')
             self.close()
-            self.closeSignal.emit()
+            self.closeSignal.emit(self.main_app)
             tm.sleep(1)
             app.quit()
         else:
@@ -350,13 +351,16 @@ class Backend(QtCore.QObject):
     read_pos_signal = pyqtSignal(list)
     # reference_signal = pyqtSignal(list)
 
-    def __init__(self, piezo_stage, *args, **kwargs):
+    def __init__(self, piezo_stage, \
+                 updatePosition_period = initial_updatePosition_period, \
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.piezo_stage = piezo_stage
         # set timer to update lasers status
+        self.updatePosition_period = updatePosition_period
         self.updateTimer = QtCore.QTimer()
         self.updateTimer.timeout.connect(self.read_position)
-        self.updateTimer.setInterval(updatePosition_period) # in ms
+        self.updateTimer.setInterval(self.updatePosition_period) # in ms
         self.updateTimer.start()
         self.move_absolute([10, 10, 10])
         return
@@ -432,14 +436,16 @@ class Backend(QtCore.QObject):
         self.piezo_stage.set_close_loop(close_flag)
         return
     
-    @pyqtSlot()
-    def closeBackend(self):
-        print('Shutting down piezo stage...')
-        self.piezo_stage.shutdown()
+    @pyqtSlot(bool)
+    def close_backend(self, main_app = True):
         print('Stopping updater (QtTimer)...')
         self.updateTimer.stop()
-        print('Exiting thread...')
-        workerThread.exit()
+        if main_app:
+            print('Shutting down piezo stage...')
+            self.piezo_stage.shutdown()
+            print('Exiting thread...')
+            tm.sleep(1)
+            workerThread.exit()
         return            
 
     def make_connections(self, frontend):
@@ -448,7 +454,7 @@ class Backend(QtCore.QObject):
         # frontend.set_reference_signal.connect(self.set_reference)
         frontend.go_to_pos_signal.connect(self.move_absolute)
         frontend.feedbackLoopSignal.connect(self.switch_feedback_loop_mode)
-        frontend.closeSignal.connect(self.closeBackend)
+        frontend.closeSignal.connect(self.close_backend)
         return
     
 #=====================================

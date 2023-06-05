@@ -75,7 +75,7 @@ correction_threshold = 0.020
 class Frontend(QtGui.QFrame):
 
     liveViewSignal = pyqtSignal(bool, float)
-    closeSignal = pyqtSignal()
+    closeSignal = pyqtSignal(bool)
     roiChangedSignal = pyqtSignal(bool, list)
     exposureChangedSignal = pyqtSignal(bool, float)
     binningChangedSignal = pyqtSignal(bool, int, float)
@@ -89,7 +89,8 @@ class Frontend(QtGui.QFrame):
     correctDriftSignal = pyqtSignal(bool)
     pidParamChangedSignal = pyqtSignal(bool, list)
     
-    def __init__(self, piezo_frontend, show_piezo_subGUI = True, *args, **kwargs):
+    def __init__(self, piezo_frontend, show_piezo_subGUI = True, main_app = True, \
+                 connect_to_piezo_module = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # set the title of the window
         title = "XY stabilization module"
@@ -101,14 +102,17 @@ class Frontend(QtGui.QFrame):
         self.image = np.array([])
         self.roi = {}
         self.correct_drift_flag = False
+        self.main_app = main_app
+        self.connect_to_piezo_module = connect_to_piezo_module
+        self.piezo_frontend = piezo_frontend
         self.setUpGUI(show_piezo_subGUI)
         return
             
     def setUpGUI(self, show_piezo_subGUI):
-        
         # Image
-        imageWidget = pg.GraphicsLayoutWidget()
-        self.vb = imageWidget.addPlot()
+        self.imageWidget = pg.GraphicsLayoutWidget()
+        self.vb = self.imageWidget.addPlot()
+        self.vb.setAspectLocked()
         self.img = pg.ImageItem()
         self.img.setOpts(axisOrder = 'row-major')
         self.vb.addItem(self.img)
@@ -118,7 +122,7 @@ class Frontend(QtGui.QFrame):
         # 'thermal', 'flame', 'yellowy', 'bipolar', 'spectrum',
         # 'cyclic', 'greyclip', 'grey'
         self.hist.vb.setLimits(yMin = 0, yMax = 65536) # 16-bit camera
-        imageWidget.addItem(self.hist, row = 0, col = 1)
+        self.imageWidget.addItem(self.hist, row = 0, col = 1)
         # if performance is an issue, try scaleToImage
         # add centers of fiducials over camera image
         self.xy_fiducials = pg.ScatterPlotItem(size = 5, pen = pg.mkPen('r', width = 1), 
@@ -355,8 +359,12 @@ class Frontend(QtGui.QFrame):
         hbox = QtGui.QHBoxLayout(self)
 
         viewDock = Dock('Camera', size = (20, 200)) # optical format is squared
-        viewDock.addWidget(imageWidget)
+        viewDock.addWidget(self.imageWidget)
         dockArea.addDock(viewDock)
+        
+        driftDock = Dock('Drift vs time', size = (20, 20))
+        driftDock.addWidget(driftWidget)
+        dockArea.addDock(driftDock, 'below', viewDock)
         
         liveview_paramDock = Dock('Live view parameters', size = (1, 20))
         liveview_paramDock.addWidget(self.liveviewWidget)
@@ -365,13 +373,9 @@ class Frontend(QtGui.QFrame):
         fiducialsDock = Dock('Fiducials selection', size = (20, 20))
         fiducialsDock.addWidget(self.fiducialsWidget)
         dockArea.addDock(fiducialsDock, 'right', liveview_paramDock)
-        
-        driftDock = Dock('Drift vs time', size = (20, 20))
-        driftDock.addWidget(driftWidget)
-        dockArea.addDock(driftDock, 'bottom', fiducialsDock)
-        
+
         ## Add Piezo stage GUI module if asked
-        self.piezoWidget = piezo_frontend
+        self.piezoWidget = self.piezo_frontend
         if show_piezo_subGUI:
             piezoDock = Dock('Piezo stage')
             piezoDock.addWidget(self.piezoWidget)
@@ -612,7 +616,7 @@ class Frontend(QtGui.QFrame):
             event.accept()
             print('Closing GUI...')
             self.close()
-            self.closeSignal.emit()
+            self.closeSignal.emit(self.main_app)
             tm.sleep(1)
             app.quit()
         else:
@@ -626,7 +630,8 @@ class Frontend(QtGui.QFrame):
         backend.filePathSignal.connect(self.get_file_path)
         backend.getFiducialsDataSignal.connect(self.retrieve_fiducials_data)
         backend.sendFittedDataSignal.connect(self.receive_fitted_data)
-        backend.piezoWorker.make_connections(self.piezoWidget)
+        if self.connect_to_piezo_module:
+            backend.piezoWorker.make_connections(self.piezoWidget)
         return
     
 #=====================================
@@ -643,8 +648,9 @@ class Backend(QtCore.QObject):
     tempSignal = pyqtSignal(list)
     filePathSignal = pyqtSignal(str)
     
-    def __init__(self, piezo, piezo_backend, *args, **kwargs):
+    def __init__(self, piezo, piezo_backend, connect_to_piezo_module = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.connect_to_piezo_module = connect_to_piezo_module
         self.piezo_stage = piezo
         self.piezoWorker = piezo_backend
         self.viewTimer = QtCore.QTimer()
@@ -966,18 +972,20 @@ class Backend(QtCore.QObject):
             self.filePathSignal.emit(self.file_path)
         return
     
-    @pyqtSlot()
-    def close_backend(self):
+    @pyqtSlot(bool)
+    def close_backend(self, main_app = True):
+        print('Stopping pco camera...')
         cam.stop()
         print('Stopping QtTimers...')
-        self.piezoWorker.updateTimer.stop()
         self.viewTimer.stop()
         self.tempTimer.stop()
-        print('Shutting down piezo stage...')
-        self.piezo_stage.shutdown()
-        print('Exiting thread...')
-        tm.sleep(1)
-        workerThread.exit()
+        if main_app:
+            self.piezoWorker.updateTimer.stop()
+            print('Shutting down piezo stage...')
+            self.piezo_stage.shutdown()
+            print('Exiting thread...')
+            tm.sleep(1)
+            workerThread.exit()
         return
     
     def make_connections(self, frontend):
@@ -995,7 +1003,8 @@ class Backend(QtCore.QObject):
         frontend.savedriftSignal.connect(self.save_drift_curve)
         frontend.correctDriftSignal.connect(self.set_correct_drift_flag)
         frontend.pidParamChangedSignal.connect(self.new_pid_params)
-        frontend.piezoWidget.make_connections(self.piezoWorker)
+        if self.connect_to_piezo_module:
+            frontend.piezoWidget.make_connections(self.piezoWorker)
         return
     
 #=====================================

@@ -58,14 +58,14 @@ class Frontend(QtGui.QFrame):
     liveViewSignal = pyqtSignal(bool, float)
     moveSignal = pyqtSignal(float, float, float, float)
     fixcursorSignal = pyqtSignal(float, float)
-    closeSignal = pyqtSignal()
+    closeSignal = pyqtSignal(bool)
     exposureChangedSignal = pyqtSignal(bool, float)
     gainChangedSignal = pyqtSignal(bool, int)
     takePictureSignal = pyqtSignal(bool, float)
     saveSignal = pyqtSignal()
     setWorkDirSignal = pyqtSignal()
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, main_app = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.setUpGUI()
         self.setGeometry(5, 30, 1500, 800) # x pos, y pos, width, height
@@ -75,6 +75,7 @@ class Frontend(QtGui.QFrame):
         self.get_image(initial_image_np)
         self.hist._updateView
         self.gain = initial_gain
+        self.main_app = main_app
         return
             
     def setUpGUI(self):
@@ -83,8 +84,8 @@ class Frontend(QtGui.QFrame):
         optical_format = color_cam_sensor_width_pixels/color_cam_sensor_height_pixels
 
         # Image
-        imageWidget = pg.GraphicsLayoutWidget()
-        self.vb = imageWidget.addPlot()
+        self.imageWidget = pg.GraphicsLayoutWidget()
+        self.vb = self.imageWidget.addPlot()
         self.img = pg.ImageItem()
         self.vb.setAspectLocked()
         self.img.setOpts(axisOrder = 'row-major')
@@ -94,7 +95,7 @@ class Frontend(QtGui.QFrame):
         self.hist.disableAutoHistogramRange()
         self.hist.vb.setRange(yRange=[0,256])
         self.hist.vb.setLimits(yMin = 0, yMax = 256) # 10-bit camera
-        imageWidget.addItem(self.hist, row = 0, col = 1)
+        self.imageWidget.addItem(self.hist, row = 0, col = 1)
 
         self.autolevel_tickbox = QtGui.QCheckBox('Autolevel')
         self.initial_autolevel_state = True
@@ -132,7 +133,7 @@ class Frontend(QtGui.QFrame):
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
         self.exp_time_edit.setValidator(QtGui.QIntValidator(1, 26843))
         
-        # Exposure time
+        # Gain
         gain_label = QtGui.QLabel('Gain:')
         self.gain_slider = QtGui.QSlider(QtCore.Qt.Horizontal)
         self.gain_slider.setMinimum(0)
@@ -245,7 +246,7 @@ class Frontend(QtGui.QFrame):
         hbox = QtGui.QHBoxLayout(self)
 
         viewDock = Dock('Camera', size = (200*optical_format, 200))
-        viewDock.addWidget(imageWidget)
+        viewDock.addWidget(self.imageWidget)
         # viewDock.hideTitleBar()
         dockArea.addDock(viewDock)
         
@@ -377,7 +378,7 @@ class Frontend(QtGui.QFrame):
             event.accept()
             print('Closing GUI...')
             self.close()
-            self.closeSignal.emit()
+            self.closeSignal.emit(self.main_app)
             tm.sleep(1)
             app.quit()
         else:
@@ -522,15 +523,17 @@ class Backend(QtCore.QObject):
             self.filePathSignal.emit(self.file_path)
         return
     
-    @pyqtSlot()
-    def closeBackend(self):
+    @pyqtSlot(bool)
+    def closeBackend(self, main_app = True):
         print('Dispossing camera objects...')
         tl_cam.dispose_cam(color_cam)
         tl_cam.dispose_sdk(camera_constructor)
         print('Stopping updater (QtTimer)...')
         self.viewTimer.stop()
-        print('Exiting thread...')
-        workerThread.exit()
+        if main_app:
+            print('Exiting thread...')
+            tm.sleep(1)
+            workerThread.exit()
         return
     
     def make_connections(self, frontend):

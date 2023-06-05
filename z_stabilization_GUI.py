@@ -47,8 +47,9 @@ initial_filepath = 'D:\\daily_data\\z_stabilization_cam' # save in SSD for fast 
 initial_filename = 'image_z_drift'
 viewTimer_update = 25 # in ms (makes no sense to go lower than the refresh rate of the screen)
 initial_tracking_period = 200 # in ms
-initial_exp_time = 10 # in ms
+initial_exp_time = 200 # in ms
 driftbox_length = 5 # in s
+initial_gain = 240 # int
 
 # inital ROI definition
 initial_vertical_pos = 450
@@ -84,7 +85,8 @@ initial_conversion_factor = 0.0245 # nm/px
     
 class Frontend(QtGui.QFrame):
 
-    closeSignal = pyqtSignal()
+    closeSignal = pyqtSignal(bool)
+    gainChangedSignal = pyqtSignal(bool, int)
     liveViewSignal = pyqtSignal(bool, float)
     exposureChangedSignal = pyqtSignal(bool, float)
     takePictureSignal = pyqtSignal(bool, float)
@@ -100,7 +102,8 @@ class Frontend(QtGui.QFrame):
     stabilizationStatusChangedSignal = pyqtSignal(bool)
     conversionFactorChangedSignal = pyqtSignal(float)
     
-    def __init__(self, piezo_frontend, show_piezo_subGUI = True, *args, **kwargs):
+    def __init__(self, piezo_frontend, show_piezo_subGUI = True, main_app = True, \
+                 connect_to_piezo_module = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # set the title of thw window
         title = "Z stabilization module"
@@ -109,6 +112,9 @@ class Frontend(QtGui.QFrame):
         self.roi = {}
         self.image = np.array([])
         self.stabilize = False
+        self.main_app = main_app
+        self.connect_to_piezo_module = connect_to_piezo_module
+        self.piezo_frontend = piezo_frontend
         self.setUpGUI(show_piezo_subGUI)
         return
             
@@ -117,8 +123,9 @@ class Frontend(QtGui.QFrame):
         optical_format = mono_cam_sensor_width_pixels/mono_cam_sensor_height_pixels
         
         # Image
-        imageWidget = pg.GraphicsLayoutWidget()
-        self.vb = imageWidget.addPlot()
+        self.imageWidget = pg.GraphicsLayoutWidget()
+        self.vb = self.imageWidget.addPlot()
+        self.vb.setAspectLocked()
         self.img = pg.ImageItem()
         self.img.setOpts(axisOrder = 'row-major')
         self.vb.addItem(self.img)
@@ -128,7 +135,7 @@ class Frontend(QtGui.QFrame):
         # 'thermal', 'flame', 'yellowy', 'bipolar', 'spectrum',
         # 'cyclic', 'greyclip', 'grey'
         self.hist.vb.setLimits(yMin = 0, yMax = 1024) # 10-bit camera
-        imageWidget.addItem(self.hist, row = 0, col = 1)
+        self.imageWidget.addItem(self.hist, row = 0, col = 1)
         # add center of reflection over camera image
         self.z_reflection = pg.ScatterPlotItem(size = 5, pen = pg.mkPen('r', width = 1), 
                                          symbol = 'o', brush = pg.mkBrush('r'))
@@ -181,6 +188,18 @@ class Frontend(QtGui.QFrame):
         self.exp_time_edit_previous = float(self.exp_time_edit.text())
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
         self.exp_time_edit.setValidator(QtGui.QIntValidator(1, 26843))
+        
+        # Gain
+        gain_label = QtGui.QLabel('Gain:')
+        self.gain_slider = QtGui.QSlider(QtCore.Qt.Horizontal)
+        self.gain_slider.setMinimum(0)
+        self.gain_slider.setMaximum(480)
+        self.gain_slider.setValue(initial_gain)
+        self.gain_slider.setTickPosition(QtGui.QSlider.TicksBelow)
+        self.gain_slider.setTickInterval(1)
+        self.gain_slider.sliderReleased.connect(self.gain_changed_check)
+        self.gain_value_label = QtGui.QLabel('0')
+        self.gain_value_label.setText('%d' % int(self.gain_slider.value()))
         
         # lock and track the z reflection position
         self.lock_z_position_button = QtGui.QPushButton('Lock and Track')
@@ -296,8 +315,12 @@ class Frontend(QtGui.QFrame):
         # Exposure time box
         layout_liveview.addWidget(exp_time_label,              8, 0)
         layout_liveview.addWidget(self.exp_time_edit,          8, 1)
+        # Gain box
+        layout_liveview.addWidget(gain_label,              9, 0)
+        layout_liveview.addWidget(self.gain_value_label,   9, 1)
+        layout_liveview.addWidget(self.gain_slider,        10, 0, 1, 2)
         # auto level
-        layout_liveview.addWidget(self.autolevel_tickbox,      9, 0)
+        layout_liveview.addWidget(self.autolevel_tickbox,      11, 0)
 
         # Z tracking selection dock
         self.zLockWidget = QtGui.QWidget()
@@ -317,49 +340,49 @@ class Frontend(QtGui.QFrame):
         layout_zLock.addWidget(self.intensity_threshold_value,         6, 1)
 
         # lock and track buttons
-        self.separatorLine = QFrame()
-        self.separatorLine.setFrameShape(QFrame.VLine)
-        self.separatorLine.setFrameShadow(QFrame.Raised)
-        layout_zLock.addWidget(self.separatorLine, 0, 2, 9, 1)
-        layout_zLock.addWidget(self.lock_z_position_button,         0, 3, 1, 2)
-        layout_zLock.addWidget(self.conversion_label,         1, 3)
-        layout_zLock.addWidget(self.conversion_value,         1, 4)
-        layout_zLock.addWidget(self.tracking_period_label,         2, 3)
-        layout_zLock.addWidget(self.tracking_period_value,         2, 4)
-        layout_zLock.addWidget(self.stabilize_z_button,         3, 3, 1, 2)
-        layout_zLock.addWidget(self.pid_label,         4, 3)
-        layout_zLock.addWidget(self.kp_label,         5, 3)
-        layout_zLock.addWidget(self.kp_value,         5, 4)
-        layout_zLock.addWidget(self.ki_label,         6, 3)
-        layout_zLock.addWidget(self.ki_value,         6, 4)
-        layout_zLock.addWidget(self.kd_label,         7, 3)
-        layout_zLock.addWidget(self.kd_value,         7, 4)
+        # self.separatorLine = QFrame()
+        # self.separatorLine.setFrameShape(QFrame.VLine)
+        # self.separatorLine.setFrameShadow(QFrame.Raised)
+        # layout_zLock.addWidget(self.separatorLine, 0, 2, 9, 1)
+        layout_zLock.addWidget(self.lock_z_position_button,         7, 0, 1, 2)
+        layout_zLock.addWidget(self.conversion_label,         8, 0)
+        layout_zLock.addWidget(self.conversion_value,         8, 1)
+        layout_zLock.addWidget(self.tracking_period_label,         9, 0)
+        layout_zLock.addWidget(self.tracking_period_value,         9, 1)
+        layout_zLock.addWidget(self.stabilize_z_button,         10, 0, 1, 2)
+        layout_zLock.addWidget(self.pid_label,         11, 0)
+        layout_zLock.addWidget(self.kp_label,         12, 0)
+        layout_zLock.addWidget(self.kp_value,         12, 1)
+        layout_zLock.addWidget(self.ki_label,         13, 0)
+        layout_zLock.addWidget(self.ki_value,         13, 1)
+        layout_zLock.addWidget(self.kd_label,         14, 0)
+        layout_zLock.addWidget(self.kd_value,         14, 1)
         
         # save drift
-        layout_zLock.addWidget(self.savedrift_tickbox,      8, 3)
+        layout_zLock.addWidget(self.savedrift_tickbox,      15, 0)
         
         # Place layouts and boxes
         dockArea = DockArea()
         hbox = QtGui.QHBoxLayout(self)
         
         viewDock = Dock('Camera', size = (200*optical_format, 200) )
-        viewDock.addWidget(imageWidget)
+        viewDock.addWidget(self.imageWidget)
         dockArea.addDock(viewDock)
         
         driftDock = Dock('Drift vs time', size = (20, 20))
         driftDock.addWidget(driftWidget)
-        dockArea.addDock(driftDock, 'right', viewDock)
+        dockArea.addDock(driftDock, 'below', viewDock)
         
         liveview_paramDock = Dock('Live view parameters')
         liveview_paramDock.addWidget(self.liveviewWidget)
-        dockArea.addDock(liveview_paramDock, 'bottom', driftDock)
+        dockArea.addDock(liveview_paramDock, 'right', viewDock)
 
         zLockDock = Dock('Axial stabilization control', size = (20, 20))
         zLockDock.addWidget(self.zLockWidget)
         dockArea.addDock(zLockDock, 'right', liveview_paramDock)
         
         ## Add Piezo stage GUI module if asked
-        self.piezoWidget = piezo_frontend
+        self.piezoWidget = self.piezo_frontend
         if show_piezo_subGUI:
             piezoDock = Dock('Piezo stage')
             piezoDock.addWidget(self.piezoWidget)
@@ -381,6 +404,15 @@ class Frontend(QtGui.QFrame):
         if threshold != self.threshold:
             self.threshold = threshold
             self.thresholdChangedSignal.emit(self.threshold)
+        return
+
+    def gain_changed_check(self):
+        self.gain_value_label.setText(format(int(self.gain_slider.value())))
+        self.gain = int(self.gain_value_label.text())
+        if self.live_view_button.isChecked():
+            self.gainChangedSignal.emit(True, self.gain)
+        else:
+            self.gainChangedSignal.emit(False, self.gain)
         return
 
     def roi_changed_check(self):
@@ -565,12 +597,10 @@ class Frontend(QtGui.QFrame):
                                            QtGui.QMessageBox.No |
                                            QtGui.QMessageBox.Yes)
         if reply == QtGui.QMessageBox.Yes:
-            tl_cam.dispose_cam(mono_cam)
-            tl_cam.dispose_sdk(camera_constructor)
             event.accept()
             print('Closing GUI...')
             self.close()
-            self.closeSignal.emit()
+            self.closeSignal.emit(self.main_app)
             tm.sleep(1)
             app.quit()
         else:
@@ -581,9 +611,10 @@ class Frontend(QtGui.QFrame):
     def make_connections(self, backend):
         backend.imageSignal.connect(self.get_image)
         backend.filePathSignal.connect(self.get_file_path)
-        backend.piezoWorker.make_connections(self.piezoWidget)
         backend.getReflectionDataSignal.connect(self.retrieve_reflection_data)
         backend.sendFittedDataSignal.connect(self.receive_cm_data)
+        if self.connect_to_piezo_module:
+            backend.piezoWorker.make_connections(self.piezoWidget)
         return
 
 #=====================================
@@ -599,8 +630,9 @@ class Backend(QtCore.QObject):
     getReflectionDataSignal = pyqtSignal()
     sendFittedDataSignal = pyqtSignal(np.ndarray, np.ndarray, float)
     
-    def __init__(self, piezo, piezo_backend, *args, **kwargs):
+    def __init__(self, piezo, piezo_backend, connect_to_piezo_module = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.connect_to_piezo_module = connect_to_piezo_module
         self.piezo_stage = piezo
         self.piezoWorker = piezo_backend
         self.viewTimer = QtCore.QTimer()
@@ -857,17 +889,31 @@ class Backend(QtCore.QObject):
             self.filePathSignal.emit(self.file_path) 
         return
 
-    @pyqtSlot()
-    def close_backend(self):
+    @pyqtSlot(bool, int)    
+    def change_gain(self, livebool, gain):
+        if livebool:
+            self.stop_liveview()
+            tl_cam.set_gain(camera, gain)
+            self.start_liveview(self.exposure_time_ms)
+        else:
+            tl_cam.set_gain(camera, gain)
+        return
+
+    @pyqtSlot(bool)
+    def close_backend(self, main_app = True):
+        print('Dispossing camera objects...')
+        tl_cam.dispose_cam(mono_cam)
+        tl_cam.dispose_sdk(camera_constructor)
         print('Stopping timers...')
-        self.piezoWorker.updateTimer.stop()
         self.viewTimer.stop()
         self.trackingTimer.stop()
-        print('Shutting down piezo stage...')
-        self.piezo_stage.shutdown()
-        print('Exiting threads...')
-        tm.sleep(1)
-        workerThread.exit()
+        if main_app:
+            self.piezoWorker.updateTimer.stop()
+            print('Shutting down piezo stage...')
+            self.piezo_stage.shutdown()
+            print('Exiting thread...')
+            tm.sleep(1)
+            workerThread.exit()
         return
 
     def make_connections(self, frontend):
@@ -882,10 +928,12 @@ class Backend(QtCore.QObject):
         frontend.trackingPeriodChangedSignal.connect(self.change_tracking_period)
         frontend.dataReflectionSignal.connect(self.receive_roi_data)
         frontend.thresholdChangedSignal.connect(self.new_threshold)
-        frontend.piezoWidget.make_connections(self.piezoWorker)
         frontend.pidParamChangedSignal.connect(self.new_pid_params)
         frontend.stabilizationStatusChangedSignal.connect(self.set_stabilization)
         frontend.conversionFactorChangedSignal.connect(self.new_conversion_factor)
+        frontend.gainChangedSignal.connect(self.change_gain)
+        if self.connect_to_piezo_module:
+            frontend.piezoWidget.make_connections(self.piezoWorker)
         return
       
 #=====================================

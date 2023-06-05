@@ -39,27 +39,33 @@ import xy_stabilization_GUI
 
 class Frontend(QtGui.QMainWindow):
     
-    closeSignal = pyqtSignal()
+    closeSignal = pyqtSignal(bool)
     # process_acquired_spectrum_signal = pyqtSignal()
     # filenameSignal = pyqtSignal(str)
     
-    def __init__(self, *args, **kwargs):
+    def __init__(self, piezo_frontend, main_app = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cwidget = QtGui.QWidget()
         self.setCentralWidget(self.cwidget)
         self.setWindowTitle('pyLock')
-        self.setGeometry(150, 30, 1400, 800) # x pos, y pos, width, height
+        self.setGeometry(5, 30, 1900, 800) # x pos, y pos, width, height
+        self.main_app = main_app
+        # import frontend modules
+        # piezo widget (frontend) must be imported in the main
+        # hide piezo GUI on the xy and z widgets
+        self.piezoWidget = piezo_frontend
+        self.zWidget = z_stabilization_GUI.Frontend(piezo_frontend, \
+                                                    show_piezo_subGUI = False, \
+                                                    main_app = False, \
+                                                    connect_to_piezo_module = False)
+        self.xyWidget = xy_stabilization_GUI.Frontend(piezo_frontend, \
+                                                    show_piezo_subGUI = False, \
+                                                    main_app = False, \
+                                                    connect_to_piezo_module = False)
         self.setUpGUI()
         return
     
     def setUpGUI(self):
-        # import frontend modules
-        # piezo widget (frontend) must be imported first
-        piezo_frontend = piezo_stage_GUI.Frontend()
-        self.piezoWidget = piezo_frontend
-        self.zWidget = z_stabilization_GUI.Frontend(piezo_frontend, show_piezo_subGUI=False)
-        self.xyWidget = xy_stabilization_GUI.Frontend(piezo_frontend, show_piezo_subGUI=False)
-
         # # modify from laser's GUI the spectrum acquisition buttons
         # self.lasersWidget.integration_time_label.setText('Integration time (s):')
         # self.lasersWidget.acquire_spectrum_button.setCheckable(True)
@@ -86,20 +92,20 @@ class Frontend(QtGui.QMainWindow):
         self.dockArea = dockArea
         grid.addWidget(self.dockArea)
         
+        ## Add piezo module
+        piezoDock = Dock('Piezostage control')
+        piezoDock.addWidget(self.piezoWidget)
+        self.dockArea.addDock(piezoDock)
+        
         ## Add xy stabilization module
         xyDock = Dock('xy stabilization')
         xyDock.addWidget(self.xyWidget)
-        self.dockArea.addDock(xyDock)
+        self.dockArea.addDock(xyDock, 'bottom', piezoDock)
         
         ## Add z stabilization module
         zDock = Dock('z stabilization')
         zDock.addWidget(self.zWidget)
-        self.dockArea.addDock(zDock, 'bottom', xyDock)
-        
-        ## Add piezo module
-        piezoDock = Dock('z stabilization')
-        piezoDock.addWidget(self.piezo_frontend)
-        self.dockArea.addDock(piezoDock, 'bottom', xyDock)
+        self.dockArea.addDock(zDock, 'left', xyDock)
         return
        
     # def process_spectrum_button_check(self):
@@ -140,7 +146,7 @@ class Frontend(QtGui.QMainWindow):
             event.accept()
             print('Closing GUI...')
             self.close()
-            self.closeSignal.emit()
+            self.closeSignal.emit(self.main_app)
             tm.sleep(1)
             app.quit()
         else:
@@ -150,8 +156,9 @@ class Frontend(QtGui.QMainWindow):
     
     def make_modules_connections(self, backend):    
         # connect Frontend modules with their respectives Backend modules
-        # backend.apdWorker.make_connections(self.apdWidget)
-        # backend.lasersWorker.make_connections(self.lasersWidget)
+        backend.piezoWorker.make_connections(self.piezoWidget)
+        backend.xyWorker.make_connections(self.xyWidget)
+        backend.zWorker.make_connections(self.zWidget)
         # backend.spectrum_finished_signal.connect(self.spectrum_finished)
         # backend.apd_acq_started_signal.connect(self.apd_acq_started)
         # backend.apd_acq_stopped_signal.connect(self.apd_acq_stopped)
@@ -165,16 +172,20 @@ class Frontend(QtGui.QMainWindow):
         
 class Backend(QtCore.QObject):
     
-    apd_acq_started_signal = pyqtSignal()
-    apd_acq_stopped_signal = pyqtSignal()
-    spectrum_finished_signal = pyqtSignal()
+    # apd_acq_started_signal = pyqtSignal()
+    # apd_acq_stopped_signal = pyqtSignal()
+    # spectrum_finished_signal = pyqtSignal()
     
-    def __init__(self, piezo_stage, *args, **kwargs):
+    def __init__(self, piezo_stage, piezo_backend, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.piezo_stage = piezo_stage
-        self.piezoWorker = piezo_stage_GUI.Backend(self.piezo_stage)
-        self.xyWorker = xy_stabilization_GUI.Backend(self.piezo_stage, self.piezoWorker)
-        self.zWorker = z_stabilization_GUI.Backend(self.piezo_stage, self.piezoWorker)
+        self.piezoWorker = piezo_backend
+        self.zWorker = z_stabilization_GUI.Backend(self.piezo_stage, \
+                                                   self.piezoWorker, \
+                                                   connect_to_piezo_module = False)
+        self.xyWorker = xy_stabilization_GUI.Backend(self.piezo_stage, \
+                                                     self.piezoWorker, \
+                                                     connect_to_piezo_module = False)
         # self.scanTimer = QtCore.QTimer()
         # self.scanTimer.timeout.connect(self.continue_scan) # funciton to connect after each interval
         # self.scanTimer.setInterval(check_button_state) # in ms
@@ -283,22 +294,26 @@ class Backend(QtCore.QObject):
     #     print('New filename has been set:', self.filename)
     #     return
     
-    # @pyqtSlot()
-    # def close_all_backends(self):
-    #     print('Exiting thread...')
-    #     workerThread.exit()
-    #     print('Closing all Backends...')
-    #     self.lasersWorker.closeBackend()
-    #     self.apdWorker.closeBackend()
-    #     print('Stopping updater (QtTimer)...')
-    #     self.scanTimer.stop()
-    #     return
+    @pyqtSlot(bool)
+    def close_all_backends(self, main_app = True):
+        print('Closing all backends...')
+        self.piezoWorker.close_backend(main_app = False)
+        self.xyWorker.close_backend(main_app = False)
+        self.zWorker.close_backend(main_app = False)
+        # print('Stopping updater (QtTimer)...')
+        # self.scanTimer.stop()
+        if main_app:
+            print('Exiting thread...')
+            tm.sleep(1)
+            workerThread.exit()
+        return
     
     def make_modules_connections(self, frontend):
-        # frontend.closeSignal.connect(self.close_all_backends)
-        # # connect Backend modules with their respectives Frontend modules
-        # frontend.apdWidget.make_connections(self.apdWorker)
-        # frontend.lasersWidget.make_connections(self.lasersWorker)
+        frontend.closeSignal.connect(self.close_all_backends)
+        # connect Backend modules with their respectives Frontend modules
+        frontend.piezoWidget.make_connections(self.piezoWorker)
+        frontend.xyWidget.make_connections(self.xyWorker)
+        frontend.zWidget.make_connections(self.zWorker)
         # # connection that triggers the measurement of the spectrum
         # frontend.lasersWidget.acquire_spectrum_button_signal.connect(self.acquire_spectrum)
         # # connection that process the acquired data
@@ -315,26 +330,35 @@ class Backend(QtCore.QObject):
 #=====================================
       
 if __name__ == '__main__':
-    # init stage
-    piezo = piezo_stage_GUI.piezo_stage  
-
     # make application
     app = QtGui.QApplication([])
     
+    # init stage
+    piezo = piezo_stage_GUI.piezo_stage  
+    piezo_frontend = piezo_stage_GUI.Frontend(main_app = False)
+    piezo_backend = piezo_stage_GUI.Backend(piezo)
+    
     # create both classes
-    gui = Frontend()
-    worker = Backend(piezo)
+    gui = Frontend(piezo_frontend)
+    worker = Backend(piezo, piezo_backend)
        
     ###################################
-    # # move backend to another thread
-    # workerThread = QtCore.QThread()
-    # worker.scanTimer.moveToThread(workerThread)
-    # worker.moveToThread(workerThread)
-    # # for APD signal displaying
-    # worker.apdWorker.updateTimer.moveToThread(workerThread)
-    # worker.apdWorker.moveToThread(workerThread)
-    # # for lasers
-    # worker.lasersWorker.moveToThread(workerThread)
+    # move backend to another thread
+    workerThread = QtCore.QThread()
+    # move the timer of the piezo and its main worker
+    worker.piezoWorker.updateTimer.moveToThread(workerThread)
+    worker.piezoWorker.moveToThread(workerThread)
+    # move the timers of the xy and its main worker
+    worker.xyWorker.viewTimer.moveToThread(workerThread)
+    worker.xyWorker.tempTimer.moveToThread(workerThread)
+    worker.xyWorker.trackingTimer.moveToThread(workerThread)
+    worker.xyWorker.moveToThread(workerThread)
+    # move the timers of the z and its main worker
+    worker.zWorker.trackingTimer.moveToThread(workerThread)
+    worker.zWorker.viewTimer.moveToThread(workerThread)
+    worker.zWorker.moveToThread(workerThread)
+    # move the main worker
+    worker.moveToThread(workerThread)
 
     ###################################
 
@@ -343,7 +367,7 @@ if __name__ == '__main__':
     gui.make_modules_connections(worker)
     
     # start thread
-    # workerThread.start()
+    workerThread.start()
     
     gui.show()
     app.exec()
