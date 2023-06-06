@@ -34,7 +34,7 @@ else:
 print(piezo_stage.get_info())
 print('Zeroing the piezo stage. This step takes around 30 s. Please wait...\n')
 # perform zero routine for all axis
-# piezo_stage.zero('all')
+piezo_stage.zero('all')
 
 # time period used to update stage position
 initial_updatePosition_period = 500 # in ms

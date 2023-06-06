@@ -59,12 +59,12 @@ class Frontend(QtGui.QMainWindow):
         self.lasersWidget.acquire_spectrum_button.setCheckable(True)
         self.lasersWidget.acquire_spectrum_button.clicked.connect(self.lasersWidget.acquire_spectrum_button_check)
         self.lasersWidget.acquire_spectrum_button.setStyleSheet(
-                "QPushButton { background-color: lightgrey; }"
+                "QPushButton { background-color: default; }"
                 "QPushButton::checked { background-color: red; }")
         self.lasersWidget.integration_time_comment.setText('Attention: It overrides Duration variable of the APD trace.')
         self.lasersWidget.process_spectrum_button.clicked.connect(self.process_spectrum_button_check)
         self.lasersWidget.process_spectrum_button.setStyleSheet(
-                "QPushButton { background-color: lightgrey; }"
+                "QPushButton { background-color: default; }"
                 "QPushButton::checked { background-color: lightgreen; }")
         self.lasersWidget.filename_label.setText('Filename (.dat)')
         self.lasersWidget.filename_name.setFixedWidth(200)
@@ -160,8 +160,8 @@ class Backend(QtCore.QObject):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.lasersWorker = laser_control_GUI.Backend(self.common_variable)
-        self.apdWorker = apd_trace_GUI.Backend(self.common_variable)
+        self.lasersWorker = laser_control_GUI.Backend()
+        self.apdWorker = apd_trace_GUI.Backend()
         self.scanTimer = QtCore.QTimer()
         self.scanTimer.timeout.connect(self.continue_scan) # funciton to connect after each interval
         self.scanTimer.setInterval(check_button_state) # in ms
@@ -222,7 +222,7 @@ class Backend(QtCore.QObject):
                 else:
                     print('\nWavelength has not been changed.')
                     print('Ti:Sa status: ', status)
-            
+            # TODO
             # - apd acquisiition, save, name definition
             # - start over
         return
@@ -312,13 +312,14 @@ if __name__ == '__main__':
     ###################################
     # move backend to another thread
     workerThread = QtCore.QThread()
-    worker.scanTimer.moveToThread(workerThread)
-    worker.moveToThread(workerThread)
     # for APD signal displaying
     worker.apdWorker.updateTimer.moveToThread(workerThread)
     worker.apdWorker.moveToThread(workerThread)
     # for lasers
     worker.lasersWorker.moveToThread(workerThread)
+    # now the master backend
+    worker.scanTimer.moveToThread(workerThread)
+    worker.moveToThread(workerThread)
 
     ###################################
 

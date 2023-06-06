@@ -174,12 +174,15 @@ def get_mono_image(camera):
         # image object:
         mono_image = np.copy(frame.image_buffer)
         mono_image_pil = pil.fromarray(mono_image)
+        flag_ok = True
     else:
-        print("Timeout reached during polling. Program exiting...")
-        stop_camera(camera)
+        print("\nTimeout reached during polling. None image returned.")
+        # stop_camera(camera)
         mono_image = None
         mono_image_pil = None
-    return mono_image, mono_image_pil
+        flag_ok = False
+    return mono_image, mono_image_pil, flag_ok
+
 
 def get_color_image(camera, mono_to_color_processor):
     color_cam_sensor_width_pixels, color_cam_sensor_height_pixels, \
@@ -193,18 +196,20 @@ def get_color_image(camera, mono_to_color_processor):
                                                     color_cam_sensor_width_pixels, \
                                                     3)
         color_image_pil = pil.fromarray(color_image_data, mode='RGB')
+        flag_ok = True
     else:
-        print("Timeout reached during polling. Program exiting...")
-        stop_camera(camera)
+        print("\nTimeout reached during polling. None image returned.")
+        # stop_camera(camera)
         color_image_data = None
         color_image_pil = None
-    return color_image_data, color_image_pil
+        flag_ok = False
+    return color_image_data, color_image_pil, flag_ok
 
 def get_image(camera, mono_to_color_processor, mono_color_string):
     if mono_color_string == 'mono':
-        image_data, image_pil = get_mono_image(camera)
+        image_data, image_pil, flag_ok = get_mono_image(camera)
     elif mono_color_string == 'color':
-        image_data, image_pil = get_color_image(camera, mono_to_color_processor)
+        image_data, image_pil, flag_ok = get_color_image(camera, mono_to_color_processor)
     else:
         print('\nWARNING! Select properly mono_color_string.')
         print('mono_color_string is:', mono_color_string)

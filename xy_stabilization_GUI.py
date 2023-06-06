@@ -47,15 +47,15 @@ initial_filename = 'image_pco'
 # timers
 viewTimer_update = 25 # in ms (makes no sense to go lower than the refresh rate of the screen)
 tempTimer_update = 5000 # in ms
-initial_tracking_period = 200 # in ms
+initial_tracking_period = 100 # in ms
 initial_bix_size = 51 # always odd number pixels
 driftbox_length = 10.0 # in seconds
 
 # PID constants
 # DO NOT CHANGE
-initial_kp = 0.2 # proportinal factor of the PID
-initial_ki = 0.03 # integral factor of the PID
-initial_kd = 0.01 # derivative factor of the PID
+initial_kp = 0.1 # proportinal factor of the PID
+initial_ki = 0.015 # integral factor of the PID
+initial_kd = 0.005 # derivative factor of the PID
 # working values (tested with tracking periods of 100, 200, 300 and 500 ms)
 # the shorter the time, the longer the transitory period
 # initial_kp = 0.2 # proportinal factor of the PID
@@ -64,7 +64,7 @@ initial_kd = 0.01 # derivative factor of the PID
 # correction threshold in um
 # above this value (distance) the software starts to apply a correction
 # to compensate the drift
-correction_threshold = 0.020
+initial_correction_threshold = 0.005
 
 #=====================================
 
@@ -88,6 +88,7 @@ class Frontend(QtGui.QFrame):
     savedriftSignal = pyqtSignal()
     correctDriftSignal = pyqtSignal(bool)
     pidParamChangedSignal = pyqtSignal(bool, list)
+    correctionThresholdChangedSignal = pyqtSignal(float)
     
     def __init__(self, piezo_frontend, show_piezo_subGUI = True, main_app = True, \
                  connect_to_piezo_module = True, *args, **kwargs):
@@ -142,7 +143,6 @@ class Frontend(QtGui.QFrame):
         self.working_dir_button = QtGui.QPushButton('Select directory')
         self.working_dir_button.clicked.connect(self.set_working_dir)
         self.working_dir_button.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: red; }")
         self.working_dir_label = QtGui.QLabel('Working directory:')
         self.filepath = initial_filepath
@@ -154,20 +154,17 @@ class Frontend(QtGui.QFrame):
         self.take_picture_button.setCheckable(False)
         self.take_picture_button.clicked.connect(self.take_picture_button_check)
         self.take_picture_button.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: red; }")
         
         self.save_picture_button = QtGui.QPushButton('Save picture')
         self.save_picture_button.clicked.connect(self.save_button_check)
         self.save_picture_button.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: red; }")
         
         self.live_view_button = QtGui.QPushButton('Live view')
         self.live_view_button.setCheckable(True)
         self.live_view_button.clicked.connect(self.liveview_button_check)
         self.live_view_button.setStyleSheet(
-            "QPushButton { background-color: yellow; }"
             "QPushButton:pressed { background-color: red; }"
             "QPushButton::checked { background-color: red; }")
 
@@ -237,7 +234,6 @@ class Frontend(QtGui.QFrame):
         self.create_ROIs_button.setCheckable(True)
         self.create_ROIs_button.clicked.connect(self.create_ROIs)
         self.create_ROIs_button.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: red; }"
             "QPushButton::checked { background-color: steelblue; }")
         # lock and track the fiducials
@@ -246,23 +242,30 @@ class Frontend(QtGui.QFrame):
         self.lock_ROIs_button.setCheckable(True)
         self.lock_ROIs_button.clicked.connect(self.lock_and_track)
         self.lock_ROIs_button.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: red; }"
             "QPushButton::checked { background-color: limegreen; }")
-        self.correct_drift_button = QtGui.QPushButton('Correct drift')
+        self.correct_drift_button = QtGui.QPushButton('Stabilize xy position')
         self.correct_drift_button.setToolTip('If active, drift will be corrected. Leave inactive for tracking only.')
         self.correct_drift_button.setCheckable(True)
         self.correct_drift_button.clicked.connect(self.correct_drift_status)
         self.correct_drift_button.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: red; }"
-            "QPushButton::checked { background-color: springgreen; }")
+            "QPushButton::checked { background-color: orange; }")
+
         # tracking period
         self.tracking_period_label = QtGui.QLabel('Tracking period (s):')
         self.tracking_period_value = QtGui.QLineEdit(str(initial_tracking_period/1000))
         self.tracking_period = initial_tracking_period
         self.tracking_period_value.setToolTip('Period to measure fiducial markers\' position.')
         self.tracking_period_value.editingFinished.connect(self.tracking_period_changed_check)
+        
+        # drift threshold
+        self.correction_threshold_label = QtGui.QLabel('Drift threshold (μm):')
+        self.correction_threshold_value = QtGui.QLineEdit(str(initial_correction_threshold))
+        self.correction_threshold_value.editingFinished.connect(self.correction_threshold_changed)
+        self.correction_threshold_value.setToolTip('Above this threshold the drift correction will be applied.')
+        self.correction_threshold = initial_correction_threshold
+        
         # save drift trace button
         self.savedrift_tickbox = QtGui.QCheckBox('Save drift curve')
         self.initial_state_savedrift = False
@@ -270,6 +273,7 @@ class Frontend(QtGui.QFrame):
         self.savedrift_tickbox.setText('Save drift data when unlocking')
         self.savedrift_tickbox.stateChanged.connect(self.save_drift_trace)
         self.savedrift_bool = self.initial_state_savedrift
+        
         # PID parameters
         self.pid_label = QtGui.QLabel('PID parameters')
         self.kp_label = QtGui.QLabel('K_proportional:')
@@ -344,15 +348,17 @@ class Frontend(QtGui.QFrame):
         layout_fiducials.addWidget(self.correct_drift_button,         4, 0, 1, 2)
         layout_fiducials.addWidget(self.tracking_period_label,         5, 0)
         layout_fiducials.addWidget(self.tracking_period_value,         5, 1)
-        layout_fiducials.addWidget(self.pid_label,         6, 0)
-        layout_fiducials.addWidget(self.kp_label,         7, 0)
-        layout_fiducials.addWidget(self.kp_value,         7, 1)
-        layout_fiducials.addWidget(self.ki_label,         8, 0)
-        layout_fiducials.addWidget(self.ki_value,         8, 1)
-        layout_fiducials.addWidget(self.kd_label,         9, 0)
-        layout_fiducials.addWidget(self.kd_value,         9, 1)
+        layout_fiducials.addWidget(self.correction_threshold_label,         6, 0)
+        layout_fiducials.addWidget(self.correction_threshold_value,         6, 1)
+        layout_fiducials.addWidget(self.pid_label,         7, 0)
+        layout_fiducials.addWidget(self.kp_label,         8, 0)
+        layout_fiducials.addWidget(self.kp_value,         8, 1)
+        layout_fiducials.addWidget(self.ki_label,         9, 0)
+        layout_fiducials.addWidget(self.ki_value,         9, 1)
+        layout_fiducials.addWidget(self.kd_label,         10, 0)
+        layout_fiducials.addWidget(self.kd_value,         10, 1)
         # save drift
-        layout_fiducials.addWidget(self.savedrift_tickbox,      10, 0)
+        layout_fiducials.addWidget(self.savedrift_tickbox,      11, 0)
         
         # Place layouts and boxes
         dockArea = DockArea()
@@ -398,6 +404,13 @@ class Frontend(QtGui.QFrame):
                 self.pidParamChangedSignal.emit(False, pid_param_list)
         return       
     
+    def correction_threshold_changed(self):
+        correction_threshold = float(self.correction_threshold_value.text()) # in nm
+        if correction_threshold != self.correction_threshold:
+            self.correction_threshold = correction_threshold
+            self.correctionThresholdChangedSignal.emit(self.correction_threshold)
+        return
+    
     def create_ROIs(self):
         # create ROIs for the fiducial markers
         self.number_of_fiducials = int(self.number_of_fiducials_value.text())
@@ -427,10 +440,8 @@ class Frontend(QtGui.QFrame):
                 self.data_ROI = {}
                 self.coord_ROI = {}
                 N = int(driftbox_length*1000/self.tracking_period)
-                self.error_to_plot = np.empty((N, 2))
-                self.error_to_plot[:] = np.nan
-                self.time_to_plot = np.empty(N)
-                self.time_to_plot[:] = np.nan
+                self.error_to_plot = np.zeros((N, 2))
+                self.time_to_plot = np.zeros(N)
             else:
                 print('Warning! Lock and Track can only be used if fiducials\' ROIs have been created.')
         else:
@@ -475,6 +486,9 @@ class Frontend(QtGui.QFrame):
         self.driftPlot.plot(x = self.time_to_plot, y = self.error_to_plot[:, 1], \
                             pen = pg.mkPen('b'))
         self.driftPlot.setXRange(timestamp - driftbox_length, timestamp)
+        ymin = min(np.mean(self.error_to_plot, axis=1) - 5*np.std(self.error_to_plot, ddof=1, axis=1))
+        ymax = max(np.mean(self.error_to_plot, axis=1) + 5*np.std(self.error_to_plot, ddof=1, axis=1))
+        self.driftPlot.setYRange(ymin, ymax)
         for i in range(self.number_of_fiducials):
             # draw center of fiducials, convert um to pixels
             pixel_size_um = self.pixel_size/1000
@@ -679,6 +693,7 @@ class Backend(QtCore.QObject):
                     initial_roi_list[1], \
                     initial_roi_list[2], \
                     initial_roi_list[3])
+        self.correction_threshold = initial_correction_threshold
         return
     
     @pyqtSlot(bool, list)    
@@ -867,10 +882,10 @@ class Backend(QtCore.QObject):
         correction_y = float(correction[1])
         # use the worker to send the instructions
         # only if the drift correction is larger than a threshold
-        if abs(error_x) > correction_threshold:
+        if abs(error_x) > self.correction_threshold:
             # print('correction x %.0f nm ' % (correction_x*1000))
             self.piezoWorker.move_relative('x', correction_x)
-        if abs(error_y) > correction_threshold:
+        if abs(error_y) > self.correction_threshold:
             # print('correction y %.0f nm' % (correction_y*1000))
             self.piezoWorker.move_relative('y', correction_y)
         return
@@ -950,6 +965,12 @@ class Backend(QtCore.QObject):
         self.correct_drift_flag = flag
         return    
     
+    @pyqtSlot(float)
+    def correction_threshold_changed(self, new_correction_threshold):
+        print('Correction threshold changed to {:.0f} nm'.format(new_correction_threshold))
+        self.correction_threshold = new_correction_threshold
+        return
+    
     @pyqtSlot()    
     def save_picture(self):
         timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
@@ -1003,6 +1024,7 @@ class Backend(QtCore.QObject):
         frontend.savedriftSignal.connect(self.save_drift_curve)
         frontend.correctDriftSignal.connect(self.set_correct_drift_flag)
         frontend.pidParamChangedSignal.connect(self.new_pid_params)
+        frontend.correctionThresholdChangedSignal.connect(self.correction_threshold_changed)
         if self.connect_to_piezo_module:
             frontend.piezoWidget.make_connections(self.piezoWorker)
         return
@@ -1032,6 +1054,7 @@ if __name__ == '__main__':
     worker.tempTimer.moveToThread(workerThread)
     worker.trackingTimer.moveToThread(workerThread)
     worker.piezoWorker.updateTimer.moveToThread(workerThread)
+    worker.piezoWorker.moveToThread(workerThread)
     worker.moveToThread(workerThread)
     
     # connect both classes 

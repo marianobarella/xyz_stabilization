@@ -45,7 +45,7 @@ initial_gain = 240 # int
 
 # initial fake image
 initial_image_np = 128*np.ones((1080, 1440, 3))
-
+dummy_image_np = initial_image_np
 
 #=====================================
 
@@ -67,15 +67,15 @@ class Frontend(QtGui.QFrame):
     
     def __init__(self, main_app = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.setUpGUI()
-        self.setGeometry(5, 30, 1500, 800) # x pos, y pos, width, height
+        self.setGeometry(5, 30, 900, 500) # x pos, y pos, width, height
         # set the title of thw window
         title = "Live view module"
         self.setWindowTitle(title)
-        self.get_image(initial_image_np)
-        self.hist._updateView
         self.gain = initial_gain
         self.main_app = main_app
+        self.setUpGUI()
+        self.get_image(initial_image_np)
+        self.hist._updateView
         return
             
     def setUpGUI(self):
@@ -109,20 +109,17 @@ class Frontend(QtGui.QFrame):
         self.take_picture_button.setCheckable(False)
         self.take_picture_button.clicked.connect(self.take_picture_button_check)
         self.take_picture_button.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: red; }")
         
         self.save_picture_button = QtGui.QPushButton('Save picture')
         self.save_picture_button.clicked.connect(self.save_button_check)
         self.save_picture_button.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: blue; }")
         
         self.live_view_button = QtGui.QPushButton('Live view')
         self.live_view_button.setCheckable(True)
         self.live_view_button.clicked.connect(self.liveview_button_check)
         self.live_view_button.setStyleSheet(
-            "QPushButton { background-color: yellow; }"
             "QPushButton:pressed { background-color: red; }"
             "QPushButton::checked { background-color: red; }")
 
@@ -152,7 +149,6 @@ class Frontend(QtGui.QFrame):
         self.working_dir_button = QtGui.QPushButton('Select directory')
         self.working_dir_button.clicked.connect(self.set_working_dir)
         self.working_dir_button.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: palegreen; }")
         self.working_dir_label = QtGui.QLabel('Working directory:')
         self.filepath = initial_filepath
@@ -167,7 +163,7 @@ class Frontend(QtGui.QFrame):
         # Cursor pointer
         self.point_graph_cursor = pg.ScatterPlotItem(size = 25, 
                                              symbol = 'crosshair', 
-                                             pen = 'w',
+                                             pen = 'r',
                                              brush = None)
         self.point_graph_cursor.setData([int(max_y_cursor/2)], [int(max_x_cursor/2)])
         self.vb.addItem(self.point_graph_cursor)
@@ -361,6 +357,18 @@ class Frontend(QtGui.QFrame):
         self.img.setImage(image, autoLevels = self.autolevel_bool)
         return
     
+    @pyqtSlot()
+    def liveview_stopped(self):
+        # uncheck liveview button
+        self.live_view_button.setChecked(False)
+        return
+    
+    @pyqtSlot()
+    def liveview_started(self):
+        # uncheck liveview button
+        self.live_view_button.setChecked(True)
+        return
+    
     @pyqtSlot(str)
     def get_file_path(self, file_path):
         self.file_path = file_path
@@ -390,6 +398,8 @@ class Frontend(QtGui.QFrame):
         backend.imageSignal.connect(self.get_image)
         backend.datacursorSignal.connect(self.get_cursor_values)
         backend.filePathSignal.connect(self.get_file_path)
+        backend.liveview_stopped_signal.connect(self.liveview_stopped)
+        backend.liveview_started_signal.connect(self.liveview_started)
         return
     
 #=====================================
@@ -403,6 +413,9 @@ class Backend(QtCore.QObject):
     imageSignal = pyqtSignal(np.ndarray)
     datacursorSignal = pyqtSignal(list)
     filePathSignal = pyqtSignal(str)
+    stop_imaging_signal = pyqtSignal()
+    liveview_stopped_signal = pyqtSignal()
+    liveview_started_signal = pyqtSignal()
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -415,6 +428,8 @@ class Backend(QtCore.QObject):
         self.viewTimer.timeout.connect(self.update_view)   
         self.image_np = initial_image_np
         self.file_path = initial_filepath
+        self.counter_flag_ok = 0
+        self.change_gain(False, initial_gain)
         return
     
     def go_initial_cursor(self):
@@ -441,6 +456,7 @@ class Backend(QtCore.QObject):
     def change_exposure(self, livebool, exposure_time_ms):
         if livebool:
             self.stop_liveview()
+            tm.sleep(round(self.frame_time/1000)) # wait until the last frame is acquired
             self.exposure_time_ms = exposure_time_ms # in ms, is float
             self.start_liveview(self.exposure_time_ms)
         else:
@@ -463,13 +479,14 @@ class Backend(QtCore.QObject):
         self.exposure_time_ms = exposure_time_ms # in ms, is float
         if livebool:
             self.stop_liveview()
+        # take a single picture
+        # sequence is: set mode, set exposure, get image, stop
         tl_cam.set_camera_one_picture_mode(camera)
         self.frame_time = tl_cam.set_exp_time(camera, self.exposure_time_ms)
-        image_np, _ = tl_cam.get_color_image(camera, mono_to_color_processor)
-        if image_np is not None:
-            self.image_np = image_np # assign to class to be able to save it later
-            tl_cam.stop_camera(camera)
-            self.imageSignal.emit(image_np)            
+        image_np, image_pil, flag_ok = tl_cam.get_color_image(camera, mono_to_color_processor)
+        tl_cam.stop_camera(camera)
+        # emit
+        self.imageSignal.emit(image_np)
         return
     
     @pyqtSlot(bool, float)
@@ -487,18 +504,25 @@ class Backend(QtCore.QObject):
         self.exposure_time_ms = exposure_time_ms # in ms, is float
         self.frame_time = tl_cam.set_exp_time(camera, self.exposure_time_ms)
         self.viewTimer.start(round(self.frame_time)) # ms
+        self.liveview_started_signal.emit()
         return
-            
+    
     def update_view(self):
         # Image update while in Live view mode
-        image_np, _ = tl_cam.get_color_image(camera, mono_to_color_processor)
-        self.imageSignal.emit(image_np)
+        image_np, image_pil, flag_ok = tl_cam.get_color_image(camera, mono_to_color_processor)
+        # if there's no error send image, otherwise stop livewview
+        if flag_ok:
+            self.image_np = image_np
+        else:
+            print('Displaying last taken image.')
+        self.imageSignal.emit(self.image_np)
         return
     
     def stop_liveview(self):
         print('\nLive view stopped at', datetime.now())
         tl_cam.stop_camera(camera)
         self.viewTimer.stop()
+        self.liveview_stopped_signal.emit()
         return
     
     @pyqtSlot()    
@@ -524,7 +548,7 @@ class Backend(QtCore.QObject):
         return
     
     @pyqtSlot(bool)
-    def closeBackend(self, main_app = True):
+    def close_backend(self, main_app = True):
         print('Dispossing camera objects...')
         tl_cam.dispose_cam(color_cam)
         tl_cam.dispose_sdk(camera_constructor)
@@ -537,6 +561,7 @@ class Backend(QtCore.QObject):
         return
     
     def make_connections(self, frontend):
+        frontend.closeSignal.connect(self.close_backend)
         frontend.exposureChangedSignal.connect(self.change_exposure)
         frontend.gainChangedSignal.connect(self.change_gain)
         frontend.liveViewSignal.connect(self.liveview) 
@@ -545,7 +570,6 @@ class Backend(QtCore.QObject):
         frontend.fixcursorSignal.connect(self.fix_cursor_reference)
         frontend.saveSignal.connect(self.save_picture)
         frontend.setWorkDirSignal.connect(self.set_working_folder)
-        frontend.closeSignal.connect(self.closeBackend)
         return
     
 #=====================================

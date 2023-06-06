@@ -38,7 +38,7 @@ flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
 flipperTisaFilter = laserToolbox.motorized_flipper(debug_mode = False, \
                                                   serial_port = laserToolbox.COM_port_flipper_tisa_Thorlabs)
 # set initial paramters
-initial_blue_power = 1.4 # in mW
+initial_blue_power = 1 # in mW
 initial_wavelength = 780.00 # in nm
 starting_wavelength = 700.00 # in nm
 ending_wavelength = 800.00 # in nm
@@ -76,7 +76,7 @@ class Frontend(QtGui.QFrame):
         # set the title of thw window
         title = "Lasers control module"
         self.setWindowTitle(title)
-        self.setGeometry(5, 30, 600, 300)
+        self.setGeometry(5, 30, 400, 300) # x pos, y pos, width, height
         self.scan_params = [0,0,0]
         self.scan_params_previous = [self.starting_wavelength_edit_previous, \
                                      self.ending_wavelength_edit_previous, \
@@ -108,7 +108,6 @@ class Frontend(QtGui.QFrame):
         self.updateParamsButton.setCheckable(False)
         self.updateParamsButton.clicked.connect(self.update_params_button)
         self.updateParamsButton.setStyleSheet(
-                "QPushButton { background-color: lightgray; }"
                 "QPushButton::pressed { background-color: lightcyan; }")
         
         self.shutter488button.setToolTip('Open/close 488 shutter')
@@ -158,7 +157,6 @@ class Frontend(QtGui.QFrame):
         self.readWavelengthButton.setCheckable(False)
         self.readWavelengthButton.clicked.connect(self.read_wavelength_button)
         self.readWavelengthButton.setStyleSheet(
-                "QPushButton { background-color: lightgray; }"
                 "QPushButton::pressed { background-color: lightgreen; }")
         
         # wavelength scan
@@ -188,7 +186,6 @@ class Frontend(QtGui.QFrame):
         self.scanButton.setCheckable(True)
         self.scanButton.clicked.connect(self.scan_button_check)
         self.scanButton.setStyleSheet(
-                "QPushButton { background-color: lightgray; }"
                 "QPushButton::checked { background-color: turquoise; }")
         # start spectrum acquisition
         self.acquire_spectrum_button = QtGui.QPushButton('Acquire spectrum')
