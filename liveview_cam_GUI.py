@@ -485,6 +485,10 @@ class Backend(QtCore.QObject):
         self.frame_time = tl_cam.set_exp_time(camera, self.exposure_time_ms)
         image_np, image_pil, flag_ok = tl_cam.get_color_image(camera, mono_to_color_processor)
         tl_cam.stop_camera(camera)
+        if flag_ok:
+            self.image_np = image_np
+        else:
+            self.image_np = dummy_image_np
         # emit
         self.imageSignal.emit(image_np)
         return
