@@ -955,7 +955,8 @@ class Backend(QtCore.QObject):
         filename = "drift_curve_xy_" + timestr + ".dat"
         full_filename = os.path.join(self.file_path, filename)
         # save
-        np.savetxt(full_filename, data_to_save, fmt='%.6e')
+        header_txt = 'time x_avg_error y_avg_error\ns um um\ntracking_period %i s' % self.tracking_period
+        np.savetxt(full_filename, data_to_save, fmt='%.3f', header=header_txt)
         print('Drift curve %s saved' % filename)
         return
     

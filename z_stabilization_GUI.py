@@ -78,8 +78,8 @@ initial_correction_threshold = 0.005
 # calibration of 05/05/2023 gives (see origin file)
 # slope = -40.76 px/um so
 # conversion factor is 0.0245 (take the absolute value)
-# initial_conversion_factor = 0.0245 # nm/px
-initial_conversion_factor = 0.0245 # nm/px
+# initial_conversion_factor = 0.0245 # um/px
+initial_conversion_factor = 0.0245 # um/px
 
 #=====================================
 
@@ -277,7 +277,7 @@ class Frontend(QtGui.QFrame):
             "QPushButton::checked { background-color: steelblue; }")
         
         # conversion from camera pixel to drift in z
-        self.conversion_label = QtGui.QLabel('Conversion factor (nm/px):')
+        self.conversion_label = QtGui.QLabel('Conversion factor (μm/px):')
         self.conversion_value = QtGui.QLineEdit(str(initial_conversion_factor))
         self.conversion_value.editingFinished.connect(self.conversion_factor_changed)
         self.conversion_factor = initial_conversion_factor
@@ -880,7 +880,6 @@ class Backend(QtCore.QObject):
         # structure of the file will be
         # first col = time, in s
         # second and third col = x and y position of the reflection
-        # fourth and fifth col = x and y position of 2nd NP, respectively, in um 
         # etc...
         M = np.array(self.timeaxis_to_save).shape[0]
         data_to_save = np.zeros((M, 3))
@@ -891,7 +890,8 @@ class Backend(QtCore.QObject):
         filename = "drift_curve_z_" + timestr + ".dat"
         full_filename = os.path.join(self.file_path, filename)
         # save
-        np.savetxt(full_filename, data_to_save, fmt='%.3e')
+        header_txt = 'time x_error y_error\ns um um\ntracking_period %i s' % self.tracking_period
+        np.savetxt(full_filename, data_to_save, fmt='%.3f', header=header_txt)
         print('Drift curve %s saved' % filename)
         return
 
@@ -909,7 +909,7 @@ class Backend(QtCore.QObject):
     
     @pyqtSlot(float)
     def new_conversion_factor(self, new_conv_factor):
-        print('Conversion factor changed to {:.1f} nm/px'.format(new_conv_factor))
+        print('Conversion factor changed to {:.1f} μm/px'.format(new_conv_factor))
         self.conversion_factor = new_conv_factor
         return
     
