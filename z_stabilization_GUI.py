@@ -67,11 +67,11 @@ initial_threshold = 0.8
 # tested with a 200 ms tracking period
 initial_kp = 0.25 # proportinal factor of the PID
 initial_ki = 0.0005 # integral factor of the PID
-initial_kd = 0.005 # derivative factor of the PID
+initial_kd = 0.01 # derivative factor of the PID
 # correction threshold in um
 # above this value (distance) the software starts to apply a correction
 # to compensate the drift
-initial_correction_threshold = 0.005
+initial_correction_threshold = 0.000
 
 # conversion factor from camera pixels to nm in z drift
 # calibration of 05/05/2023 gives (see origin file)

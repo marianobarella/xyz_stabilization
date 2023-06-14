@@ -38,7 +38,7 @@ mono_to_color_constructor, \
 mono_to_color_processor = tl_cam.init_Thorlabs_color_camera(camera_constructor)
 
 camera = color_cam
-pixel_size = color_cam_sensor_pixel_width_um
+pixel_size = color_cam_sensor_pixel_width_um/100
 initial_filepath = 'D:\\daily_data\\inspection_cam' # save in SSD for fast and daily use
 initial_filename = 'image_Thorcam'
 initial_gain = 240 # int

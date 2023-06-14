@@ -38,7 +38,7 @@ flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
 flipperTisaFilter = laserToolbox.motorized_flipper(debug_mode = False, \
                                                   serial_port = laserToolbox.COM_port_flipper_tisa_Thorlabs)
 # set initial paramters
-initial_blue_power = 4 # in mW
+initial_blue_power = 20 # in mW
 initial_wavelength = 700.00 # in nm
 starting_wavelength = 700.00 # in nm
 ending_wavelength = 730.00 # in nm

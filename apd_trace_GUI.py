@@ -902,8 +902,10 @@ class Backend(QtCore.QObject):
                 np.savetxt(ascii_full_filepath, data_to_save, fmt='%.6f', header=header_txt)
         except AssertionError as err:
             print('\n ------------------------> WARNING!', err)
-            if message_box:
-                self.saving_data_error_signal.emit(filename)
+            return
+            #if message_box:
+            #    self.saving_data_error_signal.emit(filename)
+
         finally:
             return
     

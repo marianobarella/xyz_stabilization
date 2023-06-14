@@ -46,7 +46,7 @@ initial_filename = 'image_pco'
 
 # timers
 tempTimer_update = 5000 # in ms
-initial_tracking_period = 100 # in ms
+initial_tracking_period = 150 # in ms
 initial_bix_size = 51 # always odd number pixels
 driftbox_length = 10.0 # in seconds
 
@@ -63,7 +63,7 @@ initial_kd = 0.005 # derivative factor of the PID
 # correction threshold in um
 # above this value (distance) the software starts to apply a correction
 # to compensate the drift
-initial_correction_threshold = 0.005
+initial_correction_threshold = 0.000
 
 #=====================================
 
