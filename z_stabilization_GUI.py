@@ -49,14 +49,13 @@ initial_filename = 'image_z_drift'
 initial_image_np = 128*np.ones((1080, 1440, 3))
 dummy_image_np = initial_image_np
 # timing parameterss
-viewTimer_update = 25 # in ms (makes no sense to go lower than the refresh rate of the screen)
 initial_tracking_period = 100 # in ms
 initial_exp_time = 100 # in ms
 driftbox_length = 10.0 # in s
-initial_gain = 30 # int
+initial_gain = 0 # int
 
 # inital ROI definition
-initial_vertical_pos = 450
+initial_vertical_pos = 425
 initial_horizontal_pos = 0
 initial_vertical_size = 300
 initial_horizontal_size = 1440
@@ -66,8 +65,8 @@ initial_threshold = 0.8
 
 # PID constants
 # tested with a 200 ms tracking period
-initial_kp = 0.15 # proportinal factor of the PID
-initial_ki = 0.001 # integral factor of the PID
+initial_kp = 0.25 # proportinal factor of the PID
+initial_ki = 0.0005 # integral factor of the PID
 initial_kd = 0.005 # derivative factor of the PID
 # correction threshold in um
 # above this value (distance) the software starts to apply a correction
@@ -202,7 +201,7 @@ class Frontend(QtGui.QFrame):
         self.gain_slider.setTickPosition(QtGui.QSlider.TicksBelow)
         self.gain_slider.setTickInterval(1)
         self.gain_slider.sliderReleased.connect(self.gain_changed_check)
-        self.gain_value_label = QtGui.QLabel('0')
+        self.gain_value_label = QtGui.QLabel(str(initial_gain))
         self.gain_value_label.setText('%d' % int(self.gain_slider.value()))
         
         # lock and track the z reflection position
@@ -688,6 +687,7 @@ class Backend(QtCore.QObject):
         self.change_gain(False, initial_gain)
         self.exposure_time_ms = initial_exp_time
         self.correction_threshold = initial_correction_threshold
+        self.time_since_epoch = '0'
         return
     
     @pyqtSlot(bool, float)    
@@ -890,7 +890,7 @@ class Backend(QtCore.QObject):
         filename = "drift_curve_z_" + timestr + ".dat"
         full_filename = os.path.join(self.file_path, filename)
         # save
-        header_txt = 'time x_error y_error\ns um um\ntracking_period %i s' % self.tracking_period
+        header_txt = 'time_since_epoch %s s\ntracking_period %i s\ntime x_error y_error\ns um um' % (str(self.time_since_epoch), self.tracking_period)
         np.savetxt(full_filename, data_to_save, fmt='%.3f', header=header_txt)
         print('Drift curve %s saved' % filename)
         return
@@ -924,6 +924,7 @@ class Backend(QtCore.QObject):
         if stabilizebool:
             print('Stabilization ON.')
             self.stabilization_flag = True
+            self.time_since_epoch = tm.time()
         else:
             print('Stabilization OFF.')
             self.stabilization_flag = False

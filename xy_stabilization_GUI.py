@@ -35,7 +35,7 @@ import drift_correction_toolbox as drift
 cam = pco.pco_camera()
 initial_binning = 4
 initial_pixel_size = 260 # in nm (with 4x4 binning)
-initial_exp_time = 200.0 # in ms
+initial_exp_time = 150.0 # in ms
 initial_starting_col = 1 
 initial_starting_row = 1
 initial_final_col = 512 # with 4x4 binning
@@ -45,7 +45,6 @@ initial_filepath = 'D:\\daily_data\\pco_camera_pictures' # save in SSD for fast 
 initial_filename = 'image_pco'
 
 # timers
-viewTimer_update = 25 # in ms (makes no sense to go lower than the refresh rate of the screen)
 tempTimer_update = 5000 # in ms
 initial_tracking_period = 100 # in ms
 initial_bix_size = 51 # always odd number pixels
@@ -288,7 +287,7 @@ class Frontend(QtGui.QFrame):
         self.pid_param_list = [initial_kp, initial_ki, initial_kd]
         # position vs time of fiducials
         driftWidget = pg.GraphicsLayoutWidget()
-        self.driftPlot = driftWidget.addPlot(title = "XY drift (blue X, red Y)")
+        self.driftPlot = driftWidget.addPlot(title = "XY drift (red X, blue Y)")
         self.driftPlot.showGrid(x = True, y = True)
         self.driftPlot.setLabel('left', 'Shift (μm)')
         self.driftPlot.setLabel('bottom', 'Time (s)')
@@ -694,6 +693,7 @@ class Backend(QtCore.QObject):
                     initial_roi_list[2], \
                     initial_roi_list[3])
         self.correction_threshold = initial_correction_threshold
+        self.time_since_epoch = '0'
         return
     
     @pyqtSlot(bool, list)    
@@ -772,6 +772,7 @@ class Backend(QtCore.QObject):
             self.get_fiducials_data()
             # start timer
             self.trackingTimer.start(self.tracking_period)
+            self.time_since_epoch = tm.time()
         else:
             self.trackingTimer.stop()
             print('\nUnlocking...')
@@ -919,7 +920,6 @@ class Backend(QtCore.QObject):
         cam.set_exp_time(self.exposure_time_ms)
         cam.config_recorder()
         self.viewTimer.start(round(self.exposure_time_ms)) # ms
-        # self.viewTimer.start(viewTimer_update) # ms
         return
             
     def update_view(self):
@@ -955,7 +955,7 @@ class Backend(QtCore.QObject):
         filename = "drift_curve_xy_" + timestr + ".dat"
         full_filename = os.path.join(self.file_path, filename)
         # save
-        header_txt = 'time x_avg_error y_avg_error\ns um um\ntracking_period %i s' % self.tracking_period
+        header_txt = 'time_since_epoch %s s\ntracking_period %i s\ntime x_avg_error y_avg_error\ns um um' % (str(self.time_since_epoch), self.tracking_period)
         np.savetxt(full_filename, data_to_save, fmt='%.3f', header=header_txt)
         print('Drift curve %s saved' % filename)
         return

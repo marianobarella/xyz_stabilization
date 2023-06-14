@@ -17,6 +17,7 @@ from pyqtgraph.Qt import QtCore, QtGui
 # import pyqtgraph.ptime as ptime
 from pyqtgraph.dockarea import Dock, DockArea
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
+from PyQt5.QtWidgets import QMessageBox
 import daq_board_toolbox as daq
 from tkinter import filedialog
 import tkinter as tk
@@ -40,7 +41,7 @@ daq.check_voltage_range(daq_board, initial_voltage_range)
 max_sampling_rate = daq_board.ai_max_single_chan_rate # set to maximum, here 2 MS/s    
 initial_sampling_rate = 1e3 # in S/s
 # duration of the traces in s
-initial_duration = 1
+initial_duration = 10
 # set acquisition mode to measure continuosly
 acquisition_mode = 'continuous'
 # number of analog input channels to read
@@ -129,7 +130,6 @@ class Frontend(QtGui.QFrame):
         self.traceButton.clicked.connect(self.get_trace)
         self.traceButton.setToolTip('Play or Stop a single APD signal acquisition.')
         self.traceButton.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: red; }"
             "QPushButton::checked { background-color: lightcoral; }")
 
@@ -143,13 +143,12 @@ class Frontend(QtGui.QFrame):
         self.saveButton = QtGui.QPushButton('Save last trace')
         self.saveButton.clicked.connect(self.get_save_trace)
         self.saveButton.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: cornflowerblue; }")
         self.saveButton.setToolTip('Save the trace that was <b>fully</b> acquired in the last seconds (defined by <b>duration</b> variable).')
         
         # Save continuously tick box
         self.saveAutomaticallyBox = QtGui.QCheckBox('Save automatically?')
-        self.saveAutomaticallyBox.setChecked(True)
+        self.saveAutomaticallyBox.setChecked(False)
         self.saveAutomaticallyBox.stateChanged.connect(self.set_save_continuously)
         self.saveAutomaticallyBox.setToolTip('Set/Tick to save data continuously. Filenames will be sequential.')
         
@@ -163,7 +162,6 @@ class Frontend(QtGui.QFrame):
         self.working_dir_button = QtGui.QPushButton('Select directory')
         self.working_dir_button.clicked.connect(self.set_working_dir)
         self.working_dir_button.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: palegreen; }")
         self.working_dir_label = QtGui.QLabel('Working directory')
         self.filepath = initial_filepath
@@ -288,10 +286,15 @@ class Frontend(QtGui.QFrame):
         self.centerOnMeanButton = QtGui.QPushButton('Center signals')
         self.centerOnMeanButton.clicked.connect(self.center_signal)
         self.centerOnMeanButton.setStyleSheet(
-            "QPushButton { background-color: lightgray; }"
             "QPushButton:pressed { background-color: plum; }")
         self.centerOnMeanButton.setToolTip('For displaying purposes. Center Y axis over the mean of the signal ±5 std dev.')
         
+        # enable auto range tick button
+        self.enableAutoRagenButton = QtGui.QCheckBox('Autorange')
+        self.enableAutoRagenButton.setChecked(False)
+        self.enableAutoRagenButton.stateChanged.connect(self.enable_autorange)
+        self.enableAutoRagenButton.setToolTip('Set/Tick to enable autorange.')
+
         # Layout for the acquisition widget
         self.paramAcqWidget = QtGui.QWidget()
         subgridAcq_layout = QtGui.QGridLayout()
@@ -337,7 +340,8 @@ class Frontend(QtGui.QFrame):
         subgridDisp_layout.addWidget(self.minmax_monitor_RangeLabel, 4, 0)
         subgridDisp_layout.addWidget(self.minYRangeValue_monitor, 4, 1)
         subgridDisp_layout.addWidget(self.maxYRangeValue_monitor, 4, 2)
-        subgridDisp_layout.addWidget(self.centerOnMeanButton, 5, 0, 1, 3)
+        subgridDisp_layout.addWidget(self.centerOnMeanButton, 5, 0, 1, 2)
+        subgridDisp_layout.addWidget(self.enableAutoRagenButton, 5, 2)
         subgridDisp_layout.addWidget(self.downsamplingLabel, 6, 0)
         subgridDisp_layout.addWidget(self.downsamplingValue, 6, 1)
         subgridDisp_layout.addWidget(self.timeViewboxLength_label, 7, 0)
@@ -520,6 +524,15 @@ class Frontend(QtGui.QFrame):
             self.filenameSignal.emit(self.filename)    
         return
     
+    def enable_autorange(self, enablebool):
+        if enablebool:
+            self.signal_plot.enableAutoRange(True, True)
+            self.monitor_plot.enableAutoRange(True, True)
+        else:
+            self.signal_plot.enableAutoRange(False, False)
+            self.monitor_plot.enableAutoRange(False, False)
+        return
+
     def set_y_range(self):
         self.signal_plot.setYRange(float(self.minYRangeValue_apd.text()), 
                                    float(self.maxYRangeValue_apd.text()))
@@ -640,7 +653,15 @@ class Frontend(QtGui.QFrame):
         # uncheck Acquire button
         self.traceButton.setChecked(False)
         return
-    
+
+    @pyqtSlot(str)
+    def pop_up_window_error(self, filename):
+        msg = QMessageBox()
+        msg.setWindowTitle("Error")
+        msg.setText("Error while saving data.\nFilename: %s" % filename)
+        x = msg.exec_()  # this will show our messagebox
+        return
+
     # re-define the closeEvent to execute an specific command
     def closeEvent(self, event, *args, **kwargs):
         super(QtGui.QFrame, self).closeEvent(event, *args, **kwargs)
@@ -664,6 +685,7 @@ class Frontend(QtGui.QFrame):
         backend.dataSignal.connect(self.get_data)
         backend.filepathSignal.connect(self.get_filepath)
         backend.acqStopped.connect(self.acquisition_stopped)
+        backend.saving_data_error_signal.connect(self.pop_up_window_error)
         return
     
 #=====================================
@@ -680,10 +702,10 @@ class Backend(QtCore.QObject):
     startTimerSignal = pyqtSignal()
     stopTimerSignal = pyqtSignal()
     fileSavedSignal = pyqtSignal(str, str)
+    saving_data_error_signal = pyqtSignal(str)
 
-    def __init__(self, common_variable = None, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.common_variable = common_variable
         # set timer to plot the data and check buttons
         self.updateTimer = QtCore.QTimer()
         self.updateTimer.timeout.connect(self.trace_update) 
@@ -704,7 +726,7 @@ class Backend(QtCore.QObject):
                                                             acquisition_mode, \
                                                             debug = True)
         self.acquire_continuously_bool = False
-        self.save_automatically_bool = True
+        self.save_automatically_bool = False
         self.filepath = initial_filepath
         self.filename = initial_filename
         self.params_to_be_saved = ''
@@ -712,6 +734,7 @@ class Backend(QtCore.QObject):
         self.acquisition_flag = False
         self.save_in_ascii = False
         self.spectrum_suffix = '' # for integration with specturm acquisition
+        self.time_since_epoch = '0'
         return
 
     @pyqtSlot(bool)
@@ -777,6 +800,7 @@ class Backend(QtCore.QObject):
         self.acquisition_flag = True
         self.init_time = timer()
         print('\nAcquisition started at {}'.format(self.init_time))
+        self.time_since_epoch = tm.time()
         return
     
     def stop_trace(self):
@@ -824,7 +848,7 @@ class Backend(QtCore.QObject):
                     # flush array at buffer into the disk (because it was a memmap array)
                     self.data_array.flush()
                     self.monitor_array.flush()
-                    self.save_trace()
+                    self.save_trace(message_box = False)
         return
     
     @pyqtSlot()
@@ -834,10 +858,7 @@ class Backend(QtCore.QObject):
         return
     
     @pyqtSlot()
-    def save_trace(self):
-        # check if all data has been written correctly from DAQ board to RAM
-        assert np.all(self.data_array > -1000), 'data_array was not written correctly'
-        assert np.all(self.monitor_array > -1000), 'monitor_array was not written correctly'
+    def save_trace(self, message_box = False):
         # prepare full filepath
         filepath = self.filepath
         if self.save_automatically_bool:
@@ -849,8 +870,8 @@ class Backend(QtCore.QObject):
             self.suffix = ''
         filename = self.filename + self.suffix
         # add time string to the filename
-        timestr = tm.strftime("_%Y%m%d_%H%M%S")
-        filename_timestamped = filename + timestr
+        timestr = tm.strftime("%Y%m%d_%H%M%S_")
+        filename_timestamped = timestr + filename
         filename_data = filename_timestamped + '_transmission'
         filename_monitor = filename_timestamped + '_monitor'
         filename_params = filename_timestamped + '_params.txt'
@@ -858,23 +879,33 @@ class Backend(QtCore.QObject):
         full_filepath_data = os.path.join(filepath, filename_data)
         full_filepath_monitor = os.path.join(filepath, filename_monitor)
         full_filepath_params = os.path.join(filepath, filename_params)
-        # save data
-        np.save(full_filepath_data, np.transpose(self.data_array), allow_pickle = False)
-        np.save(full_filepath_monitor, np.transpose(self.monitor_array), allow_pickle = False)
-        # save measurement parameters and comments
-        self.params_to_be_saved = self.get_params_to_be_saved()
-        with open(full_filepath_params, 'w') as f:
-            print(self.params_to_be_saved, file = f)
-        print('Data %s has been saved.' % filename_timestamped)
-        # emit signal for any other module that is importing this function
-        self.fileSavedSignal.emit(full_filepath_data + '.npy', full_filepath_monitor + '.npy')
-        if self.save_in_ascii:
-            # it will save an ASCII encoded text file
-            data_to_save = np.transpose(np.vstack((self.data_array, self.monitor_array)))
-            header_txt = 'transmission monitor\n%d Hz' % self.sampling_rate
-            ascii_full_filepath = full_filepath_data + '.dat'
-            np.savetxt(ascii_full_filepath, data_to_save, fmt='%.6f', header=header_txt)
-        return 
+        # before saving assert that all data has been stored correctly onto RAM
+        # check if all data has been written correctly from DAQ board to RAM
+        try:
+            assert np.all(self.data_array > -1000), 'transmission data was not written correctly'
+            assert np.all(self.monitor_array > -1000), 'monitor data was not written correctly'
+            # save data
+            np.save(full_filepath_data, np.transpose(self.data_array), allow_pickle = False)
+            np.save(full_filepath_monitor, np.transpose(self.monitor_array), allow_pickle = False)
+            # save measurement parameters and comments
+            self.params_to_be_saved = self.get_params_to_be_saved()
+            with open(full_filepath_params, 'w') as f:
+                print(self.params_to_be_saved, file = f)
+            print('Data %s has been saved.' % filename_timestamped)
+            # emit signal for any other module that is importing this function
+            self.fileSavedSignal.emit(full_filepath_data + '.npy', full_filepath_monitor + '.npy')
+            if self.save_in_ascii:
+                # it will save an ASCII encoded text file
+                data_to_save = np.transpose(np.vstack((self.data_array, self.monitor_array)))
+                header_txt = 'time_since_epoch %s s\nsampling_rate %s Hz\ntransmission monitor\nV V' % (str(self.time_since_epoch), self.sampling_rate)
+                ascii_full_filepath = full_filepath_data + '.dat'
+                np.savetxt(ascii_full_filepath, data_to_save, fmt='%.6f', header=header_txt)
+        except AssertionError as err:
+            print('\n ------------------------> WARNING!', err)
+            if message_box:
+                self.saving_data_error_signal.emit(filename)
+        finally:
+            return
     
     @pyqtSlot(float)    
     def change_voltage_range(self, voltage_range):
@@ -959,6 +990,7 @@ class Backend(QtCore.QObject):
         dict_to_be_saved['Sampling rate (S/s)'] = self.sampling_rate
         dict_to_be_saved['Duration (s)'] = self.duration
         dict_to_be_saved['Number of points'] = self.number_of_points
+        dict_to_be_saved['Time since epoch (s)'] = self.time_since_epoch
         dict_to_be_saved['Comments'] = self.comment
         return dict_to_be_saved
     

@@ -29,7 +29,7 @@ print('Ports available:', list_of_serial_ports)
 laser532 = laserToolbox.oxxius_laser(debug_mode = False)
 laser488 = laserToolbox.toptica_laser(debug_mode = False)
 laserTisa = laserToolbox.M2_laser(debug_mode = True, timeout = 10.0)
-shutterTisa = laserToolbox.Thorlabs_shutter(debug_mode = False)
+shutterTisaObject = laserToolbox.Thorlabs_shutter(debug_mode = False)
 # build flippers objects
 flipperMirror = laserToolbox.motorized_flipper(debug_mode = False, \
                                                serial_port = laserToolbox.COM_port_flipper_cam_Thorlabs)
@@ -38,10 +38,10 @@ flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
 flipperTisaFilter = laserToolbox.motorized_flipper(debug_mode = False, \
                                                   serial_port = laserToolbox.COM_port_flipper_tisa_Thorlabs)
 # set initial paramters
-initial_blue_power = 1 # in mW
-initial_wavelength = 780.00 # in nm
+initial_blue_power = 4 # in mW
+initial_wavelength = 700.00 # in nm
 starting_wavelength = 700.00 # in nm
-ending_wavelength = 800.00 # in nm
+ending_wavelength = 730.00 # in nm
 step_wavelength = 10.00 # in nm
 initial_integration_time = 1 # in s
 
@@ -484,9 +484,8 @@ class Backend(QtCore.QObject):
     start_scan_signal = pyqtSignal()
     scan_finished_signal = pyqtSignal()
     
-    def __init__(self, common_variable = None, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.common_variable = common_variable
         self.integration_time = initial_integration_time # in s
         self.change_power(initial_blue_power)
         self.change_wavelength(initial_wavelength)
@@ -500,14 +499,16 @@ class Backend(QtCore.QObject):
         self.counter = 0
         self.scan_flag = False
         self.update_tisa_status()
+        self.emission532('on')
+        self.shutter532(False)
         return
 
     @pyqtSlot(bool)
     def shutterTisa(self, shutterbool):
         if shutterbool:
-            shutterTisa.shutter('open')
+            shutterTisaObject.shutter('open')
         else:
-            shutterTisa.shutter('close')
+            shutterTisaObject.shutter('close')
         return
     
     @pyqtSlot(bool)
@@ -673,12 +674,16 @@ class Backend(QtCore.QObject):
 
     @pyqtSlot()
     def closeBackend(self):
+        print('Disconnecting lasers...')
         laser488.close()
         laser532.close()
+        print('\nClosing Ti:Sa shutter...')
+        self.shutterTisa(False)
         laserTisa.close()
+        print('Closing flippers...')
         flipperMirror.close()
         flipperAPDFilter.close()
-        flipperTisaFilter.close()
+        flipperTisaFilter.close() # TODO check if it is working
         print('Exiting thread...')
         workerThread.exit()
         return

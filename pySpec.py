@@ -22,6 +22,7 @@ from PyQt5.QtCore import pyqtSignal, pyqtSlot
 import apd_trace_GUI
 import laser_control_GUI
 import numpy as np
+import re
 
 # time interval to check state of the specturm acquisition button
 check_button_state = 100 # in ms
@@ -59,18 +60,24 @@ class Frontend(QtGui.QMainWindow):
         self.lasersWidget.acquire_spectrum_button.setCheckable(True)
         self.lasersWidget.acquire_spectrum_button.clicked.connect(self.lasersWidget.acquire_spectrum_button_check)
         self.lasersWidget.acquire_spectrum_button.setStyleSheet(
-                "QPushButton { background-color: default; }"
+                "QPushButton { background-color: lightgray; }"
                 "QPushButton::checked { background-color: red; }")
         self.lasersWidget.integration_time_comment.setText('Attention: It overrides Duration variable of the APD trace.')
         self.lasersWidget.process_spectrum_button.clicked.connect(self.process_spectrum_button_check)
         self.lasersWidget.process_spectrum_button.setStyleSheet(
-                "QPushButton { background-color: default; }"
+                "QPushButton { background-color: lightgray; }"
                 "QPushButton::checked { background-color: lightgreen; }")
         self.lasersWidget.filename_label.setText('Filename (.dat)')
         self.lasersWidget.filename_name.setFixedWidth(200)
         self.lasersWidget.filename = initial_filename
         self.lasersWidget.filename_name.setText(self.lasersWidget.filename)
         self.lasersWidget.filename_name.editingFinished.connect(self.set_filename)
+        
+        # set by default: save APD signals = True
+        self.apdWidget.saveAutomaticallyBox.setChecked(True)
+        # set autorange by default
+        self.apdWidget.enableAutoRagenButton.setChecked(True)
+        self.apdWidget.enable_autorange(True)
         
         # GUI layout
         grid = QtGui.QGridLayout()
@@ -162,6 +169,7 @@ class Backend(QtCore.QObject):
         super().__init__(*args, **kwargs)
         self.lasersWorker = laser_control_GUI.Backend()
         self.apdWorker = apd_trace_GUI.Backend()
+        self.apdWorker.save_automatically_bool = True
         self.scanTimer = QtCore.QTimer()
         self.scanTimer.timeout.connect(self.continue_scan) # funciton to connect after each interval
         self.scanTimer.setInterval(check_button_state) # in ms
@@ -175,10 +183,19 @@ class Backend(QtCore.QObject):
         # acq_spec_flag varaiable is the state of the button
         self.acquiring_spectrum_flag = acq_spec_flag
         if self.acquiring_spectrum_flag:
-            print('\n!!!!!! ------ !!!!!! Starting acquisition of the spectrum...')
+            print('\nStarting acquisition of the spectrum...')
+            # set integration time
             self.apdWorker.change_duration(self.lasersWorker.integration_time)
-            self.scanTimer.start()
+            # measure baseline first
+            print('\nAcquiring baseline first...')
+            self.measure_baseline()
             self.spectrum_counter = 0
+            # initiate list of files
+            self.list_of_transmission_files = []
+            self.list_of_monitor_files = []
+            # start timer to acquire the spectrum
+            print('\nAcquiring spectrum...')
+            self.scanTimer.start()
         else:
             self.scanTimer.stop()
             self.apd_acq_stopped_signal.emit()
@@ -205,10 +222,12 @@ class Backend(QtCore.QObject):
                         # get and change wavelength
                         wavelength = self.lasersWorker.wavelength_scan_array[self.spectrum_counter]
                         self.lasersWorker.change_wavelength(wavelength)
-                        # set suffix for saving the intensity trace
-                        self.apdWorker.spectrum_suffix = '_{:04d}nm'.format(int(round(wavelength,0)))
+                        # set suffix for saving the intensity trace, wavelength in angstroms
+                        self.apdWorker.spectrum_suffix = '_{:05d}ang'.format(int(round(wavelength*10,0)))
                         # increment counter for next step
                         self.spectrum_counter += 1
+                        # add a delay before opening shutter to allow the system to settle
+                        tm.sleep(0.1)
                         # open shutter
                         self.lasersWorker.shutterTisa(True)
                         # emit pyqtSignal to frontend to enable trace displaying
@@ -222,11 +241,25 @@ class Backend(QtCore.QObject):
                 else:
                     print('\nWavelength has not been changed.')
                     print('Ti:Sa status: ', status)
-            # TODO
-            # - apd acquisiition, save, name definition
-            # - start over
         return
     
+    def measure_baseline(self):
+        # check if button is checked or counter continues to increase
+        if self.acquiring_spectrum_flag:
+            # check if transmission APD is acquiring first
+            # if not, continue with the spectrum
+            if not self.apdWorker.acquisition_flag:
+                # close shutter of Ti:Sa if open
+                self.lasersWorker.shutterTisa(False)
+                # set suffix for saving the intensity trace
+                self.apdWorker.spectrum_suffix = '_baseline'
+                # emit pyqtSignal to frontend to enable trace displaying
+                # and start signal acquisition
+                self.apd_acq_started_signal.emit()
+                # set acquisition variable of APD backend to True
+                self.apdWorker.acquisition_flag = True
+        return
+
     @pyqtSlot(str, str)
     def append_saved_file(self, full_filepath_data, full_filepath_monitor):
         self.list_of_transmission_files.append(full_filepath_data)
@@ -234,31 +267,45 @@ class Backend(QtCore.QObject):
         return
     
     def process_signals(self, list_of_files):
-        mean_array = np.zeros(len(list_of_files))
-        std_dev_array = np.zeros(len(list_of_files))
-        for i in range(len(list_of_files)):
+        list_of_files.sort()
+        # find baseline file and spectrum files
+        list_of_files_spectra = [f for f in list_of_files if not re.search('baseline', f)]
+        baseline_file = [f for f in list_of_files if re.search('baseline', f)][0]
+        # open baseline file
+        baseline_data = np.load(baseline_file)
+        # get baseline level
+        baseline_level = np.mean(baseline_data)
+        baseline_std_dev = np.std(baseline_data, ddof = 1)
+        # allocate spectrum
+        number_of_points = len(list_of_files_spectra)
+        mean_array = np.zeros(number_of_points)
+        error_array = np.zeros(number_of_points)
+        # calculate spectrum
+        for i in range(number_of_points):
             f = list_of_files[i]
             data = np.load(f)
-            mean_array[i] = np.mean(data)
-            std_dev_array[i] = np.std(data, ddof = 1)
-        return mean_array, std_dev_array
+            mean_array[i] = np.mean(data) - baseline_level
+            std_dev = np.std(data, ddof = 1)
+            error_array[i] = np.sqrt(std_dev**2 + baseline_std_dev**2)
+        return mean_array, error_array
     
     @pyqtSlot()
     def process_acquired_spectrum(self):
         print('Processing all spectra...')
+        # TODO: add baseline correction
         # preapre arrays
         wavelength = self.lasersWorker.wavelength_scan_array
-        mean_data, std_dev_data = self.process_signals(self.list_of_transmission_files)
-        mean_monitor, std_dev_monitor = self.process_signals(self.list_of_monitor_files)
+        mean_data, error_data = self.process_signals(self.list_of_transmission_files)
+        mean_monitor, error_monitor = self.process_signals(self.list_of_monitor_files)
         # set filename
         filename_spectrum = self.filename
         timestr = tm.strftime("_%Y%m%d_%H%M%S")
         filename_spectrum = filename_spectrum + timestr
         # it will save an ASCII encoded text file
         data_to_save = np.transpose(np.vstack((wavelength, \
-                                               mean_data, std_dev_data, \
-                                               mean_monitor, std_dev_monitor)))
-        header_txt = 'wavelength transmission_mean transmission_std_dev monitor_mean monitor_std_dev\nnm V V V V'
+                                               mean_data, error_data, \
+                                               mean_monitor, error_monitor)))
+        header_txt = 'wavelength transmission_mean transmission_error monitor_mean monitor_error\nnm V V V V'
         ascii_full_filepath = spectra_path + '\\' + filename_spectrum + '.dat'
         np.savetxt(ascii_full_filepath, data_to_save, fmt='%.6f', header=header_txt)
         print('Spectrum has been generated and saved with filename %s.dat' % filename_spectrum)
@@ -272,13 +319,13 @@ class Backend(QtCore.QObject):
     
     @pyqtSlot()
     def close_all_backends(self):
-        print('Exiting thread...')
-        workerThread.exit()
         print('Closing all Backends...')
         self.lasersWorker.closeBackend()
         self.apdWorker.closeBackend()
         print('Stopping updater (QtTimer)...')
         self.scanTimer.stop()
+        print('Exiting thread...')
+        workerThread.exit()
         return
     
     def make_modules_connections(self, frontend):
