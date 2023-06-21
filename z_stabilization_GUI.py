@@ -772,7 +772,7 @@ class Backend(QtCore.QObject):
         error_x_px = self.initial_center[0] - center[0]
         error_y_px = self.initial_center[1] - center[1]
         error_px =  np.array([error_x_px, error_y_px])
-        error = error_px*self.conversion_factor # in nm
+        error = error_px*self.conversion_factor # in um
         # send position of the reflection to Frontend
         self.sendFittedDataSignal.emit(center, error_px, timestamp)
         # store data to save drift vs time when the Lock and Track option is released

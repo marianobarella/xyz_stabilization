@@ -988,12 +988,12 @@ class Backend(QtCore.QObject):
     
     def get_params_to_be_saved(self):
         dict_to_be_saved = {}
-        dict_to_be_saved['Voltage range (V)'] = self.voltage_range
-        dict_to_be_saved['Sampling rate (S/s)'] = self.sampling_rate
-        dict_to_be_saved['Duration (s)'] = self.duration
-        dict_to_be_saved['Number of points'] = self.number_of_points
-        dict_to_be_saved['Time since epoch (s)'] = self.time_since_epoch
-        dict_to_be_saved['Comments'] = self.comment
+        dict_to_be_saved["Voltage range (V)"] = self.voltage_range
+        dict_to_be_saved["Sampling rate (S/s)"] = self.sampling_rate
+        dict_to_be_saved["Duration (s)"] = self.duration
+        dict_to_be_saved["Number of points"] = self.number_of_points
+        dict_to_be_saved["Time since epoch (s)"] = self.time_since_epoch
+        dict_to_be_saved["Comments"] = self.comment
         return dict_to_be_saved
     
     @pyqtSlot(str)
