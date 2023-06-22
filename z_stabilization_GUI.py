@@ -884,7 +884,7 @@ class Backend(QtCore.QObject):
         M = np.array(self.timeaxis_to_save).shape[0]
         data_to_save = np.zeros((M, 3))
         data_to_save[:, 0] = np.array(self.timeaxis_to_save)
-        data_to_save[:, 1:] = np.array(self.errors_to_save)*self.conversion_factor
+        data_to_save[:, 1:] = np.array(self.errors_to_save)
         # create filename
         timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
         filename = "drift_curve_z_" + timestr + ".dat"

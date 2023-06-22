@@ -282,7 +282,7 @@ class Backend(QtCore.QObject):
         error_array = np.zeros(number_of_points)
         # calculate spectrum
         for i in range(number_of_points):
-            f = list_of_files[i]
+            f = list_of_files_spectra[i]
             data = np.load(f)
             mean_array[i] = np.mean(data) - baseline_level
             std_dev = np.std(data, ddof = 1)
@@ -292,7 +292,6 @@ class Backend(QtCore.QObject):
     @pyqtSlot()
     def process_acquired_spectrum(self):
         print('Processing all spectra...')
-        # TODO: add baseline correction
         # preapre arrays
         wavelength = self.lasersWorker.wavelength_scan_array
         mean_data, error_data = self.process_signals(self.list_of_transmission_files)
