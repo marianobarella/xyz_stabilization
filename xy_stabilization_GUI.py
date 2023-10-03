@@ -32,7 +32,8 @@ import drift_correction_toolbox as drift
 
 #=====================================
 
-cam = pco.pco_camera()
+#cam = pco.pco_camera()
+cam = pco.pco_camera(debug = 'verbose', timestamp_flag = 'on')
 initial_binning = 4
 initial_pixel_size = 260 # in nm (with 4x4 binning)
 initial_exp_time = 150.0 # in ms

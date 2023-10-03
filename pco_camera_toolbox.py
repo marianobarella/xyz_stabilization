@@ -33,7 +33,7 @@ class pco_camera(object):
     def __init__(self, debug = 'off', timestamp_flag = 'off'):
         self.timestamp_flag = timestamp_flag
         self.debug_mode = debug
-        print('Connecting to pco.panda camera...')
+        print('\nConnecting to pco.panda camera...')
         self.camera = pco.Camera(debuglevel = self.debug_mode, timestamp = self.timestamp_flag)
         self.get_info()
         self.get_pixel_correction_mode()
@@ -94,10 +94,9 @@ class pco_camera(object):
     def toggle_filter_noise_mode(self):
         if self.filter_noise_on:
             self.camera.sdk.set_noise_filter_mode('off')
-            self.get_filter_noise_mode()
         else:
             self.camera.sdk.set_noise_filter_mode('on')
-            self.get_filter_noise_mode()
+        self.get_filter_noise_mode()
         return    
     
     def set_exp_time(self, exp_time_ms):

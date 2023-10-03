@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Oct 3 18:51:50 2023
+Created on Mon Jun 12 10:24:54 2023
 
 @author: BarellaM
 """
@@ -11,7 +11,7 @@ import os
 import re
 import tkinter as tk
 import tkinter.filedialog as fd
-# import json
+import json
 import pandas as pd
 import datetime
 import ast
@@ -110,6 +110,9 @@ np.save(full_new_file_path_mon, single_trace_mon)
 single_trace_tra_avg = moving_average_sum(single_trace_tra, window_avg)
 single_trace_mon_avg = moving_average_sum(single_trace_mon, window_avg)
 
+# apply gaussian filtering
+#TODO
+
 ##############################################################################
 # BUILD TIME AXIS
 # retrieve parameters
@@ -124,6 +127,44 @@ delta_time = 1/sampling_frequency
 time_data = np.arange(0, number_of_points*delta_time, delta_time, dtype='float32')
 # get epoch time
 time_since_epoch_data = parameters['Time since epoch (s)']
+
+##############################################################################
+# GET XYZ TRACKING DATA
+# get files and load data
+xy_drift_file = [f for f in list_of_files if re.search('drift_curve_xy',f)][0]
+z_drift_file = [f for f in list_of_files if re.search('drift_curve_z',f)][0]
+xy_drift_filepath = os.path.join(working_folder, xy_drift_file)
+z_drift_filepath = os.path.join(working_folder, z_drift_file)
+# data for xy drift
+time_xy, x_error, y_error = np.loadtxt(xy_drift_filepath, unpack=True, dtype='float32')
+time_since_epoch_xy = get_number_from_headerline(xy_drift_filepath, 0) # in s
+tracking_period_xy = get_number_from_headerline(xy_drift_filepath, 1) # in ms
+# data for z drift
+time_z, z_error, column_not_used = np.loadtxt(z_drift_filepath, unpack=True, dtype='float32')
+time_since_epoch_z = get_number_from_headerline(z_drift_filepath, 0) # in s
+tracking_period_z = get_number_from_headerline(z_drift_filepath, 1) # in ms
+
+##############################################################################
+# SYNCHRONIZE
+# find the proces that started the last
+time_since_epoch_array = np.array([time_since_epoch_data, time_since_epoch_xy, time_since_epoch_z])
+index_max = np.argmax(time_since_epoch_array)
+t0 = time_since_epoch_array[index_max]
+diff_t0 = t0 - time_since_epoch_array
+# crop all data to start after t0
+
+index_ok = np.array(np.where(time_data >= diff_t0[0])[0], dtype='i4')
+time_data = time_data[index_ok]
+single_trace_tra = single_trace_tra[index_ok]
+single_trace_mon = single_trace_mon[index_ok]
+
+# xy drift
+time_xy = np.where(time_xy >= diff_t0[1], time_xy, 0)
+x_error = np.where(time_xy >= diff_t0[1], x_error, 0)
+y_error = np.where(time_xy >= diff_t0[1], y_error, 0)
+# z drift
+time_z = np.where(time_z >= diff_t0[2], time_z, 0)
+z_error = np.where(time_z >= diff_t0[2], z_error, 0)
 
 ##############################################################################
 # STATISTICS
@@ -143,7 +184,7 @@ print('Monitor Coef. of Variation %.3f %%' % (monitor_cv*100))
 
 ##############################################################################
 # PLOT
-fig, (ax1, ax2) = plt.subplots(2, 1)
+fig, (ax1, ax2, ax3) = plt.subplots(3, 1)
 fig.subplots_adjust(hspace=0.5) # extra space between the subplots
 ax1.plot(time_data, single_trace_tra, label='APD')
 ax1.set_xlabel('Time (s)')
@@ -155,6 +196,13 @@ ax2.set_xlabel('Time (s)')
 ax2.set_ylabel('Signal (V)')
 ax2.legend(loc='best')
 ax2.grid(True)
+ax3.plot(time_xy, x_error, label='x drift')
+ax3.plot(time_xy, y_error, label='y drift')
+ax3.plot(time_z, z_error, label='z drift')
+ax3.set_xlabel('Time (s)')
+ax3.set_ylabel(r'Drift ($\mu$m)')
+ax3.legend(loc='best')
+ax3.grid(True)
 plt.show()
 
 plt.figure(2)
