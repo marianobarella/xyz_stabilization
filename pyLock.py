@@ -121,11 +121,11 @@ class Backend(QtCore.QObject):
         super().__init__(*args, **kwargs)
         self.piezo_stage = piezo_stage
         self.piezoWorker = piezo_backend
-        self.zWorker = z_stabilization_GUI.Backend(self.piezo_stage, \
-                                                   self.piezoWorker, \
+        self.zWorker = z_stabilization_GUI.Backend(piezo_stage, \
+                                                   piezo_backend, \
                                                    connect_to_piezo_module = False)
-        self.xyWorker = xy_stabilization_GUI.Backend(self.piezo_stage, \
-                                                     self.piezoWorker, \
+        self.xyWorker = xy_stabilization_GUI.Backend(piezo_stage, \
+                                                     piezo_backend, \
                                                      connect_to_piezo_module = False)
         return
     

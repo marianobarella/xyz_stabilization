@@ -32,8 +32,12 @@ import drift_correction_toolbox as drift
 
 #=====================================
 
+# [2023-10-04 12:25:42.803695 / 0.110 s] [][sdk] open_camera_ex: Driver error 80332006 at
+# device 'CameraLink driver': Open driver or driver class failed.
+
 #cam = pco.pco_camera()
-cam = pco.pco_camera(debug = 'verbose', timestamp_flag = 'on')
+#cam = pco.pco_camera(debug = 'verbose', timestamp_flag = 'on')
+cam = pco.pco_camera(debug = 'extra verbose', timestamp_flag = 'on')
 initial_binning = 4
 initial_pixel_size = 260 # in nm (with 4x4 binning)
 initial_exp_time = 150.0 # in ms
