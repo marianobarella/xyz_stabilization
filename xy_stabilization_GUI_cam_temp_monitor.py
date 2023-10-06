@@ -179,6 +179,14 @@ class Frontend(QtGui.QFrame):
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
         self.exp_time_edit.setValidator(QtGui.QDoubleValidator(0.01, 5000.00, 2))
         self.exp_time_edit.setToolTip('Minimum is 10 µs. Maximum is 5 s.')
+        
+        # Temp labels
+        self.sensor_temp_label = QtGui.QLabel('Sensor temp (°C):')
+        self.cam_temp_label = QtGui.QLabel('Camera temp (°C):')
+        self.power_temp_label = QtGui.QLabel('Electronics temp (°C):')
+        self.sensor_temp_value = QtGui.QLabel('-')
+        self.cam_temp_value = QtGui.QLabel('-')
+        self.power_temp_value = QtGui.QLabel('-')
 
         # Pixel size
         pixel_size_label = QtGui.QLabel('Pixel size (nm):')
@@ -306,22 +314,29 @@ class Frontend(QtGui.QFrame):
         layout_liveview.addWidget(self.exp_time_edit,          8, 1)
         # auto level
         layout_liveview.addWidget(self.autolevel_tickbox,      9, 0)
+        # Temp status
+        layout_liveview.addWidget(self.sensor_temp_label, 10, 0)
+        layout_liveview.addWidget(self.cam_temp_label, 11, 0)
+        layout_liveview.addWidget(self.power_temp_label, 12, 0)
+        layout_liveview.addWidget(self.sensor_temp_value, 10, 1)
+        layout_liveview.addWidget(self.cam_temp_value, 11, 1)
+        layout_liveview.addWidget(self.power_temp_value, 12, 1)
         # pixel size
-        layout_liveview.addWidget(pixel_size_label,      10, 0)
-        layout_liveview.addWidget(self.pixel_size_value,        10, 1)
+        layout_liveview.addWidget(pixel_size_label,      13, 0)
+        layout_liveview.addWidget(self.pixel_size_value,        13, 1)
         # binning
-        layout_liveview.addWidget(binning_label,        11, 0)
-        layout_liveview.addWidget(self.binning_edit,        11, 1)
+        layout_liveview.addWidget(binning_label,        14, 0)
+        layout_liveview.addWidget(self.binning_edit,        14, 1)
         # ROI box
-        layout_liveview.addWidget(define_roi,      12, 0)
-        layout_liveview.addWidget(starting_col_label,      13, 0)
-        layout_liveview.addWidget(self.starting_col,      13, 1)
-        layout_liveview.addWidget(final_col_label,      14, 0)
-        layout_liveview.addWidget(self.final_col,      14, 1)
-        layout_liveview.addWidget(starting_row_label,      15, 0)
-        layout_liveview.addWidget(self.starting_row,      15, 1)
-        layout_liveview.addWidget(final_row_label,      16, 0)
-        layout_liveview.addWidget(self.final_row,      16, 1)       
+        layout_liveview.addWidget(define_roi,      15, 0)
+        layout_liveview.addWidget(starting_col_label,      16, 0)
+        layout_liveview.addWidget(self.starting_col,      16, 1)
+        layout_liveview.addWidget(final_col_label,      17, 0)
+        layout_liveview.addWidget(self.final_col,      17, 1)
+        layout_liveview.addWidget(starting_row_label,      18, 0)
+        layout_liveview.addWidget(self.starting_row,      18, 1)
+        layout_liveview.addWidget(final_row_label,      19, 0)
+        layout_liveview.addWidget(self.final_row,      19, 1)       
 
         # fiducials selection dock
         self.fiducialsWidget = QtGui.QWidget()
@@ -592,6 +607,16 @@ class Frontend(QtGui.QFrame):
         self.img.setImage(self.image, autoLevels = self.autolevel_bool)
         return
     
+    @pyqtSlot(list)
+    def show_temp(self, list_of_temps):
+        self.sensor_temp = list_of_temps[0]
+        self.cam_temp = list_of_temps[1]
+        self.power_temp = list_of_temps[2]
+        self.sensor_temp_value.setText('{:.1f}'.format(self.sensor_temp))
+        self.cam_temp_value.setText('{:.1f}'.format(self.cam_temp))
+        self.power_temp_value.setText('{:.1f}'.format(self.power_temp))
+        return
+    
     @pyqtSlot(str)
     def get_file_path(self, file_path):
         self.file_path = file_path
@@ -619,6 +644,7 @@ class Frontend(QtGui.QFrame):
     
     def make_connections(self, backend):
         backend.imageSignal.connect(self.get_image)
+        backend.tempSignal.connect(self.show_temp)
         backend.filePathSignal.connect(self.get_file_path)
         backend.getFiducialsDataSignal.connect(self.retrieve_fiducials_data)
         backend.sendFittedDataSignal.connect(self.receive_fitted_data)
@@ -637,6 +663,7 @@ class Backend(QtCore.QObject):
     imageSignal = pyqtSignal(np.ndarray)
     getFiducialsDataSignal = pyqtSignal()
     sendFittedDataSignal = pyqtSignal(dict, np.ndarray, float)
+    tempSignal = pyqtSignal(list)
     filePathSignal = pyqtSignal(str)
     
     def __init__(self, piezo, piezo_backend, connect_to_piezo_module = True, *args, **kwargs):
@@ -646,6 +673,10 @@ class Backend(QtCore.QObject):
         self.piezoWorker = piezo_backend
         self.viewTimer = QtCore.QTimer()
         self.viewTimer.timeout.connect(self.update_view)   
+        self.tempTimer = QtCore.QTimer()
+        self.tempTimer.timeout.connect(self.update_temp)
+        print('Monitoring pco.camera temperature each {:.1f} s.'.format(tempTimer_update/1000))
+        self.tempTimer.start(tempTimer_update) # ms
         self.image_np = None
         self.binning = initial_binning
         self.pixel_size = initial_pixel_size
@@ -902,6 +933,12 @@ class Backend(QtCore.QObject):
         self.imageSignal.emit(self.image_np)
         return
     
+    def update_temp(self):
+        # Update temp of the camera
+        self.sensor_temp, self.cam_temp, self.power_temp = cam.get_temp()
+        self.tempSignal.emit([self.sensor_temp, self.cam_temp, self.power_temp])
+        return
+    
     def stop_liveview(self):
         print('\nLive view stopped at', datetime.now())
         cam.stop()
@@ -968,6 +1005,7 @@ class Backend(QtCore.QObject):
         cam.stop()
         print('Stopping QtTimers...')
         self.viewTimer.stop()
+        self.tempTimer.stop()
         if main_app:
             self.piezoWorker.updateTimer.stop()
             print('Shutting down piezo stage...')
@@ -1019,6 +1057,7 @@ if __name__ == '__main__':
     # thread that run in background
     workerThread = QtCore.QThread()
     worker.viewTimer.moveToThread(workerThread)
+    worker.tempTimer.moveToThread(workerThread)
     worker.trackingTimer.moveToThread(workerThread)
     worker.piezoWorker.updateTimer.moveToThread(workerThread)
     worker.piezoWorker.moveToThread(workerThread)

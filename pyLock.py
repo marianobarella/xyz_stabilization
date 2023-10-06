@@ -178,7 +178,6 @@ if __name__ == '__main__':
     worker.piezoWorker.moveToThread(workerThread)
     # move the timers of the xy and its main worker
     worker.xyWorker.viewTimer.moveToThread(workerThread)
-    worker.xyWorker.tempTimer.moveToThread(workerThread)
     worker.xyWorker.trackingTimer.moveToThread(workerThread)
     worker.xyWorker.moveToThread(workerThread)
     # move the timers of the z and its main worker
