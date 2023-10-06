@@ -34,7 +34,9 @@ class pco_camera(object):
         self.timestamp_flag = timestamp_flag
         self.debug_mode = debug
         print('\nConnecting to pco.panda camera...')
-        self.camera = pco.Camera(debuglevel = self.debug_mode, timestamp = self.timestamp_flag)
+        self.camera = pco.Camera(debuglevel = self.debug_mode, 
+                                 timestamp = self.timestamp_flag,
+                                 interface = 'USB 3.0')
         self.get_info()
         self.get_pixel_correction_mode()
         self.get_filter_noise_mode()
