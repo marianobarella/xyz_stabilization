@@ -462,23 +462,23 @@ class ROI_rect(pg.ROI):
         self.mainShape = shape
 
         pg.ROI.__init__(self, pos, size=shape, pen='y', *args, **kwargs)
-        self.addScaleHandle(handlePos, handleCenter, lockAspect=True)
+        self.addScaleHandle(handlePos, handleCenter, lockAspect=False)
         vb.addItem(self)
 
         self.label = pg.TextItem()
         self.label.setPos(self.pos()[0] + self.size()[0],
                           self.pos()[1] + self.size()[1])
-        self.label.setText('{}x{}'.format(shape, shape))
+        self.label.setText('{}x{}'.format(shape[0], shape[1]))
 
         self.sigRegionChanged.connect(self.updateText)
 
-        # vb.addItem(self.label)
+        vb.addItem(self.label)
 
     def updateText(self):
         self.label.setPos(self.pos()[0] + self.size()[0],
                           self.pos()[1] + self.size()[1])
         size = np.round(self.size()).astype(np.int)
-        self.label.setText('{}x{}'.format(size[0], size[0]))
+        self.label.setText('{}x{}'.format(size[0], size[1]))
 
     def hide(self, *args, **kwargs):
         super().hide(*args, **kwargs)

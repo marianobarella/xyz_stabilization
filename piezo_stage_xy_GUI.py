@@ -1,6 +1,9 @@
 ﻿# -*- coding: utf-8 -*-
 """
-Created on Mon May 2, 2022
+Graphical User Interface to interact with a 
+three-axis Piezo Controller BPC 303 Thorlabs
+
+Created on Wed Jan 22, 2025
 
 @author: Mariano Barella
 mariano.barella@unifr.ch
@@ -20,22 +23,9 @@ import time as tm
 
 #=====================================
 
-# ID of the benchtop controller BPC303
-deviceID = '71260444'
-piezo_stage = piezoTool.BPC303(deviceID)
-# initialize (connect)
-piezo_stage.connect()
-# method to check if it's connected
-if piezo_stage.controller.IsConnected:
-    print('Piezo stage succesfully connected.')
-else:
-    print('Couldn\'t connect to piezo stage.')
-# get info
-print(piezo_stage.get_info())
-print('Zeroing the piezo stage. This step takes around 30 s. Please wait...\n')
-# perform zero routine for all axis
-piezo_stage.zero('all')
-
+# 71260444 deviceID is the benchtop controller BPC 303 for 3 axis
+deviceID_BPC303 = '71260444'
+piezo_stage_xy = piezoTool.BPC303(deviceID_BPC303)
 # time period used to update stage position
 initial_updatePosition_period = 500 # in ms
 
@@ -57,7 +47,7 @@ class Frontend(QtGui.QFrame):
     def __init__(self, main_app = True, *args, **kwargs):  
         super().__init__(*args, **kwargs)
         self.main_app = main_app
-        self.setWindowTitle('xyz single piezo stage control')
+        self.setWindowTitle('xy piezo stage control')
         self.setUpGUI()
         self.go_to_action()
         return
@@ -82,7 +72,7 @@ class Frontend(QtGui.QFrame):
         self.feedback_loop_mode_tickbox.stateChanged.connect(self.feedback_loop_mode_changed)
         self.feedback_loop_mode_tickbox.setToolTip('Tick = Close-loop mode / Untick = Open-loop mode.')
 
-        # xyz position control
+        # xy position control
         self.StepEdit = QtGui.QLineEdit("0.2")
         self.StepEdit.setValidator(QtGui.QDoubleValidator(0.000, 20.000, 3))
 
@@ -112,21 +102,6 @@ class Frontend(QtGui.QFrame):
         self.yDownButton.pressed.connect(self.yDown)
         self.yDown2Button.pressed.connect(self.yDown2)
 
-        self.zLabel = QtGui.QLabel('Nan')  
-        self.zLabel.setTextFormat(QtCore.Qt.RichText)
-        self.zname = QtGui.QLabel("<strong>z (μm) =")
-        self.zname.setTextFormat(QtCore.Qt.RichText)
-        self.zUpButton = QtGui.QPushButton("z ▲")
-        self.zDownButton = QtGui.QPushButton("z ▼")
-        self.zUp2Button = QtGui.QPushButton("z ▲▲")
-        self.zDown2Button = QtGui.QPushButton("z ▼▼")
-        self.zUpButton.pressed.connect(self.zUp)
-        self.zUp2Button.pressed.connect(self.zUp2)
-        self.zDownButton.pressed.connect(self.zDown)
-        self.zDown2Button.pressed.connect(self.zDown2)
-        self.zStepEdit = QtGui.QLineEdit("0.2")
-        self.zStepEdit.setValidator(QtGui.QDoubleValidator(0.000, 20.000, 3))
-
         size = 50
         self.xUp2Button.setFixedWidth(size)
         self.xDown2Button.setFixedWidth(size)
@@ -155,21 +130,9 @@ class Frontend(QtGui.QFrame):
         layout.addWidget(QtGui.QLabel("Step x/y (µm)"), 4, 6, 1, 2)
         layout.addWidget(self.StepEdit,   5, 6)
         layout.addWidget(self.yUp2Button,   0, 5, 2, 1)
-        layout.addWidget(self.yDown2Button, 4, 5, 2, 1)
-        layout.addWidget(self.zname,       3, 0)
-        layout.addWidget(self.zLabel,      3, 1)
-        layout.addWidget(self.zUp2Button,   0, 9, 2, 1)
-        layout.addWidget(self.zUpButton,   1, 9, 3, 1)
-        layout.addWidget(self.zDownButton, 3, 9, 2, 1)
-        layout.addWidget(self.zDown2Button, 4, 9, 2, 1)
-        layout.addWidget(QtGui.QLabel("Step z (µm)"), 4, 10)
-        layout.addWidget(self.zStepEdit,   5, 10)
+        layout.addWidget(self.yDown2Button, 5, 5, 2, 1)
         # feedback loop mode
         layout.addWidget(self.feedback_loop_mode_tickbox,   6, 0, 1, 7)
-
-        size = 40
-        self.StepEdit.setFixedWidth(size)
-        self.zStepEdit.setFixedWidth(size)
         
         # Go to - Interface and buttons
         self.gotoWidget = QtGui.QWidget()
@@ -177,25 +140,20 @@ class Frontend(QtGui.QFrame):
         self.gotoWidget.setLayout(layout2)
         layout2.addWidget(QtGui.QLabel("x (µm)"), 1, 0)
         layout2.addWidget(QtGui.QLabel("y (µm)"), 2, 0)
-        layout2.addWidget(QtGui.QLabel("z (µm)"), 3, 0)
         self.xgotoLabel = QtGui.QLineEdit("10")
         self.ygotoLabel = QtGui.QLineEdit("10")
-        self.zgotoLabel = QtGui.QLineEdit("10")
         self.gotoButton = QtGui.QPushButton("Go to")
         self.gotoButton.pressed.connect(self.go_to)
         self.xgotoLabel.setValidator(QtGui.QDoubleValidator(0.000, 20.000, 3))
         self.ygotoLabel.setValidator(QtGui.QDoubleValidator(0.000, 20.000, 3))
-        self.zgotoLabel.setValidator(QtGui.QDoubleValidator(0.000, 20.000, 3))
         
         layout2.addWidget(self.gotoButton, 0, 0, 1, 2)
         layout2.addWidget(self.xgotoLabel, 1, 1)
         layout2.addWidget(self.ygotoLabel, 2, 1)
-        layout2.addWidget(self.zgotoLabel, 3, 1)
  
         size = 50
         self.xgotoLabel.setFixedWidth(size)
         self.ygotoLabel.setFixedWidth(size)
-        self.zgotoLabel.setFixedWidth(size)
         
         # Do docks       
         hbox = QtGui.QHBoxLayout(self)
@@ -260,31 +218,10 @@ class Frontend(QtGui.QFrame):
             self.move_signal.emit('y', -10*float(self.StepEdit.text()))
         return
     
-    def zUp(self):
-        if self.zUpButton.isChecked:
-            self.move_signal.emit('z', float(self.zStepEdit.text()))
-        return
-    
-    def zUp2(self):
-        if self.zUp2Button.isChecked:
-            self.move_signal.emit('z', 10*float(self.zStepEdit.text()))
-        return
-    
-    def zDown(self):
-        if self.zDownButton.isChecked:
-            self.move_signal.emit('z', -float(self.zStepEdit.text()))
-        return
-    
-    def zDown2(self):
-        if self.zDown2Button.isChecked:
-            self.move_signal.emit('z', -10*float(self.zStepEdit.text()))
-        return
-    
     @pyqtSlot(list)
     def read_pos_list(self, position):
         self.xLabel.setText('{:.3f}'.format(position[0]))
         self.yLabel.setText('{:.3f}'.format(position[1]))
-        self.zLabel.setText('{:.3f}'.format(position[2]))
         return
             
     def set_reference(self):
@@ -314,7 +251,7 @@ class Frontend(QtGui.QFrame):
         return
     
     def go_to_action(self):
-        go_to_pos = [float(self.xgotoLabel.text()), float(self.ygotoLabel.text()), float(self.zgotoLabel.text())]
+        go_to_pos = [float(self.xgotoLabel.text()), float(self.ygotoLabel.text())]
         self.go_to_pos_signal.emit(go_to_pos)
         return
     
@@ -356,14 +293,31 @@ class Backend(QtCore.QObject):
                  updatePosition_period = initial_updatePosition_period, \
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.piezo_stage = piezo_stage
+        self.piezo_stage_xy = piezo_stage
+        self.initialize_piezo()
         # set timer to update lasers status
         self.updatePosition_period = updatePosition_period
         self.updateTimer = QtCore.QTimer()
         self.updateTimer.timeout.connect(self.read_position)
         self.updateTimer.setInterval(self.updatePosition_period) # in ms
         self.updateTimer.start()
-        self.move_absolute([10, 10, 10])
+        self.move_absolute([10, 10])
+        return
+    
+    def initialize_piezo(self):
+        # initialize (connect)
+        self.piezo_stage_xy.connect()
+        # method to check if it's connected
+        if self.piezo_stage_xy.controller.IsConnected:
+            print('xy piezo stage succesfully connected.')
+        else:
+            print('Couldn\'t connect to xy piezo stage.')
+        # get info
+        print(self.piezo_stage_xy.get_info())
+        print('Zeroing the xy piezo stage. This step takes around 30 s. Please wait...\n')
+        # perform zero routine for all axis
+        self.piezo_stage_xy.zero('x')
+        self.piezo_stage_xy.zero('y')
         return
     
     @pyqtSlot()
@@ -371,19 +325,17 @@ class Backend(QtCore.QObject):
         """
         Read position from controller
         """ 
-        x_pos = self.piezo_stage.get_axis_position('x')
-        y_pos = self.piezo_stage.get_axis_position('y')
-        z_pos = self.piezo_stage.get_axis_position('z')
+        x_pos = self.piezo_stage_xy.get_axis_position('x')
+        y_pos = self.piezo_stage_xy.get_axis_position('y')
         x_pos = round(x_pos, 3)
         y_pos = round(y_pos, 3)
-        z_pos = round(z_pos, 3)
-        self.read_pos_signal.emit([x_pos, y_pos, z_pos])
-        return x_pos, y_pos, z_pos
+        self.read_pos_signal.emit([x_pos, y_pos])
+        return x_pos, y_pos
     
     # @pyqtSlot()
     # def set_reference(self):
-    #     x_pos, y_pos, z_pos = self.read_pos()
-    #     self.reference_signal.emit([x_pos, y_pos, z_pos])
+    #     x_pos, y_pos = self.read_pos()
+    #     self.reference_signal.emit([x_pos, y_pos])
     #     return
 
     @pyqtSlot(str, float)
@@ -394,26 +346,26 @@ class Backend(QtCore.QObject):
         # uncomment for debbuging
         # impose a settling time before reading
         # tm.sleep(0.5) 
-        # x_pos_before, y_pos_before, z_pos_before = self.read_position() 
+        # x_pos_before, y_pos_before = self.read_position() 
         # print('\nBefore')
         # print('x_pos', x_pos_before)
         # print('y_pos', y_pos_before)
-        # print('z_pos', z_pos_before)
         # print('Asking for a %.3f step on %s axis' % (distance, axis) )
-        self.piezo_stage.move_relative(axis, distance)
+        if axis == 'x' or axis == 'y':
+            self.piezo_stage_xy.move_relative(axis, distance)
+        else:
+            print('Cannot do \"move relative\". Axis should be x or y.')
         # check piezo_toolbox.py\response_time function
         # after running it, it's clear that 0.5 s is a suitable settling time
         # uncomment for debbuging
         # impose a settling time before reading
         # tm.sleep(0.5) 
-        # x_pos_after, y_pos_after, z_pos_after = self.read_position() 
+        # x_pos_after, y_pos_after = self.read_position() 
         # print('After')
         # print('x_pos', x_pos_after)
         # print('y_pos', y_pos_after)
-        # print('z_pos', z_pos_after)
         # print('x_shift', round((x_pos_after-x_pos_before), 3))
         # print('y_shift', round((y_pos_after-y_pos_before), 3))
-        # print('z_shift', round((z_pos_after-z_pos_before), 3))
         return
 
     @pyqtSlot(list)
@@ -423,9 +375,8 @@ class Backend(QtCore.QObject):
         """
         # first x, then y, and last z
         # print("Setting Position:", position)
-        self.piezo_stage.set_position(x = position[0], \
-                                      y = position[1], \
-                                      z = position[2])
+        self.piezo_stage_xy.set_position(x = position[0], \
+                                         y = position[1])
         self.read_position() 
         return
     
@@ -434,7 +385,7 @@ class Backend(QtCore.QObject):
         """ 
         Set (True) or Unset (False) feedback loop mode
         """
-        self.piezo_stage.set_close_loop(close_flag)
+        self.piezo_stage_xy.set_close_loop(close_flag)
         return
     
     @pyqtSlot(bool)
@@ -443,7 +394,7 @@ class Backend(QtCore.QObject):
         self.updateTimer.stop()
         if main_app:
             print('Shutting down piezo stage...')
-            self.piezo_stage.shutdown()
+            self.piezo_stage_xy.shutdown()
             print('Exiting thread...')
             tm.sleep(1)
             workerThread.exit()
@@ -470,7 +421,7 @@ if __name__ == '__main__':
 
     # create both classes
     gui = Frontend()
-    worker = Backend(piezo_stage)
+    worker = Backend(piezo_stage_xy)
     
     # # thread that run in background
     workerThread = QtCore.QThread()

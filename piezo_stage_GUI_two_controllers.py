@@ -1,6 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 """
 Created on Mon May 2, 2022
+Modified on Mon Jan 20, 2025
 
 @author: Mariano Barella
 mariano.barella@unifr.ch
@@ -20,22 +21,12 @@ import time as tm
 
 #=====================================
 
-# ID of the benchtop controller BPC303
-deviceID = '71260444'
-piezo_stage = piezoTool.BPC303(deviceID)
-# initialize (connect)
-piezo_stage.connect()
-# method to check if it's connected
-if piezo_stage.controller.IsConnected:
-    print('Piezo stage succesfully connected.')
-else:
-    print('Couldn\'t connect to piezo stage.')
-# get info
-print(piezo_stage.get_info())
-print('Zeroing the piezo stage. This step takes around 30 s. Please wait...\n')
-# perform zero routine for all axis
-piezo_stage.zero('all')
-
+# 71260444 deviceID is the benchtop controller BPC 303 for 3 axis
+deviceID_BPC303 = '71260444'
+# 41401114 deviceID is the benchtop controller BPC 301 for 1 axis
+deviceID_BPC301 = '41401114'
+piezo_stage_xy = piezoTool.BPC303(deviceID_BPC303)
+piezo_stage_z = piezoTool.BPC301(deviceID_BPC301)
 # time period used to update stage position
 initial_updatePosition_period = 500 # in ms
 
@@ -57,7 +48,7 @@ class Frontend(QtGui.QFrame):
     def __init__(self, main_app = True, *args, **kwargs):  
         super().__init__(*args, **kwargs)
         self.main_app = main_app
-        self.setWindowTitle('xyz single piezo stage control')
+        self.setWindowTitle('xyz two piezo stages control')
         self.setUpGUI()
         self.go_to_action()
         return
@@ -82,7 +73,7 @@ class Frontend(QtGui.QFrame):
         self.feedback_loop_mode_tickbox.stateChanged.connect(self.feedback_loop_mode_changed)
         self.feedback_loop_mode_tickbox.setToolTip('Tick = Close-loop mode / Untick = Open-loop mode.')
 
-        # xyz position control
+        # xy position control
         self.StepEdit = QtGui.QLineEdit("0.2")
         self.StepEdit.setValidator(QtGui.QDoubleValidator(0.000, 20.000, 3))
 
@@ -112,6 +103,7 @@ class Frontend(QtGui.QFrame):
         self.yDownButton.pressed.connect(self.yDown)
         self.yDown2Button.pressed.connect(self.yDown2)
 
+        # z position control
         self.zLabel = QtGui.QLabel('Nan')  
         self.zLabel.setTextFormat(QtCore.Qt.RichText)
         self.zname = QtGui.QLabel("<strong>z (μm) =")
@@ -352,11 +344,13 @@ class Backend(QtCore.QObject):
     read_pos_signal = pyqtSignal(list)
     # reference_signal = pyqtSignal(list)
 
-    def __init__(self, piezo_stage, \
+    def __init__(self, piezo_stage_xy, piezo_stage_z, \
                  updatePosition_period = initial_updatePosition_period, \
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.piezo_stage = piezo_stage
+        self.piezo_stage_xy = piezo_stage_xy
+        self.piezo_stage_z = piezo_stage_z
+        self.initialize_piezo()
         # set timer to update lasers status
         self.updatePosition_period = updatePosition_period
         self.updateTimer = QtCore.QTimer()
@@ -366,14 +360,41 @@ class Backend(QtCore.QObject):
         self.move_absolute([10, 10, 10])
         return
     
+    def initialize_piezo(self):
+        # initialize (connect)
+        self.piezo_stage_xy.connect()
+        self.piezo_stage_z.connect()
+        # method to check if it's connected
+        if self.piezo_stage_xy.controller.IsConnected:
+            print('xy piezo stage succesfully connected.')
+        else:
+            print('Couldn\'t connect to xy piezo stage.')
+        if self.piezo_stage_z.controller.IsConnected:
+            print('z piezo stage succesfully connected.')
+        else:
+            print('Couldn\'t connect to z piezo stage.')
+        # get info
+        print(self.piezo_stage_xy.get_info())
+        print('Zeroing the xy piezo stage. This step takes around 30 s. Please wait...\n')
+        # perform zero routine for all axis
+        self.piezo_stage_xy.zero('x')
+        self.piezo_stage_xy.zero('y')
+
+        # get info
+        print(self.piezo_stage_z.get_info())
+        print('Zeroing the z piezo stage. This step takes around 30 s. Please wait...\n')
+        # perform zero routine for all axis
+        self.piezo_stage_z.zero()
+        return
+    
     @pyqtSlot()
     def read_position(self):
         """
         Read position from controller
         """ 
-        x_pos = self.piezo_stage.get_axis_position('x')
-        y_pos = self.piezo_stage.get_axis_position('y')
-        z_pos = self.piezo_stage.get_axis_position('z')
+        x_pos = self.piezo_stage_xy.get_axis_position('x')
+        y_pos = self.piezo_stage_xy.get_axis_position('y')
+        z_pos = self.piezo_stage_z.get_axis_position('z')
         x_pos = round(x_pos, 3)
         y_pos = round(y_pos, 3)
         z_pos = round(z_pos, 3)
@@ -400,7 +421,12 @@ class Backend(QtCore.QObject):
         # print('y_pos', y_pos_before)
         # print('z_pos', z_pos_before)
         # print('Asking for a %.3f step on %s axis' % (distance, axis) )
-        self.piezo_stage.move_relative(axis, distance)
+        if axis == 'x' or axis == 'y':
+            self.piezo_stage_xy.move_relative(axis, distance)
+        elif axis == 'z':
+            self.piezo_stage_z.move_relative(axis, distance)
+        else:
+            print('Cannot do \"move relative\". Axis should be x, y or z.')
         # check piezo_toolbox.py\response_time function
         # after running it, it's clear that 0.5 s is a suitable settling time
         # uncomment for debbuging
@@ -423,9 +449,10 @@ class Backend(QtCore.QObject):
         """
         # first x, then y, and last z
         # print("Setting Position:", position)
-        self.piezo_stage.set_position(x = position[0], \
-                                      y = position[1], \
-                                      z = position[2])
+        self.piezo_stage_xy.set_position(x = position[0], \
+                                         y = position[1], \
+                                         z = 0)
+        self.piezo_stage_z.set_position(z = position[2])
         self.read_position() 
         return
     
@@ -434,7 +461,8 @@ class Backend(QtCore.QObject):
         """ 
         Set (True) or Unset (False) feedback loop mode
         """
-        self.piezo_stage.set_close_loop(close_flag)
+        self.piezo_stage_xy.set_close_loop(close_flag)
+        self.piezo_stage_z.set_close_loop(close_flag)
         return
     
     @pyqtSlot(bool)
@@ -443,9 +471,10 @@ class Backend(QtCore.QObject):
         self.updateTimer.stop()
         if main_app:
             print('Shutting down piezo stage...')
-            self.piezo_stage.shutdown()
+            self.piezo_stage_xy.shutdown()
+            self.piezo_stage_z.shutdown()
+            tm.sleep(5)
             print('Exiting thread...')
-            tm.sleep(1)
             workerThread.exit()
         return            
 
@@ -470,7 +499,7 @@ if __name__ == '__main__':
 
     # create both classes
     gui = Frontend()
-    worker = Backend(piezo_stage)
+    worker = Backend(piezo_stage_xy, piezo_stage_z)
     
     # # thread that run in background
     workerThread = QtCore.QThread()

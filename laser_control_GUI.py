@@ -31,8 +31,6 @@ laser488 = laserToolbox.toptica_laser(debug_mode = False)
 laserTisa = laserToolbox.M2_laser(debug_mode = True, timeout = 10.0)
 shutterTisaObject = laserToolbox.Thorlabs_shutter(debug_mode = False)
 # build flippers objects
-flipperMirror = laserToolbox.motorized_flipper(debug_mode = False, \
-                                               serial_port = laserToolbox.COM_port_flipper_cam_Thorlabs)
 flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
                                                   serial_port = laserToolbox.COM_port_flipper_apd_Thorlabs)
 flipperTisaFilter = laserToolbox.motorized_flipper(debug_mode = False, \
@@ -57,7 +55,6 @@ class Frontend(QtGui.QFrame):
     shutter488_signal = pyqtSignal(bool)
     shutter532_signal = pyqtSignal(bool)
     emission532_signal = pyqtSignal(bool)
-    flipper_cam_signal = pyqtSignal(bool)
     flipper_apd_signal = pyqtSignal(bool)
     flipper_tisa_signal = pyqtSignal(bool)
     powerChangedSignal = pyqtSignal(float)
@@ -113,16 +110,7 @@ class Frontend(QtGui.QFrame):
         self.shutter488button.setToolTip('Open/close 488 shutter')
         self.shutter532button.setToolTip('Open/close 532 shutter')
         
-        # Flippers
-        # camera selector
-        self.flipper_cam_label = QtGui.QLabel('Camera selector  | ')
-        self.flipperCamButton_label = QtGui.QLabel('INSPECTION cam')
-        self.flipperCamButton = Toggle(bar_color=QtGui.QColor(42,81,156), 
-                                        handle_color=QtGui.QColor(14,73,140), 
-                                        checked_color="#bd1e1e")
-        self.flipperCamButton._handle_position = 1
-        self.flipperCamButton.clicked.connect(self.flipperCamButton_check)
-        self.flipperCamButton.setToolTip('Up/Down flipper mirror')              
+        # Flippers      
         # apd attenuation
         self.flipper_apd_label = QtGui.QLabel('APD attenuation selector  | ')
         self.flipperAPDButton_label = QtGui.QLabel('Filter IN')
@@ -269,15 +257,12 @@ class Frontend(QtGui.QFrame):
         self.flippers_box = QtGui.QWidget()
         flippers_box_layout = QtGui.QGridLayout()
         self.flippers_box.setLayout(flippers_box_layout)
-        flippers_box_layout.addWidget(self.flipper_cam_label, 0, 0)
-        flippers_box_layout.addWidget(self.flipperCamButton_label, 0, 1)
-        flippers_box_layout.addWidget(self.flipperCamButton, 0, 2)
-        flippers_box_layout.addWidget(self.flipper_apd_label, 1, 0)
-        flippers_box_layout.addWidget(self.flipperAPDButton_label, 1, 1)
-        flippers_box_layout.addWidget(self.flipperAPDButton, 1, 2)
-        flippers_box_layout.addWidget(self.flipper_tisa_label, 2, 0)
-        flippers_box_layout.addWidget(self.flipperTisaButton_label, 2, 1)
-        flippers_box_layout.addWidget(self.flipperTisaButton, 2, 2)
+        flippers_box_layout.addWidget(self.flipper_apd_label, 0, 0)
+        flippers_box_layout.addWidget(self.flipperAPDButton_label, 0, 1)
+        flippers_box_layout.addWidget(self.flipperAPDButton, 0, 2)
+        flippers_box_layout.addWidget(self.flipper_tisa_label, 1, 0)
+        flippers_box_layout.addWidget(self.flipperTisaButton_label, 1, 1)
+        flippers_box_layout.addWidget(self.flipperTisaButton, 1, 2)
         
         # Status box
         self.status_box = QtGui.QWidget()
@@ -351,15 +336,6 @@ class Frontend(QtGui.QFrame):
             self.emission532_signal.emit(True)
         else:
             self.emission532_signal.emit(False)
-        return
-
-    def flipperCamButton_check(self):
-        if self.flipperCamButton.handle_position == 1:
-            self.flipperCamButton_label.setText('INSPECTION cam')
-            self.flipper_cam_signal.emit(True)
-        else:
-            self.flipperCamButton_label.setText('XY STABILIZATION cam')
-            self.flipper_cam_signal.emit(False)
         return
     
     def flipperAPDButton_check(self):
@@ -536,15 +512,6 @@ class Backend(QtCore.QObject):
         return
     
     @pyqtSlot(bool)
-    def flipper_inspec_cam(self, flipperbool):
-        if flipperbool:
-            flipperMirror.set_flipper_down() # inspection camera ON
-        else:
-            flipperMirror.set_flipper_up() # inspection camera OFF
-        print('Flipper status:', flipperMirror.get_state())
-        return
-    
-    @pyqtSlot(bool)
     def flipper_apd_attenuation(self, flipperbool):
         if flipperbool:
             flipperAPDFilter.set_flipper_down() # filter IN
@@ -681,7 +648,6 @@ class Backend(QtCore.QObject):
         self.shutterTisa(False)
         laserTisa.close()
         print('Closing flippers...')
-        flipperMirror.close()
         flipperAPDFilter.close()
         flipperTisaFilter.close() # TODO check if it is working
         print('Exiting thread...')
@@ -693,7 +659,6 @@ class Backend(QtCore.QObject):
         frontend.shutter488_signal.connect(self.shutter488)
         frontend.shutter532_signal.connect(self.shutter532)
         frontend.emission532_signal.connect(self.emission532)
-        frontend.flipper_cam_signal.connect(self.flipper_inspec_cam)
         frontend.flipper_apd_signal.connect(self.flipper_apd_attenuation)
         frontend.flipper_tisa_signal.connect(self.flipper_tisa_attenuation)
         frontend.powerChangedSignal.connect(self.change_power)

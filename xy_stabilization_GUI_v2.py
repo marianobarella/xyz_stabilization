@@ -20,7 +20,7 @@ from PIL import Image
 from tkinter import filedialog
 import tkinter as tk
 import time as tm
-import piezo_stage_GUI
+import piezo_stage_xy_GUI
 import viewbox_tools
 
 import pco_camera_toolbox as pco
@@ -32,9 +32,9 @@ import drift_correction_toolbox as drift
 
 #=====================================
 
-#cam = pco.pco_camera()
-#cam = pco.pco_camera(debug = 'verbose', timestamp_flag = 'on')
-cam = pco.pco_camera(debug = 'extra verbose', timestamp_flag = 'on')
+cam = pco.pco_camera()
+# cam = pco.pco_camera(debug = 'verbose', timestamp_flag = 'on')
+# cam = pco.pco_camera(debug = 'extra verbose', timestamp_flag = 'on')
 initial_binning = 4
 initial_pixel_size = 260 # in nm (with 4x4 binning)
 initial_exp_time = 150.0 # in ms
@@ -47,7 +47,7 @@ initial_filepath = 'D:\\daily_data\\pco_camera_pictures' # save in SSD for fast 
 initial_filename = 'image_pco'
 
 # timers
-tempTimer_update = 5000 # in ms
+tempTimer_update = 10000 # in ms
 initial_tracking_period = 150 # in ms
 initial_bix_size = 51 # always odd number pixels
 driftbox_length = 10.0 # in seconds
@@ -79,6 +79,7 @@ class Frontend(QtGui.QFrame):
     closeSignal = pyqtSignal(bool)
     roiChangedSignal = pyqtSignal(bool, list)
     exposureChangedSignal = pyqtSignal(bool, float)
+    cameraTempMonitorSignal = pyqtSignal(bool)
     binningChangedSignal = pyqtSignal(bool, int, float)
     trackingPeriodChangedSignal = pyqtSignal(bool, int)
     takePictureSignal = pyqtSignal(bool, float)
@@ -176,6 +177,14 @@ class Frontend(QtGui.QFrame):
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
         self.exp_time_edit.setValidator(QtGui.QDoubleValidator(0.01, 5000.00, 2))
         self.exp_time_edit.setToolTip('Minimum is 10 µs. Maximum is 5 s.')
+        
+        # Camera temperature timer checkbox       
+        self.cam_temp_tickbox = QtGui.QCheckBox('Monitor camera temperature')
+        self.initial_cam_temp_tickbox_state = False
+        self.cam_temp_tickbox.setChecked(self.initial_cam_temp_tickbox_state)
+        self.cam_temp_tickbox.setText('Monitor camera temp.')
+        self.cam_temp_tickbox.stateChanged.connect(self.monitor_cam_temp)
+        self.cam_temp_bool = self.initial_cam_temp_tickbox_state
 
         # Pixel size
         pixel_size_label = QtGui.QLabel('Pixel size (nm):')
@@ -303,22 +312,24 @@ class Frontend(QtGui.QFrame):
         layout_liveview.addWidget(self.exp_time_edit,          8, 1)
         # auto level
         layout_liveview.addWidget(self.autolevel_tickbox,      9, 0)
+        # Temp timer
+        layout_liveview.addWidget(self.cam_temp_tickbox, 10, 0)
         # pixel size
-        layout_liveview.addWidget(pixel_size_label,      10, 0)
-        layout_liveview.addWidget(self.pixel_size_value,        10, 1)
+        layout_liveview.addWidget(pixel_size_label,      11, 0)
+        layout_liveview.addWidget(self.pixel_size_value,        11, 1)
         # binning
-        layout_liveview.addWidget(binning_label,        11, 0)
-        layout_liveview.addWidget(self.binning_edit,        11, 1)
+        layout_liveview.addWidget(binning_label,        12, 0)
+        layout_liveview.addWidget(self.binning_edit,        12, 1)
         # ROI box
-        layout_liveview.addWidget(define_roi,      12, 0)
-        layout_liveview.addWidget(starting_col_label,      13, 0)
-        layout_liveview.addWidget(self.starting_col,      13, 1)
-        layout_liveview.addWidget(final_col_label,      14, 0)
-        layout_liveview.addWidget(self.final_col,      14, 1)
-        layout_liveview.addWidget(starting_row_label,      15, 0)
-        layout_liveview.addWidget(self.starting_row,      15, 1)
-        layout_liveview.addWidget(final_row_label,      16, 0)
-        layout_liveview.addWidget(self.final_row,      16, 1)       
+        layout_liveview.addWidget(define_roi,      13, 0)
+        layout_liveview.addWidget(starting_col_label,      14, 0)
+        layout_liveview.addWidget(self.starting_col,      14, 1)
+        layout_liveview.addWidget(final_col_label,      15, 0)
+        layout_liveview.addWidget(self.final_col,      15, 1)
+        layout_liveview.addWidget(starting_row_label,      16, 0)
+        layout_liveview.addWidget(self.starting_row,      16, 1)
+        layout_liveview.addWidget(final_row_label,      17, 0)
+        layout_liveview.addWidget(self.final_row,      17, 1)       
 
         # fiducials selection dock
         self.fiducialsWidget = QtGui.QWidget()
@@ -574,6 +585,16 @@ class Frontend(QtGui.QFrame):
             print('Autolevel off')
         return
     
+    def monitor_cam_temp(self):
+        if self.cam_temp_tickbox.isChecked():
+            self.cam_temp_bool = True
+            print('Camera temp. monitor is ON')
+        else:
+            self.cam_temp_bool = False
+            print('Camera temp. monitor is OFF')
+        self.cameraTempMonitorSignal.emit(self.cam_temp_bool)
+        return
+    
     def save_drift_trace(self):
         if self.savedrift_tickbox.isChecked():
             self.savedrift_bool = True
@@ -643,6 +664,8 @@ class Backend(QtCore.QObject):
         self.piezoWorker = piezo_backend
         self.viewTimer = QtCore.QTimer()
         self.viewTimer.timeout.connect(self.update_view)   
+        self.tempTimer = QtCore.QTimer()
+        self.tempTimer.timeout.connect(self.update_temp)
         self.image_np = None
         self.binning = initial_binning
         self.pixel_size = initial_pixel_size
@@ -899,6 +922,24 @@ class Backend(QtCore.QObject):
         self.imageSignal.emit(self.image_np)
         return
     
+    def update_temp(self):
+        # Update temp of the camera
+        sensor_temp, cam_temp, power_temp = cam.get_temp()
+        print('\npco camera temperatures retrieved at', datetime.now())
+        print('Sensor temp: %.1f °C' % sensor_temp)
+        print('Camera temp: %.1f °C' % cam_temp)
+        print('Electronics temp: %.1f °C' % power_temp)
+        return
+    
+    @pyqtSlot(bool)   
+    def camera_temp_timer(self, monitor_bool):
+        if monitor_bool:
+            print('Monitoring pco.camera temperature each {:.1f} s.'.format(tempTimer_update/1000))
+            self.tempTimer.start(tempTimer_update) # ms
+        else:
+            self.tempTimer.stop()
+        return
+    
     def stop_liveview(self):
         print('\nLive view stopped at', datetime.now())
         cam.stop()
@@ -965,17 +1006,19 @@ class Backend(QtCore.QObject):
         cam.stop()
         print('Stopping QtTimers...')
         self.viewTimer.stop()
+        self.tempTimer.stop()
         if main_app:
             self.piezoWorker.updateTimer.stop()
             print('Shutting down piezo stage...')
             self.piezo_stage.shutdown()
+            tm.sleep(5)
             print('Exiting thread...')
-            tm.sleep(1)
             workerThread.exit()
         return
     
     def make_connections(self, frontend):
         frontend.roiChangedSignal.connect(self.change_roi)
+        frontend.cameraTempMonitorSignal.connect(self.camera_temp_timer)
         frontend.exposureChangedSignal.connect(self.change_exposure)
         frontend.binningChangedSignal.connect(self.change_binning)
         frontend.trackingPeriodChangedSignal.connect(self.change_tracking_period)
@@ -1005,9 +1048,9 @@ if __name__ == '__main__':
     app = QtGui.QApplication([])
     
     # init stage
-    piezo = piezo_stage_GUI.piezo_stage     
-    piezo_frontend = piezo_stage_GUI.Frontend()
-    piezo_backend = piezo_stage_GUI.Backend(piezo)
+    piezo = piezo_stage_xy_GUI.piezo_stage_xy     
+    piezo_frontend = piezo_stage_xy_GUI.Frontend()
+    piezo_backend = piezo_stage_xy_GUI.Backend(piezo)
     
     # create both classes
     gui = Frontend(piezo_frontend)
@@ -1016,6 +1059,7 @@ if __name__ == '__main__':
     # thread that run in background
     workerThread = QtCore.QThread()
     worker.viewTimer.moveToThread(workerThread)
+    worker.tempTimer.moveToThread(workerThread)
     worker.trackingTimer.moveToThread(workerThread)
     worker.piezoWorker.updateTimer.moveToThread(workerThread)
     worker.piezoWorker.moveToThread(workerThread)

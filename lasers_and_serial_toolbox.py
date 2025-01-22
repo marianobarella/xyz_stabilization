@@ -27,12 +27,12 @@ from timeit import default_timer as timer
 # modify if it's not enoough
 bytesToRead = 250
 # COM ports
-COM_port_oxxius = 'COM4' # Oxxius Laser com port
-COM_port_flipper_cam_Thorlabs = 'COM5' # Serial number: 37004922
+COM_port_oxxius = 'COM5' # 532 Oxxius Laser com port
+COM_port_flipper_cam_Thorlabs = 'COMX' # Serial number: 37004922 # NOT USED FOR THE MOMENT
 COM_port_flipper_apd_Thorlabs = 'COM8' # Serial number: 37005240
 COM_port_flipper_tisa_Thorlabs = 'COM9' # Serial number: 37005241
 COM_port_shutter_Thorlabs = 'COM11' # USB to Serial cable
-COM_port_toptica = 'COM6' # ATEN USB to Serial bridge
+COM_port_toptica = 'COM6' # 488 Toptica Laser using ATEN USB to Serial bridge 
 
 def serial_ports():
     """ Lists serial port names
@@ -109,7 +109,7 @@ def closeSerial(serialInstance):
 
 class oxxius_laser(object):
     def __init__(self, debug_mode):
-        # Parameters for Oxxis 532 green laser
+        # Parameters for Oxxius 532 green laser
         # Warning: laser has to be configured to communicate trhough serial port
         # for this, mode "CDC 1" has to be set from Oxxius software. 
         # This has been done for the first time probably. Read User manual page 44.
