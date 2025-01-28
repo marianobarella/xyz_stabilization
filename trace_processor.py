@@ -38,7 +38,9 @@ def get_number_from_headerline(filepath, line_number):
 # INPUTS
 # base data's folder
 
-base_folder = 'C:\\datos_mariano\\posdoc\\unifr\\plasmonic_optical_trapping\\transmission_signal_stability\\aperture\\5um'
+base_folder = 'C:\\datos_mariano\\posdoc\\unifr\\plasmonic_optical_trapping'
+experiment_folder = '\\measurements_2024\\power_stabilization_test_new_Setup_20250124\\20240124'
+base_folder = os.path.join(base_folder, experiment_folder)
 # average filtering window
 window_avg = 5
 
@@ -142,30 +144,20 @@ print('Monitor std dev %.6f V' % monitor_std)
 print('Monitor Coef. of Variation %.3f %%' % (monitor_cv*100))
 
 ##############################################################################
-# PLOT
-fig, (ax1, ax2) = plt.subplots(2, 1)
-fig.subplots_adjust(hspace=0.5) # extra space between the subplots
-ax1.plot(time_data, single_trace_tra, label='APD')
-ax1.set_xlabel('Time (s)')
-ax1.set_ylabel('Signal (V)')
-ax1.legend(loc='best')
-ax1.grid(True)
-ax2.plot(time_data, single_trace_mon, label='Monitor')
-ax2.set_xlabel('Time (s)')
-ax2.set_ylabel('Signal (V)')
-ax2.legend(loc='best')
-ax2.grid(True)
-plt.show()
-
-plt.figure(2)
-ax = plt.gca()
-ax.scatter(single_trace_tra, single_trace_mon, s=2)
-# ax.set_aspect('equal')
-plt.ylabel('Monitor signal (V)')
-plt.xlabel('APD signal (V)')
-ax.set_axisbelow(True)
-ax.grid(True)
-plt.show()
+# # PLOT
+# fig, (ax1, ax2) = plt.subplots(2, 1)
+# fig.subplots_adjust(hspace=0.5) # extra space between the subplots
+# ax1.plot(time_data, single_trace_tra, label='APD')
+# ax1.set_xlabel('Time (s)')
+# ax1.set_ylabel('Signal (V)')
+# ax1.legend(loc='best')
+# ax1.grid(True)
+# ax2.plot(time_data, single_trace_mon, label='Monitor')
+# ax2.set_xlabel('Time (s)')
+# ax2.set_ylabel('Signal (V)')
+# ax2.legend(loc='best')
+# ax2.grid(True)
+# plt.show()
     
     
     
