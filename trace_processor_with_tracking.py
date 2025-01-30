@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Jun 12 10:24:54 2023
+Created on Mon Jun 12, 2023
 
-@author: BarellaM
+@author: Mariano Barella
+mariano.barella@unifr.ch
+Adolphe Merkle Institute - University of Fribourg
+Fribourg, Switzerland
 """
 
 import numpy as np
