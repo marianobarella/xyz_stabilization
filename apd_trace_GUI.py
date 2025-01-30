@@ -12,12 +12,13 @@ import numpy as np
 from timeit import default_timer as timer
 import os
 # import sys
+import scipy.signal as sig
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
 # import pyqtgraph.ptime as ptime
 from pyqtgraph.dockarea import Dock, DockArea
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
-from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import QMessageBox, QPushButton, QLabel, QDialog
 import daq_board_toolbox as daq
 from tkinter import filedialog
 import tkinter as tk
@@ -54,6 +55,23 @@ def calculate_num_of_points(duration, sampling_rate):
                                                                        duration))
     print('{} datapoints per trace'.format(number_of_points))
     return number_of_points
+
+def autocorr(x):
+    # actually, is the time-dependant Pearson correlation coefficient (read below)
+    x_avg = np.mean(x)
+    x_new = x - x_avg
+    N = len(x)
+    var = np.var(x)
+    autocovariance = sig.correlate(x_new, x_new, mode='full', method='fft')
+    corr_coef = (1/N)*autocovariance/var
+    # fft method is faster and same method used by autocorr.m Matlab function (if no NaN are present)
+    # see https://ch.mathworks.com/help/econ/autocorr.html#btzjcln-4
+    # also, becuase autocorr.m subtracts the mean it becomes the autocovariance
+    # also, because it normalizes with the variance, it becomes the time-dependant Pearson correlation coefficient
+    # see https://en.wikipedia.org/wiki/Autocorrelation
+    z = corr_coef[corr_coef.size//2:] # get half of the array, positive lag times only
+    lag = np.arange(0, corr_coef.size//2+1)
+    return z, lag
 
 # define a fixed length (in s) for the time axis of viewbox signal vs time
 initial_viewbox_length = 2 # in s
@@ -295,6 +313,10 @@ class Frontend(QtGui.QFrame):
         self.enableAutoRagenButton.stateChanged.connect(self.enable_autorange)
         self.enableAutoRagenButton.setToolTip('Set/Tick to enable autorange.')
 
+        # Create a button to open the autocorrelation child window
+        self.open_child_button = QtGui.QPushButton("Autocorrelation - live", self)
+        self.open_child_button.clicked.connect(self.open_child_window)
+
         # Layout for the acquisition widget
         self.paramAcqWidget = QtGui.QWidget()
         subgridAcq_layout = QtGui.QGridLayout()
@@ -347,7 +369,8 @@ class Frontend(QtGui.QFrame):
         subgridDisp_layout.addWidget(self.timeViewboxLength_label, 7, 0)
         subgridDisp_layout.addWidget(self.timeViewboxLength_value, 7, 1)
         subgridDisp_layout.addWidget(self.displayRateLabel, 8, 0, 1, 3)
-        
+        subgridDisp_layout.addWidget(self.open_child_button, 9, 0, 1, 3)
+
         # widget for the data
         self.viewTraceWidget = pg.GraphicsLayoutWidget()
         self.signal_plot = self.viewTraceWidget.addPlot(row = 1, col = 1, title = 'APD signal')
@@ -389,6 +412,11 @@ class Frontend(QtGui.QFrame):
         gridbox.addWidget(dockArea2, 1, 0) 
         self.setLayout(gridbox)
         return
+
+    def open_child_window(self):
+        # Create an instance of the child window and pass the main window's information
+        self.child_window = ChildWindow(self)
+        self.child_window.show()
 
     def set_working_dir(self):
         self.setWorkDirSignal.emit()
@@ -687,7 +715,18 @@ class Frontend(QtGui.QFrame):
         backend.acqStopped.connect(self.acquisition_stopped)
         backend.saving_data_error_signal.connect(self.pop_up_window_error)
         return
-    
+
+class ChildWindow(QDialog):
+    def __init__(self, info_text):
+        super().__init__()
+
+        self.setWindowTitle("Child Window")
+        self.setGeometry(150, 150, 250, 150)
+
+        # Create a label to display the information from the main window
+        self.info_label = QLabel(info_text, self)
+        #(data_apd_array, self.sampling_rate)
+
 #=====================================
 
 # Controls / Backend definition
