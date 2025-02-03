@@ -67,7 +67,7 @@ class Frontend(QtGui.QFrame):
     
     def __init__(self, main_app = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.setGeometry(5, 30, 900, 500) # x pos, y pos, width, height
+        self.setGeometry(5, 30, 830, 700) # x pos, y pos, width, height
         # set the title of thw window
         title = "Live view module"
         self.setWindowTitle(title)
@@ -79,16 +79,16 @@ class Frontend(QtGui.QFrame):
         return
             
     def setUpGUI(self):
-        max_y_cursor = color_cam_sensor_width_pixels
-        max_x_cursor = color_cam_sensor_height_pixels
-        optical_format = color_cam_sensor_width_pixels/color_cam_sensor_height_pixels
+        max_x_cursor = color_cam_sensor_width_pixels
+        max_y_cursor = color_cam_sensor_height_pixels
+        optical_format = color_cam_sensor_height_pixels/color_cam_sensor_width_pixels
 
         # Image
         self.imageWidget = pg.GraphicsLayoutWidget()
         self.vb = self.imageWidget.addPlot()
         self.img = pg.ImageItem()
         self.vb.setAspectLocked()
-        self.img.setOpts(axisOrder = 'row-major')
+        self.img.setOpts(axisOrder = 'col-major')
         self.vb.addItem(self.img)
         self.hist = pg.HistogramLUTItem(image = self.img, levelMode = 'mono')
         self.hist.gradient.loadPreset('grey')

@@ -163,7 +163,7 @@ def measure_data_n_times(task, number_of_points, max_num_of_meas, timeout, debug
 
 def allocate_datafile(number_of_points):
     # pre-allocate array in a temporary file
-    dummy_file_path = path.join(mkdtemp(), 'dummy.dat')    
+    dummy_file_path = path.join(mkdtemp(), 'allocated_datafile.dat')    
     array = np.memmap(dummy_file_path, dtype = 'float32', mode = 'w+', \
                            shape = (number_of_points) )
     array[:] = -1000 # set data array to an impossible output
@@ -195,16 +195,18 @@ def measure_in_loop_continuously(task, task_stream_reader, number_of_points, \
     return data_array
 
 def measure_one_loop(task_stream_reader, number_of_channels, number_of_points_per_ch, i):
-    n_available = task_stream_reader._in_stream.avail_samp_per_chan
+    n_available = samples_available(task_stream_reader)
     if n_available == 0: 
         return n_available, np.array([])
     # prevent reading too many samples
-    n_available = min(n_available, number_of_points_per_ch - i) 
+    n_to_read = min(n_available, number_of_points_per_ch - i) 
     # read directly
-    data = np.empty((number_of_channels, n_available))
-    task_stream_reader.read_many_sample(data, number_of_samples_per_channel = n_available)
-    return n_available, data
+    data = np.empty((number_of_channels, n_to_read))
+    task_stream_reader.read_many_sample(data, number_of_samples_per_channel = n_to_read)
+    return n_to_read, data
 
+def samples_available(task_stream_reader):
+    return task_stream_reader._in_stream.avail_samp_per_chan
 
 #=====================================
 

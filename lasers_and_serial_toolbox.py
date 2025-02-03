@@ -33,6 +33,8 @@ COM_port_flipper_apd_Thorlabs = 'COM8' # Serial number: 37005240
 COM_port_flipper_tisa_Thorlabs = 'COM9' # Serial number: 37005241
 COM_port_shutter_Thorlabs = 'COM11' # USB to Serial cable
 COM_port_toptica = 'COM6' # 488 Toptica Laser using ATEN USB to Serial bridge 
+COM_valve = 'COM4' # microfluidics valve NOT USED HERE
+COM_pump = 'COM3' # microfluidics pump NOT USED HERE
 
 def serial_ports():
     """ Lists serial port names
