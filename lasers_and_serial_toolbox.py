@@ -30,7 +30,7 @@ bytesToRead = 250
 COM_port_oxxius = 'COM5' # 532 Oxxius Laser com port
 COM_port_flipper_cam_Thorlabs = 'COMX' # Serial number: 37004922 # NOT USED FOR THE MOMENT
 COM_port_flipper_apd_Thorlabs = 'COM8' # Serial number: 37005240
-COM_port_flipper_tisa_Thorlabs = 'COM9' # Serial number: 37005241
+COM_port_flipper_trapping_laser_Thorlabs = 'COM7' # Serial number: 37005241
 COM_port_shutter_Thorlabs = 'COM11' # USB to Serial cable
 COM_port_toptica = 'COM6' # 488 Toptica Laser using ATEN USB to Serial bridge 
 COM_valve = 'COM4' # microfluidics valve NOT USED HERE
@@ -539,22 +539,22 @@ class Thorlabs_shutter(object):
         # ask state
         state = self.get_state()
         if action == 'close' and state == 1:
-            print('Ti:Sa shutter already closed')
+            print('Shutter already closed')
         elif action == 'close' and state == 0:
             self.toggle()
-            print('Ti:Sa shutter closed')
+            print('Shutter closed')
         elif action == 'open' and state == 1:
             self.toggle()
-            print('Ti:Sa shutter opened')
+            print('Shutter opened')
         elif action == 'open' and state == 0:
-            print('Ti:Sa shutter already opened')
+            print('Shutter already opened')
         else:
             print('Action was not determined.')
         return 
     
     def close(self):
         time.sleep(0.1)
-        print('Closing Ti:Sa shutter communication. Clearing serial buffer...')
+        print('Closing shutter communication. Clearing serial buffer...')
         self.serialInstance.flush() # empty serial buffer
         self.shutter('close')
         closeSerial(self.serialInstance)

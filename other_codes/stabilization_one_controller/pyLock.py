@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu May 31, 2023
-Modified on Wed Jan 22, 2025
 
 pyLock is a control software of the 2nd gen Plasmonic Optical Tweezer setup that
 allows the user to stabilize the system in xyz using a closed-loop system made 
@@ -21,9 +20,10 @@ import time as tm
 from pyqtgraph.Qt import QtGui, QtCore
 from pyqtgraph.dockarea import DockArea, Dock
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
-import piezo_stage_GUI_two_controllers
-import z_stabilization_GUI_v2
-import xy_stabilization_GUI_v2
+# import numpy as np
+import piezo_stage_GUI
+import z_stabilization_GUI
+import xy_stabilization_GUI
 
 #=====================================
 
@@ -46,14 +46,14 @@ class Frontend(QtGui.QMainWindow):
         # piezo widget (frontend) must be imported in the main
         # hide piezo GUI on the xy and z widgets
         self.piezoWidget = piezo_frontend
-        self.xyWidget = xy_stabilization_GUI_v2.Frontend(piezo_frontend, \
+        self.zWidget = z_stabilization_GUI.Frontend(piezo_frontend, \
                                                     show_piezo_subGUI = False, \
                                                     main_app = False, \
                                                     connect_to_piezo_module = False)
-        self.zWidget = z_stabilization_GUI_v2.Frontend(piezo_frontend, \
-                                                       show_piezo_subGUI = False, \
-                                                       main_app = False, \
-                                                       connect_to_piezo_module = False)
+        self.xyWidget = xy_stabilization_GUI.Frontend(piezo_frontend, \
+                                                    show_piezo_subGUI = False, \
+                                                    main_app = False, \
+                                                    connect_to_piezo_module = False)
         self.setUpGUI()
         return
     
@@ -117,19 +117,16 @@ class Frontend(QtGui.QMainWindow):
         
 class Backend(QtCore.QObject):
     
-    def __init__(self, piezo_stage_xy, piezo_stage_z, piezo_backend, \
-                 *args, **kwargs):
+    def __init__(self, piezo_stage, piezo_backend, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.piezo_stage_xy = piezo_stage_xy
-        self.piezo_stage_z = piezo_stage_z
-        # there's only one backend in the piezo_stage_GUI_two_controllers
+        self.piezo_stage = piezo_stage
         self.piezoWorker = piezo_backend
-        self.xyWorker = xy_stabilization_GUI_v2.Backend(piezo_stage_xy, \
-                                                     piezo_backend, \
-                                                     connect_to_piezo_module = False)
-        self.zWorker = z_stabilization_GUI_v2.Backend(piezo_stage_z, \
+        self.zWorker = z_stabilization_GUI.Backend(piezo_stage, \
                                                    piezo_backend, \
                                                    connect_to_piezo_module = False)
+        self.xyWorker = xy_stabilization_GUI.Backend(piezo_stage, \
+                                                     piezo_backend, \
+                                                     connect_to_piezo_module = False)
         return
     
     @pyqtSlot(bool)
@@ -165,14 +162,13 @@ if __name__ == '__main__':
     app = QtGui.QApplication([])
     
     # init stage
-    piezo_xy = piezo_stage_GUI_two_controllers.piezo_stage_xy
-    piezo_z = piezo_stage_GUI_two_controllers.piezo_stage_z
-    piezo_frontend = piezo_stage_GUI_two_controllers.Frontend(main_app = False)
-    piezo_backend = piezo_stage_GUI_two_controllers.Backend(piezo_xy, piezo_z)
+    piezo = piezo_stage_GUI.piezo_stage  
+    piezo_frontend = piezo_stage_GUI.Frontend(main_app = False)
+    piezo_backend = piezo_stage_GUI.Backend(piezo)
     
     # create both classes
     gui = Frontend(piezo_frontend)
-    worker = Backend(piezo_xy, piezo_z, piezo_backend)
+    worker = Backend(piezo, piezo_backend)
        
     ###################################
     # move backend to another thread
@@ -183,7 +179,6 @@ if __name__ == '__main__':
     # move the timers of the xy and its main worker
     worker.xyWorker.viewTimer.moveToThread(workerThread)
     worker.xyWorker.trackingTimer.moveToThread(workerThread)
-    worker.xyWorker.tempTimer.moveToThread(workerThread)
     worker.xyWorker.moveToThread(workerThread)
     # move the timers of the z and its main worker
     worker.zWorker.trackingTimer.moveToThread(workerThread)

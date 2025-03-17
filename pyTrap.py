@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu May 31, 2023
-Modified on Wed Jan 22, 2025
+Created on Mon March 17, 2025
 
-pyLock is a control software of the 2nd gen Plasmonic Optical Tweezer setup that
+pyTrap is a control software of the 2nd gen Plasmonic Optical Tweezer setup that
 allows the user to stabilize the system in xyz using a closed-loop system made 
-of the piezostage and two cameras
-Here, the Graphical User Interface of pyLock integrates the following modules:
+of the piezostage, two cameras, lasers, shutters, flippers, etc.
+
+pyTrap Graphical User Interface integrates the following modules:
+    - laser control minimalist
+    - apd trace GUI
     - piezostage control
     - xy stabilization
     - z stabilization 
@@ -22,8 +24,10 @@ from pyqtgraph.Qt import QtGui, QtCore
 from pyqtgraph.dockarea import DockArea, Dock
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
 import piezo_stage_GUI_two_controllers
-import z_stabilization_GUI_v2
 import xy_stabilization_GUI_v2
+import z_stabilization_GUI_v2
+import laser_control_GUI_minimalist
+import apd_trace_GUI
 
 #=====================================
 
@@ -39,8 +43,8 @@ class Frontend(QtGui.QMainWindow):
         super().__init__(*args, **kwargs)
         self.cwidget = QtGui.QWidget()
         self.setCentralWidget(self.cwidget)
-        self.setWindowTitle('pyLock')
-        self.setGeometry(5, 30, 1900, 600) # x pos, y pos, width, height
+        self.setWindowTitle('pyTrap')
+        # self.setGeometry(5, 30, 1900, 600) # x pos, y pos, width, height
         self.main_app = main_app
         # import frontend modules
         # piezo widget (frontend) must be imported in the main
@@ -54,6 +58,8 @@ class Frontend(QtGui.QMainWindow):
                                                        show_piezo_subGUI = False, \
                                                        main_app = False, \
                                                        connect_to_piezo_module = False)
+        self.apdTraceWidget = apd_trace_GUI.Frontend()
+        self.laserControlWidget = laser_control_GUI_minimalist.Frontend()
         self.setUpGUI()
         return
     
@@ -67,10 +73,16 @@ class Frontend(QtGui.QMainWindow):
         self.dockArea = dockArea
         grid.addWidget(self.dockArea)
         
+
+        ## Start with the transmission module
+        transDock = Dock('Transmission')
+        transDock.addWidget(self.apdTraceWidget)
+        self.dockArea.addDock(transDock)
+
         ## Add piezo module
-        piezoDock = Dock('Piezostage control', size=(1,10))
+        piezoDock = Dock('Piezostage control')
         piezoDock.addWidget(self.piezoWidget)
-        self.dockArea.addDock(piezoDock)
+        self.dockArea.addDock(piezoDock, 'right', transDock)
         
         ## Add xy stabilization module
         xyDock = Dock('xy stabilization')
@@ -81,6 +93,12 @@ class Frontend(QtGui.QMainWindow):
         zDock = Dock('z stabilization')
         zDock.addWidget(self.zWidget)
         self.dockArea.addDock(zDock, 'left', xyDock)
+
+        ## Add lasers and shutters module
+        laserControlDock = Dock('Lasers and shutters control')
+        laserControlDock.addWidget(self.laserControlWidget)
+        self.dockArea.addDock(laserControlDock, 'right', piezoDock)
+
         return
            
     # re-define the closeEvent to execute an specific command
@@ -92,7 +110,7 @@ class Frontend(QtGui.QMainWindow):
                                            QtGui.QMessageBox.Yes)
         if reply == QtGui.QMessageBox.Yes:
             event.accept()
-            print('Closing GUI...')
+            print('\nClosing GUI...')
             self.close()
             self.closeSignal.emit(self.main_app)
             tm.sleep(1)
@@ -107,6 +125,8 @@ class Frontend(QtGui.QMainWindow):
         backend.piezoWorker.make_connections(self.piezoWidget)
         backend.xyWorker.make_connections(self.xyWidget)
         backend.zWorker.make_connections(self.zWidget)
+        backend.apdTraceWorker.make_connections(self.apdTraceWidget)
+        backend.laserControlWorker.make_connections(self.laserControlWidget)
         return
             
 #=====================================
@@ -130,6 +150,8 @@ class Backend(QtCore.QObject):
         self.zWorker = z_stabilization_GUI_v2.Backend(piezo_stage_z, \
                                                    piezo_backend, \
                                                    connect_to_piezo_module = False)
+        self.apdTraceWorker = apd_trace_GUI.Backend()
+        self.laserControlWorker = laser_control_GUI_minimalist.Backend()
         return
     
     @pyqtSlot(bool)
@@ -138,6 +160,8 @@ class Backend(QtCore.QObject):
         self.piezoWorker.close_backend(main_app = False)
         self.xyWorker.close_backend(main_app = False)
         self.zWorker.close_backend(main_app = False)
+        self.apdTraceWorker.close_backend()
+        self.laserControlWorker.close_backend()
         # print('Stopping updater (QtTimer)...')
         # self.scanTimer.stop()
         if main_app:
@@ -146,12 +170,14 @@ class Backend(QtCore.QObject):
             workerThread.exit()
         return
     
-    def make_modules_connections(self, frontend):
+    def make_modules_connections(self, frontend, data_processor):
         frontend.closeSignal.connect(self.close_all_backends)
         # connect Backend modules with their respectives Frontend modules
         frontend.piezoWidget.make_connections(self.piezoWorker)
         frontend.xyWidget.make_connections(self.xyWorker)
         frontend.zWidget.make_connections(self.zWorker)
+        frontend.apdTraceWidget.make_connections(self.apdTraceWorker, data_processor)
+        frontend.laserControlWidget.make_connections(self.laserControlWorker)
         return
     
 #=====================================
@@ -175,6 +201,7 @@ if __name__ == '__main__':
     worker = Backend(piezo_xy, piezo_z, piezo_backend)
        
     ###################################
+    # Thread instances
     # move backend to another thread
     workerThread = QtCore.QThread()
     # move the timer of the piezo and its main worker
@@ -189,18 +216,26 @@ if __name__ == '__main__':
     worker.zWorker.trackingTimer.moveToThread(workerThread)
     worker.zWorker.viewTimer.moveToThread(workerThread)
     worker.zWorker.moveToThread(workerThread)
+    # move APD tranmission signal and its timers worker 
+    worker.apdTraceWorker.acquireTimer.moveToThread(workerThread)
+    worker.apdTraceWorker.moveToThread(workerThread)
+    data_processor = apd_trace_GUI.DataProcessorThread()
+    # move lasers and shutters worker 
+    worker.laserControlWorker.moveToThread(workerThread)
     # move the main worker
     worker.moveToThread(workerThread)
 
     ###################################
 
-    # connect both classes 
-    worker.make_modules_connections(gui)
+    # connect both classes
+    data_processor.make_connections(gui.apdTraceWidget)
+    worker.make_modules_connections(gui, data_processor)
     gui.make_modules_connections(worker)
     
     # start thread
     workerThread.start()
-    
+    data_processor.start()
+
     gui.show()
     app.exec()
     

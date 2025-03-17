@@ -29,6 +29,8 @@ piezo_stage_xy = piezoTool.BPC303(deviceID_BPC303)
 piezo_stage_z = piezoTool.BPC301(deviceID_BPC301)
 # time period used to update stage position
 initial_updatePosition_period = 500 # in ms
+# set True if you want to perform zero the stage during initialization
+zeroing_flag = False
 
 #=====================================
 
@@ -375,16 +377,15 @@ class Backend(QtCore.QObject):
             print('Couldn\'t connect to z piezo stage.')
         # get info
         print(self.piezo_stage_xy.get_info())
-        print('Zeroing the xy piezo stage. This step takes around 30 s. Please wait...\n')
-        # perform zero routine for all axis
-        self.piezo_stage_xy.zero('x')
-        self.piezo_stage_xy.zero('y')
-
-        # get info
         print(self.piezo_stage_z.get_info())
-        print('Zeroing the z piezo stage. This step takes around 30 s. Please wait...\n')
-        # perform zero routine for all axis
-        self.piezo_stage_z.zero()
+        if zeroing_flag:
+            print('Zeroing the xy piezo stage. This step takes around 30 s. Please wait...\n')
+            # perform zero routine for all axis
+            self.piezo_stage_xy.zero('x')
+            self.piezo_stage_xy.zero('y')
+            print('Zeroing the z piezo stage. This step takes around 30 s. Please wait...\n')
+            # perform zero routine for all axis
+            self.piezo_stage_z.zero()
         return
     
     @pyqtSlot()

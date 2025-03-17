@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Created on Fri April 8, 2022
+Modified on Mon March 17, 2025
 
 @author: Mariano Barella
 mariano.barella@unifr.ch
@@ -1292,7 +1293,7 @@ class Backend(QtCore.QObject):
         return
     
     @pyqtSlot()
-    def closeBackend(self):
+    def close_backend(self):
         # data_queue.shutdown(immediate = True)
         self.APD_task.close()
         print('Task closed.') 
@@ -1317,7 +1318,7 @@ class Backend(QtCore.QObject):
         frontend.setSamplingRateSignal.connect(self.change_sampling_rate) 
         frontend.setDurationSignal.connect(self.change_duration) 
         frontend.setVoltageRangeSignal.connect(self.change_voltage_range)
-        frontend.closeSignal.connect(self.closeBackend)
+        frontend.closeSignal.connect(self.close_backend)
         frontend.saveSignal.connect(self.save_trace)
         frontend.setWorkDirSignal.connect(self.set_working_folder)
         frontend.filenameSignal.connect(self.set_filename)

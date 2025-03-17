@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu May 31, 2023
-Modified on Wed Jan 22, 2025
+Created on Mon March 17, 2025
 
 pyLock is a control software of the 2nd gen Plasmonic Optical Tweezer setup that
 allows the user to stabilize the system in xyz using a closed-loop system made 
-of the piezostage and two cameras
+of the piezostage and two cameras. It also incorporates a raster scan of the target 
+nanostructure while shows the transmitted signal of the APD and the PD power monitor
 Here, the Graphical User Interface of pyLock integrates the following modules:
     - piezostage control
     - xy stabilization
@@ -21,9 +21,15 @@ import time as tm
 from pyqtgraph.Qt import QtGui, QtCore
 from pyqtgraph.dockarea import DockArea, Dock
 from PyQt5.QtCore import pyqtSignal, pyqtSlot
+# import numpy as np
 import piezo_stage_GUI_two_controllers
 import z_stabilization_GUI_v2
 import xy_stabilization_GUI_v2
+
+Scanmodes = ['Ramp', 'Step by step']
+PSFmodes = ['x/y', 'x/z', 'y/x', 'y/z'] 
+ScanImage = ['Maximum', 'Minimum']
+MethodCenter = ['Center of mass', 'Gaussian fit']
 
 #=====================================
 
@@ -33,6 +39,20 @@ import xy_stabilization_GUI_v2
 
 class Frontend(QtGui.QMainWindow):
     
+    startSignal = pyqtSignal(int)
+    stopSignal = pyqtSignal()
+    parametersRampSignal = pyqtSignal(list)
+    parametersStepSignal = pyqtSignal(list)
+    scanModeSignal = pyqtSignal(str)
+    psfModeSignal = pyqtSignal(str)
+    scanImageSignal = pyqtSignal(str)
+    centeringMethodSignal = pyqtSignal(str)
+    
+    CMSignal = pyqtSignal()
+    CMautoSignal = pyqtSignal(bool)
+    CMSignal_NP2 = pyqtSignal()
+    driftSignal = pyqtSignal(bool, int, float, float)
+    saveSignal = pyqtSignal()
     closeSignal = pyqtSignal(bool)
     
     def __init__(self, piezo_frontend, main_app = True, *args, **kwargs):
