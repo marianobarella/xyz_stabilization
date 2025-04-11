@@ -201,7 +201,7 @@ class BPC303:
             print("\t- axis invalid)")
         # time needed to zeroing is around 24 s
         # avoid reading the position then
-        sleep(25)
+        # sleep(25)
         print('Ready.')
         return
     
@@ -502,7 +502,7 @@ class BPC301:
         self.__zero_axis()
         # time needed to zeroing is around 24 s
         # avoid reading the position then
-        sleep(25)
+        # sleep(25)
         print('Ready.')
         return
     

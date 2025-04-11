@@ -184,9 +184,9 @@ class Frontend(QtGui.QFrame):
         self.mov_y_sl.setTickInterval(1)
         self.mov_y_sl.valueChanged.connect(self.set_mov_y)
 
-        cursor_x_label = QtGui.QLabel('Cursor X')
+        cursor_x_label = QtGui.QLabel('Cursor Y') # modified due to rotation
         self.cursor_x = QtGui.QLabel('NaN')
-        cursor_y_label = QtGui.QLabel('Cursor Y')
+        cursor_y_label = QtGui.QLabel('Cursor X') # modified due to rotation
         self.cursor_y = QtGui.QLabel('NaN')
 
         self.cursor_x.setText('%d' % int(self.mov_x_sl.value()))
@@ -425,7 +425,8 @@ class Backend(QtCore.QObject):
         self.x_cursor_reference = 0
         self.y_cursor_reference = 0
         self.viewTimer = QtCore.QTimer()
-        self.viewTimer.timeout.connect(self.update_view)   
+        # configure the connection to allow queued executions to avoid interruption of previous calls
+        self.viewTimer.timeout.connect(self.update_view, QtCore.Qt.QueuedConnection)
         self.image_np = initial_image_np
         self.file_path = initial_filepath
         self.counter_flag_ok = 0
@@ -486,7 +487,7 @@ class Backend(QtCore.QObject):
         image_np, image_pil, flag_ok = tl_cam.get_color_image(camera, mono_to_color_processor)
         tl_cam.stop_camera(camera)
         if flag_ok:
-            self.image_np = image_np
+            self.image_np = np.flip(image_np, axis=0) # to match piezo movement
         else:
             self.image_np = dummy_image_np
         # emit
@@ -516,7 +517,7 @@ class Backend(QtCore.QObject):
         image_np, image_pil, flag_ok = tl_cam.get_color_image(camera, mono_to_color_processor)
         # if there's no error send image, otherwise stop livewview
         if flag_ok:
-            self.image_np = image_np
+            self.image_np = np.flip(image_np, axis=0) # to match piezo movement
         else:
             print('Displaying last taken image.')
         self.imageSignal.emit(self.image_np)

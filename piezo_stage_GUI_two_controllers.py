@@ -45,12 +45,14 @@ class Frontend(QtGui.QFrame):
     go_to_pos_signal = pyqtSignal(list)
     feedbackLoopSignal = pyqtSignal(bool)
     # set_reference_signal = pyqtSignal()
+    zeroing_signal = pyqtSignal()
     closeSignal = pyqtSignal(bool)
 
     def __init__(self, main_app = True, *args, **kwargs):  
         super().__init__(*args, **kwargs)
         self.main_app = main_app
         self.setWindowTitle('xyz two piezo stages control')
+        self.setGeometry(850, 30, 200, 200) # x pos, y pos, width, height
         self.setUpGUI()
         self.go_to_action()
         return
@@ -61,8 +63,12 @@ class Frontend(QtGui.QFrame):
         self.read_pos_button = QtGui.QPushButton('Read position')
         self.read_pos_button.clicked.connect(self.get_pos)
         self.read_pos_button.setToolTip('Get current position from the piezo controller')
-        self.read_pos_Label = QtGui.QLabel('Position')
         
+        # Zero the stage
+        self.zeroingButton = QtGui.QPushButton('Zero the stage')
+        self.zeroingButton.clicked.connect(self.zero)
+        self.zeroingButton.setToolTip('Send instruction to zero the 3 axes')
+
         # # Set reference
         # self.set_ref_button = QtGui.QPushButton("Set reference")
         # self.set_ref_button.clicked.connect(self.set_reference)
@@ -131,35 +137,41 @@ class Frontend(QtGui.QFrame):
         self.yUpButton.setFixedWidth(size)
         self.yDownButton.setFixedWidth(size)
         
-        # Positioner - Interface
+        # Read position - Interface and buttons
+        self.read_pos_widget = QtGui.QWidget()
+        layout_read_pos = QtGui.QGridLayout()
+        self.read_pos_widget.setLayout(layout_read_pos)
+        layout_read_pos.addWidget(self.read_pos_button, 0, 0, 1, 2)
+        layout_read_pos.addWidget(self.xname,        1, 0)
+        layout_read_pos.addWidget(self.xLabel,       1, 1)
+        layout_read_pos.addWidget(self.yname,       2, 0)
+        layout_read_pos.addWidget(self.yLabel,      2, 1)
+        layout_read_pos.addWidget(self.zname,       3, 0)
+        layout_read_pos.addWidget(self.zLabel,      3, 1)
+
+        # Positioner - Interface and buttons
         self.positioner = QtGui.QWidget()
-        layout = QtGui.QGridLayout()
-        self.positioner.setLayout(layout)
-        layout.addWidget(self.read_pos_button, 0, 0, 1, 2)
-        layout.addWidget(self.xname,        1, 0)
-        layout.addWidget(self.xLabel,       1, 1)
-        layout.addWidget(self.xUpButton,    2, 6, 2, 1)
-        layout.addWidget(self.xDownButton,  2, 4, 2, 1)
-        layout.addWidget(self.xUp2Button,   2, 7, 2, 1)
-        layout.addWidget(self.xDown2Button, 2, 3, 2, 1)
-        layout.addWidget(self.yname,       2, 0)
-        layout.addWidget(self.yLabel,      2, 1)
-        layout.addWidget(self.yUpButton,   1, 5, 3, 1)
-        layout.addWidget(self.yDownButton, 3, 5, 2, 1)
-        layout.addWidget(QtGui.QLabel("Step x/y (µm)"), 4, 6, 1, 2)
-        layout.addWidget(self.StepEdit,   5, 6)
-        layout.addWidget(self.yUp2Button,   0, 5, 2, 1)
-        layout.addWidget(self.yDown2Button, 4, 5, 2, 1)
-        layout.addWidget(self.zname,       3, 0)
-        layout.addWidget(self.zLabel,      3, 1)
-        layout.addWidget(self.zUp2Button,   0, 9, 2, 1)
-        layout.addWidget(self.zUpButton,   1, 9, 3, 1)
-        layout.addWidget(self.zDownButton, 3, 9, 2, 1)
-        layout.addWidget(self.zDown2Button, 4, 9, 2, 1)
-        layout.addWidget(QtGui.QLabel("Step z (µm)"), 4, 10)
-        layout.addWidget(self.zStepEdit,   5, 10)
+        layout_xyz_control = QtGui.QGridLayout()
+        self.positioner.setLayout(layout_xyz_control)
+        layout_xyz_control.addWidget(self.xUpButton,    2, 3, 2, 1)
+        layout_xyz_control.addWidget(self.xDownButton,  2, 1, 2, 1)
+        layout_xyz_control.addWidget(self.xUp2Button,   2, 4, 2, 1)
+        layout_xyz_control.addWidget(self.xDown2Button, 2, 0, 2, 1)
+        layout_xyz_control.addWidget(self.yUpButton,    1, 2, 2, 1)
+        layout_xyz_control.addWidget(self.yDownButton,  3, 2, 2, 1)
+        layout_xyz_control.addWidget(self.yUp2Button,   0, 2, 2, 1)
+        layout_xyz_control.addWidget(self.yDown2Button, 4, 2, 2, 1)
+        layout_xyz_control.addWidget(QtGui.QLabel("Step x/y (µm)"), 7, 0, 1, 2)
+        layout_xyz_control.addWidget(self.StepEdit,     7, 2)
+        layout_xyz_control.addWidget(self.zUp2Button,   0, 5, 2, 1)
+        layout_xyz_control.addWidget(self.zUpButton,    1, 5, 2, 1)
+        layout_xyz_control.addWidget(self.zDownButton,  3, 5, 2, 1)
+        layout_xyz_control.addWidget(self.zDown2Button, 4, 5, 2, 1)
+        layout_xyz_control.addWidget(QtGui.QLabel("Step z (µm)"), 7, 4)
+        layout_xyz_control.addWidget(self.zStepEdit,    7, 5)
         # feedback loop mode
-        layout.addWidget(self.feedback_loop_mode_tickbox,   6, 0, 1, 7)
+        layout_xyz_control.addWidget(self.feedback_loop_mode_tickbox,   8, 0, 1, 3)
+        layout_xyz_control.addWidget(self.zeroingButton,   8, 3, 1, 2)
 
         size = 40
         self.StepEdit.setFixedWidth(size)
@@ -167,11 +179,11 @@ class Frontend(QtGui.QFrame):
         
         # Go to - Interface and buttons
         self.gotoWidget = QtGui.QWidget()
-        layout2 = QtGui.QGridLayout()
-        self.gotoWidget.setLayout(layout2)
-        layout2.addWidget(QtGui.QLabel("x (µm)"), 1, 0)
-        layout2.addWidget(QtGui.QLabel("y (µm)"), 2, 0)
-        layout2.addWidget(QtGui.QLabel("z (µm)"), 3, 0)
+        layout_goto = QtGui.QGridLayout()
+        self.gotoWidget.setLayout(layout_goto)
+        layout_goto.addWidget(QtGui.QLabel("x (µm)"), 1, 0)
+        layout_goto.addWidget(QtGui.QLabel("y (µm)"), 2, 0)
+        layout_goto.addWidget(QtGui.QLabel("z (µm)"), 3, 0)
         self.xgotoLabel = QtGui.QLineEdit("10")
         self.ygotoLabel = QtGui.QLineEdit("10")
         self.zgotoLabel = QtGui.QLineEdit("10")
@@ -181,10 +193,10 @@ class Frontend(QtGui.QFrame):
         self.ygotoLabel.setValidator(QtGui.QDoubleValidator(0.000, 20.000, 3))
         self.zgotoLabel.setValidator(QtGui.QDoubleValidator(0.000, 20.000, 3))
         
-        layout2.addWidget(self.gotoButton, 0, 0, 1, 2)
-        layout2.addWidget(self.xgotoLabel, 1, 1)
-        layout2.addWidget(self.ygotoLabel, 2, 1)
-        layout2.addWidget(self.zgotoLabel, 3, 1)
+        layout_goto.addWidget(self.gotoButton, 0, 0, 1, 2)
+        layout_goto.addWidget(self.xgotoLabel, 1, 1)
+        layout_goto.addWidget(self.ygotoLabel, 2, 1)
+        layout_goto.addWidget(self.zgotoLabel, 3, 1)
  
         size = 50
         self.xgotoLabel.setFixedWidth(size)
@@ -195,15 +207,22 @@ class Frontend(QtGui.QFrame):
         hbox = QtGui.QHBoxLayout(self)
         dockArea = DockArea()
 
+        # Read pos
+        readPosDock = Dock('Position', size=(1, 2))
+        readPosDock.setOrientation('vertical')
+        readPosDock.addWidget(self.read_pos_widget)
+        dockArea.addDock(readPosDock)
         # Positioner
-        posDock = Dock('Relative position', size=(1, 1))
+        posDock = Dock('Controller', size=(2, 1))
         posDock.addWidget(self.positioner)
-        dockArea.addDock(posDock)
-
+        dockArea.addDock(posDock, 'top', readPosDock)
         # Go to  
         gotoDock = Dock('Go to', size=(1, 2))
+        gotoDock.setOrientation('vertical')
         gotoDock.addWidget(self.gotoWidget)
-        dockArea.addDock(gotoDock, 'left', posDock)
+        dockArea.addDock(gotoDock, 'left', readPosDock)
+
+
         
         hbox.addWidget(dockArea)
         self.setLayout(hbox)
@@ -272,6 +291,18 @@ class Frontend(QtGui.QFrame):
     def zDown2(self):
         if self.zDown2Button.isChecked:
             self.move_signal.emit('z', -10*float(self.zStepEdit.text()))
+        return
+
+    def zero(self):
+        if self.zeroingButton.isChecked:
+            reply = QtGui.QMessageBox.question(self, 'Zeroing warning', '\nAre you sure you want to zero the stage?\n \nThe stage will: \n- go idle \n- do a calibration \n- move to (0,0,0)',
+                                           QtGui.QMessageBox.No |
+                                           QtGui.QMessageBox.Yes)
+            if reply == QtGui.QMessageBox.Yes:
+                # emit the signal to perfom zero
+                self.zeroing_signal.emit()
+            else:
+                print('Zero not performed.')            
         return
     
     @pyqtSlot(list)
@@ -465,6 +496,16 @@ class Backend(QtCore.QObject):
         self.piezo_stage_xy.set_close_loop(close_flag)
         self.piezo_stage_z.set_close_loop(close_flag)
         return
+
+    @pyqtSlot()
+    def do_zeroing(self):
+        """ 
+        Perform zeroing of the axes
+        """
+        self.piezo_stage_xy.zero('x')
+        self.piezo_stage_xy.zero('y')
+        self.piezo_stage_z.zero()
+        return
     
     @pyqtSlot(bool)
     def close_backend(self, main_app = True):
@@ -483,6 +524,7 @@ class Backend(QtCore.QObject):
         frontend.read_pos_button_signal.connect(self.read_position)
         frontend.move_signal.connect(self.move_relative)
         # frontend.set_reference_signal.connect(self.set_reference)
+        frontend.zeroing_signal.connect(self.do_zeroing)
         frontend.go_to_pos_signal.connect(self.move_absolute)
         frontend.feedbackLoopSignal.connect(self.switch_feedback_loop_mode)
         frontend.closeSignal.connect(self.close_backend)

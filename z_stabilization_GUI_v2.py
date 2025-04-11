@@ -692,10 +692,12 @@ class Backend(QtCore.QObject):
         self.piezo_stage_z = piezo_z
         self.piezoWorker = piezo_backend
         self.viewTimer = QtCore.QTimer()
-        self.viewTimer.timeout.connect(self.update_view)   
+        # configure the connection to allow queued executions to avoid interruption of previous calls
+        self.viewTimer.timeout.connect(self.update_view, QtCore.Qt.QueuedConnection)
         self.image_np = initial_image_np
         self.trackingTimer = QtCore.QTimer()
-        self.trackingTimer.timeout.connect(self.call_pid)
+        # configure the connection to allow queued executions to avoid interruption of previous calls
+        self.trackingTimer.timeout.connect(self.call_pid, QtCore.Qt.QueuedConnection) 
         self.tracking_period = initial_tracking_period
         self.threshold = initial_threshold
         self.file_path = initial_filepath

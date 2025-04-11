@@ -10,6 +10,7 @@ Fribourg, Switzerland
 
 import numpy as np
 import scipy.optimize as opt
+from scipy import ndimage
 import matplotlib.pyplot as plt
 import os
 from PIL import Image
@@ -50,7 +51,7 @@ def fit_with_gaussian(frame_intensity, frame_coordinates, pixel_size_x_nm, pixel
     data = frame_norm.reshape(number_of_pixels_x*number_of_pixels_y)
     ############ perform fitting ############
     # spatial coordinates are in term of pixels at this point
-    # initial paramters to fit amplitude, xo, yo, wx, wy, offset
+    # initial parameters to fit amplitude, xo, yo, wx, wy, offset
     x_coord_max, y_coord_max = np.unravel_index(np.argmax(frame_intensity, axis = None), \
                                                 frame_intensity.shape)
     x_coord_max += np.min(x)
@@ -91,6 +92,47 @@ def fit_with_gaussian(frame_intensity, frame_coordinates, pixel_size_x_nm, pixel
         plt.close()
     # returning in um as it was multiplied by the pixel size
     return x_fitted, y_fitted, w0x_fitted, w0y_fitted
+
+def fit_with_gaussian_confocal(confocal_image, x, y, threshold):
+    # normalize image
+    image_min = np.min(confocal_image)
+    image_max = np.max(confocal_image)
+    image_norm = ( confocal_image - image_min ) / ( image_max - image_min )
+    # filter image
+    image_norm_filtered = np.where(image_norm > threshold, image_norm, 0)
+    # reshape
+    image_raveled = image_norm_filtered.ravel()
+    ############ perform fitting ############
+    # spatial coordinates are in term of pixels at this point
+    # initial parameters to fit amplitude, xo, yo, wx, wy, offset
+    x_coord_max, y_coord_max = np.unravel_index(np.argmax(confocal_image, axis = None), \
+                                                confocal_image.shape)
+    initial_guess = [1, x_coord_max, y_coord_max, 1, 1, 0]
+    # set bounds
+    all_bounds = ([0, np.min(x), np.min(y), 0, 0, 0], [1, np.max(x), np.max(y), 100, 100, 1])
+    xv, yv = np.meshgrid(x, y)
+    xy_grid = np.vstack((xv.ravel(), yv.ravel()))
+    popt, pcov = opt.curve_fit(gaussian_2D, xy_grid, image_raveled, p0 = initial_guess, bounds = all_bounds)
+    # retrieve parameters
+    amplitude_fitted, \
+        x_fitted, \
+        y_fitted, \
+        w0x_fitted, \
+        w0y_fitted, \
+        offset_fitted = popt
+    return x_fitted, y_fitted
+
+def meas_center_of_mass_confocal(confocal_image, threshold):
+    # normalize image
+    image_min = np.min(confocal_image)
+    image_max = np.max(confocal_image)
+    image_norm = ( confocal_image - image_min ) / ( image_max - image_min )
+    # filter image
+    image_norm_filtered = np.where(image_norm > threshold, image_norm, 0)
+    cm_coords = ndimage.measurements.center_of_mass(image_norm_filtered)
+    x_cm = cm_coords[1] # in pixels
+    y_cm = cm_coords[0] # in pixels
+    return x_cm, y_cm
 
 if __name__ == '__main__':
 

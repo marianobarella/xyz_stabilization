@@ -51,9 +51,9 @@ def init_daq():
     return daq_board
 
 # configure APD channels
-def set_task(number_of_channels, sampling_rate, samples_per_ch, min_rng, max_rng, mode, debug = False):
+def set_task(task_name, number_of_channels, sampling_rate, samples_per_ch, min_rng, max_rng, mode, debug = False):
     # define the task object
-    APD_task = nidaqmx.task.Task(new_task_name = 'APD_task')
+    APD_task = nidaqmx.task.Task(new_task_name = task_name)
     # prepare task to read the APD channel
     # set voltage channel for "APD_task"
     APD_task.ai_channels.add_ai_voltage_chan(
@@ -118,6 +118,22 @@ def installed_devices():
     for i in system.devices:
         print(i)
     return
+
+def measure_data_one_time(task, number_of_points, timeout):
+    '''Measure a finite number of samples 
+    number_of_points = how many points are going to be measured
+    timeout = time to wait until a single measurement run is performed'''
+    # pre-allocate data array
+    data_array = np.zeros((number_of_points), dtype = 'float')
+    data_array[:] = -1000 # set data array to an impossible output
+    # start the task
+    task.start()
+    task.wait_until_done(timeout = timeout)
+    if task.is_task_done():
+        # read
+        data_array = task.read(number_of_points)
+        task.stop()
+    return data_array
 
 def measure_data_n_times(task, number_of_points, max_num_of_meas, timeout, debug = False):
     '''Measure a finite number of samples several times
@@ -197,7 +213,7 @@ def measure_in_loop_continuously(task, task_stream_reader, number_of_points, \
 def measure_one_loop(task_stream_reader, number_of_channels, number_of_points_per_ch, read_samples):
     n_available = samples_available(task_stream_reader)
     if n_available == 0: 
-        return n_available, np.array([])
+        return n_available, np.array([[],[]])
     # prevent reading too many samples
     n_to_read = min(n_available, number_of_points_per_ch - read_samples) 
     # read directly
@@ -237,7 +253,7 @@ if __name__ == '__main__':
     ########################################################
     mode = 'finite'
     number_of_points_per_run = 100
-    APD_task, time_to_finish = set_task(number_of_channels, sampling_rate, number_of_points_per_run, \
+    APD_task, time_to_finish = set_task('APD_task', number_of_channels, sampling_rate, number_of_points_per_run, \
                                           min_range, max_range, mode)
     # APD_ch = APD_task.ai_channels[0]
     # ask_range(APD_ch)
@@ -264,7 +280,7 @@ if __name__ == '__main__':
     mode = 'continuous'
     number_of_points = max_num_of_meas*number_of_points_per_run
     time_base = 1/sampling_rate
-    APD_task, time_to_finish = set_task(number_of_channels, sampling_rate, number_of_points, \
+    APD_task, time_to_finish = set_task('APD_task', number_of_channels, sampling_rate, number_of_points, \
                                           min_range, max_range, mode)
     
     # allocate array

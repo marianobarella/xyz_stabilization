@@ -55,7 +55,7 @@ class Frontend(QtGui.QFrame):
         # set the title of thw window
         title = "Lasers control module"
         self.setWindowTitle(title)
-        self.setGeometry(5, 30, 400, 300) # x pos, y pos, width, height
+        self.setGeometry(5, 30, 250, 100) # x pos, y pos, width, height
         return
     
     def setUpGUI(self):       
@@ -109,9 +109,10 @@ class Frontend(QtGui.QFrame):
         dockArea = DockArea()
         hbox = QtGui.QHBoxLayout(self)
 
-        control_Dock = Dock('Lasers and shutters control', size = (20, 200))
+        control_Dock = Dock('Lasers and shutters control', size = (20, 2000))
         control_Dock.addWidget(self.minimalist_box)
         dockArea.addDock(control_Dock)
+        control_Dock.hideTitleBar()
 
         hbox.addWidget(dockArea)
         self.setLayout(hbox)

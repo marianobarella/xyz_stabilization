@@ -49,20 +49,18 @@ print('\nRatio between acquisition and displaying periods: %i' % periods_ratio)
 # set queue size for allocate data before plotting
 queue_size = 1000
 max_sampling_rate = daq_board.ai_max_single_chan_rate # set to maximum, here 2 MS/s    
-# set acquisition mode to measure continuosly
-acquisition_mode = 'continuous'
 # number of analog input channels to read
 number_of_channels = 2
 
 ############ INITIAL PARAMETERS #############
 # set sampling rate
-initial_sampling_rate = 1e3 # in S/s
+initial_sampling_rate = 100e3 # in S/s
 # duration of the traces in s
 initial_duration = 4
 # define a fixed length (in s) for the time axis of viewbox signal vs time
 initial_viewbox_length = 2 # in s
 # define a downsampling period for visualization purposes
-initial_downsampling_period = 1
+initial_downsampling_period = 100
 # initial Y range
 initial_min_y_range = -0.01
 initial_max_y_range = 0.03
@@ -86,6 +84,7 @@ data_queue = Queue(maxsize = queue_size)
 
 # function that calculates the number of datapoins to be measured
 def calculate_num_of_points(duration, sampling_rate):
+    # duration in seconds
     number_of_points = int(duration*sampling_rate)
     print('\nAt {:.3f} MS/s sampling rate, a duration of {} s means:'.format(sampling_rate*1e-6, \
                                                                        duration))
@@ -158,9 +157,9 @@ class ChildWindow(QDialog):
         # Docks
         gridbox = QtGui.QGridLayout(self)
         dockArea = DockArea()
-        viewAutocorrWidget = Dock('Autocorrelation viewbox')
-        viewAutocorrWidget.addWidget(self.viewAutocorrWidget)
-        dockArea.addDock(viewAutocorrWidget)
+        viewAutocorrDock = Dock('Autocorrelation viewbox')
+        viewAutocorrDock.addWidget(self.viewAutocorrWidget)
+        dockArea.addDock(viewAutocorrDock)
         gridbox.addWidget(dockArea, 0, 0) 
         self.setLayout(gridbox)
         return
@@ -210,7 +209,8 @@ class DataProcessorThread(QThread):
         self.sd_value_monitor = 0
         self.running = False
         self.displayDataTimer = QtCore.QTimer()
-        self.displayDataTimer.timeout.connect(self.get_data_from_queue) 
+        # configure the connection to allow queued executions to avoid interruption of previous calls
+        self.displayDataTimer.timeout.connect(self.get_data_from_queue, QtCore.Qt.QueuedConnection)
         self.displayDataTimer.setInterval(displayTrace_period) # in ms
         return
 
@@ -404,7 +404,7 @@ class Frontend(QtGui.QFrame):
         # set the title of the window
         title = "Acquisition module"
         self.setWindowTitle(title)
-        self.setGeometry(850, 30, 700, 1000) # x pos, y pos, width, height
+        self.setGeometry(850, 30, 600, 1000) # x pos, y pos, width, height
         self.set_y_range()
         self.mean_value = initial_mean_value # in V
         self.sd_value = initial_sd_value # in V
@@ -964,7 +964,7 @@ class Frontend(QtGui.QFrame):
 
     def make_connections(self, backend, processing_thread):
         backend.filepathSignal.connect(self.get_filepath)
-        backend.acqStopped.connect(self.acquisition_stopped)
+        backend.acqStoppedSignal.connect(self.acquisition_stopped)
         backend.saving_data_error_signal.connect(self.pop_up_window_error)
         backend.autocorrSignal.connect(self.update_autocorr)
         processing_thread.updateLabelsSignal.connect(self.update_label_values)
@@ -983,7 +983,8 @@ class Backend(QtCore.QObject):
     dataSignal = pyqtSignal(np.ndarray, int, int)
     autocorrSignal = pyqtSignal(np.ndarray, np.ndarray, float)
     filepathSignal = pyqtSignal(str)
-    acqStopped = pyqtSignal()
+    acqStoppedSignal = pyqtSignal()
+    acqStoppedInnerSignal = pyqtSignal()
     fileSavedSignal = pyqtSignal(str, str)
     saving_data_error_signal = pyqtSignal(str)
 
@@ -991,7 +992,8 @@ class Backend(QtCore.QObject):
         super().__init__(*args, **kwargs)
         # set timer to plot the data and check buttons
         self.acquireTimer = QtCore.QTimer()
-        self.acquireTimer.timeout.connect(self.acquire_trace) 
+        # configure the connection to allow queued executions to avoid interruption of previous calls
+        self.acquireTimer.timeout.connect(self.acquire_trace, QtCore.Qt.QueuedConnection)
         self.acquireTimer.setInterval(acquireTrace_period) # in ms
         # set APD acquisition channel
         self.sampling_rate = initial_sampling_rate
@@ -999,15 +1001,18 @@ class Backend(QtCore.QObject):
         self.duration = initial_duration
         self.number_of_points = calculate_num_of_points(self.duration, self.sampling_rate)
         self.voltage_range = initial_voltage_range
+        # set acquisition mode to measure continuosly
+        self.acquisition_mode = 'continuous'
         print('Setting up task...')
         # APD task
-        self.APD_task, self.time_to_finish = daq.set_task(number_of_channels, \
+        self.APD_task, self.time_to_finish = daq.set_task('APD_task', \
+                                                          number_of_channels, \
                                                           self.sampling_rate, \
-                                                            self.number_of_points, \
-                                                            -self.voltage_range, \
-                                                            +self.voltage_range, \
-                                                            acquisition_mode, \
-                                                            debug = True)
+                                                          self.number_of_points, \
+                                                          -self.voltage_range, \
+                                                          +self.voltage_range, \
+                                                          self.acquisition_mode, \
+                                                          debug = True)
         self.acquire_continuously_bool = True
         self.save_automatically_bool = False
         self.filepath = initial_filepath
@@ -1033,9 +1038,12 @@ class Backend(QtCore.QObject):
         if acq_cont_bool:
             print('Signal acquisition will run continuously.')
             self.acquire_continuously_bool = True
+            # set acquisition mode to measure continuosly
+            self.acquisition_mode = 'continuous'
         else:
             print('Signal acquisition will run only once.')
             self.acquire_continuously_bool = False
+            self.acquisition_mode = 'finite'
         return
     
     @pyqtSlot(bool)
@@ -1083,11 +1091,12 @@ class Backend(QtCore.QObject):
         print('\nAcquisition started at {}'.format(self.init_time))
         self.time_since_epoch = tm.time()
         return
-    
+
+    @pyqtSlot()    
     def stop_acquisition(self):
         # stop timer signal
         self.total_time = timer() - self.init_time
-        self.acquireTimer.stop()
+        self.acquireTimer.stop()        
         # set flag to false to indicate acquisition has finished
         self.acquisition_flag = False
         # flush DAQ buffer
@@ -1098,7 +1107,7 @@ class Backend(QtCore.QObject):
         if not self.APD_task.is_task_done():
             self.APD_task.stop()
         # emit signal acquisition has ended
-        self.acqStopped.emit()
+        self.acqStoppedSignal.emit()
         return
                     
     def acquire_trace(self):
@@ -1126,8 +1135,7 @@ class Backend(QtCore.QObject):
                     self.read_samples = 0
                     self.trace_number += 1
                 else:                
-                    print('Task is done =', self.APD_task.is_task_done())
-                    self.stop_acquisition()
+                    self.acqStoppedInnerSignal.emit()
                 if self.save_automatically_bool:
                     # flush array at buffer into the disk (because it was a memmap array)
                     self.data_array.flush()
@@ -1137,6 +1145,37 @@ class Backend(QtCore.QObject):
             # self.calculate_autorrelation(self.data_array)
         return
     
+    def arm_for_confocal(self, pixel_time_confocal):
+        # pixel_time_confocal in seconds
+        self.number_of_points_confocal = calculate_num_of_points(pixel_time_confocal, \
+                                                                 self.sampling_rate) 
+        self.confocal_acquisition_mode = 'finite'
+        print('Setting up new task...')
+        self.APD_task_confocal, \
+        self.time_to_finish_confocal = daq.set_task('APD_confocal_task', \
+                                                    1, 
+                                                    self.sampling_rate, \
+                                                    self.number_of_points_confocal, \
+                                                    -self.voltage_range, \
+                                                    +self.voltage_range, \
+                                                    self.confocal_acquisition_mode, \
+                                                    debug = True)
+        return self.number_of_points_confocal
+
+    def acquire_confocal_trace(self):
+        # measure a finite number of samples 
+        meas_finite_array = daq.measure_data_one_time(self.APD_task_confocal, \
+                                                                     self.number_of_points_confocal, \
+                                                                     self.time_to_finish_confocal)
+        return meas_finite_array
+
+    def disarm_confocal_task(self):
+        print('\nStopping task in progress...')
+        self.APD_task_confocal.stop()
+        print('\nClosing task...')
+        self.APD_task_confocal.close()
+        return
+
     def calculate_autorrelation(self, transmission_signal):
         z, lag = autocorr(transmission_signal)
         self.autocorrSignal.emit(z, lag, self.sampling_rate)
@@ -1205,13 +1244,14 @@ class Backend(QtCore.QObject):
         print('Changing voltage ranges...')
         self.voltage_range = voltage_range # in V, is float
         print('Setting up new task...')
-        self.APD_task, self.time_to_finish = daq.set_task(number_of_channels, \
+        self.APD_task, self.time_to_finish = daq.set_task('APD_task', \
+                                                          number_of_channels, \
                                                           self.sampling_rate, \
-                                                            self.number_of_points, \
-                                                            -self.voltage_range, \
-                                                            +self.voltage_range, \
-                                                            acquisition_mode, \
-                                                            debug = False)
+                                                          self.number_of_points, \
+                                                          -self.voltage_range, \
+                                                          +self.voltage_range, \
+                                                          self.acquisition_mode, \
+                                                          debug = False)
         return
 
     @pyqtSlot(int)    
@@ -1227,13 +1267,14 @@ class Backend(QtCore.QObject):
         print('Sampling rate changed to', sampling_rate, 'kS/s')
         self.number_of_points = calculate_num_of_points(self.duration, self.sampling_rate)
         print('Setting up new task...')
-        self.APD_task, self.time_to_finish = daq.set_task(number_of_channels, \
+        self.APD_task, self.time_to_finish = daq.set_task('APD_task', \
+                                                          number_of_channels, \
                                                           self.sampling_rate, \
-                                                            self.number_of_points, \
-                                                            -self.voltage_range, \
-                                                            +self.voltage_range, \
-                                                            acquisition_mode, \
-                                                            debug = False)
+                                                          self.number_of_points, \
+                                                          -self.voltage_range, \
+                                                          +self.voltage_range, \
+                                                          self.acquisition_mode, \
+                                                          debug = False)
         return
     
     @pyqtSlot(float)    
@@ -1248,13 +1289,14 @@ class Backend(QtCore.QObject):
         print('Duration of the measurement changed to', duration, 's')
         self.number_of_points = calculate_num_of_points(self.duration, self.sampling_rate) 
         print('Setting up new task...')
-        self.APD_task, self.time_to_finish = daq.set_task(number_of_channels, \
+        self.APD_task, self.time_to_finish = daq.set_task('APD_task', \
+                                                          number_of_channels, \
                                                           self.sampling_rate, \
-                                                            self.number_of_points, \
-                                                            -self.voltage_range, \
-                                                            +self.voltage_range, \
-                                                            acquisition_mode, \
-                                                            debug = False)
+                                                          self.number_of_points, \
+                                                          -self.voltage_range, \
+                                                          +self.voltage_range, \
+                                                          self.acquisition_mode, \
+                                                          debug = False)
         return
     
     @pyqtSlot()    
@@ -1311,6 +1353,7 @@ class Backend(QtCore.QObject):
         return
     
     def make_connections(self, frontend):
+        self.acqStoppedInnerSignal.connect(self.stop_acquisition)
         frontend.traceSignal.connect(self.play_pause)
         frontend.makeTraceContSignal.connect(self.acquire_continuously_check)
         frontend.saveTraceContSignal.connect(self.save_automatically_check)

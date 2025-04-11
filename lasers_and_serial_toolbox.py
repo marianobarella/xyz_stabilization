@@ -32,7 +32,8 @@ COM_port_flipper_cam_Thorlabs = 'COMX' # Serial number: 37004922 # NOT USED FOR 
 COM_port_flipper_apd_Thorlabs = 'COM8' # Serial number: 37005240
 COM_port_flipper_trapping_laser_Thorlabs = 'COM7' # Serial number: 37005241
 COM_port_shutter_Thorlabs = 'COM11' # USB to Serial cable
-COM_port_toptica = 'COM6' # 488 Toptica Laser using ATEN USB to Serial bridge 
+COM_port_filter_wheel = 'COM12' # USB Serial Port (Thorlabs FIlter Wheel FW102C)
+COM_port_toptica = 'COM13' # 488 Toptica Laser using ATEN USB to Serial bridge 
 COM_valve = 'COM4' # microfluidics valve NOT USED HERE
 COM_pump = 'COM3' # microfluidics pump NOT USED HERE
 
