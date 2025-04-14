@@ -70,7 +70,7 @@ class ChildWindow(QDialog):
         self.setUpGUI()
         # set the title of the window
         self.setWindowTitle("Z scan profile")
-        self.setGeometry(150, 150, 800, 600)
+        self.setGeometry(150, 150, 1500, 600) # x pos, y pos, width, height
         self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
         return
 
@@ -78,11 +78,18 @@ class ChildWindow(QDialog):
         # widget for the data
         self.viewProfileWidget = pg.GraphicsLayoutWidget()
         self.profile_plot = self.viewProfileWidget.addPlot(row = 1, col = 1)
-        self.profile_plot.setYRange(-1, 1)
+        self.profile_plot.setYRange(0, 1)
         self.profile_plot.enableAutoRange(x = True, y = True)
         self.profile_plot.showGrid(x = True, y = True)
         self.profile_plot.setLabel('left', 'Mean transmission (V)')
         self.profile_plot.setLabel('bottom', 'z position (um)')
+
+        self.profile_sd_plot = self.viewProfileWidget.addPlot(row = 1, col = 2)
+        self.profile_sd_plot.setYRange(-1, 1)
+        self.profile_sd_plot.enableAutoRange(x = True, y = True)
+        self.profile_sd_plot.showGrid(x = True, y = True)
+        self.profile_sd_plot.setLabel('left', 'Std dev transmission (V)')
+        self.profile_sd_plot.setLabel('bottom', 'z position (um)')
 
         # Docks
         gridbox = QtGui.QGridLayout(self)
@@ -98,6 +105,13 @@ class ChildWindow(QDialog):
         if clear:
             self.profile_plot.clear()
         self.profile_plot.plot(x = z_scan_array, y = z_profile, \
+                                    pen = pg.mkPen(color, width = width))
+        return
+
+    def plot_sd_z_profile(self, z_scan_array, sd_z_profile, clear = True, color = 'w', width = 1):
+        if clear:
+            self.profile_sd_plot.clear()
+        self.profile_sd_plot.plot(x = z_scan_array, y = sd_z_profile, \
                                     pen = pg.mkPen(color, width = width))
         return
 
@@ -159,7 +173,7 @@ class Frontend(QtGui.QMainWindow):
         self.go_to_max_z_auto_flag = True
         # Create an instance of the child window
         self.child_window = ChildWindow()
-        self.save_confocal_flag = True
+        self.save_confocal_flag = False
         return
     
     def setUpGUI(self):
@@ -258,7 +272,7 @@ class Frontend(QtGui.QMainWindow):
 
         self.saveConfocalTickBox = QtGui.QCheckBox('Automatically save?')
         self.saveConfocalTickBox.stateChanged.connect(self.enable_confocal_autosave) 
-        self.saveConfocalTickBox.setChecked(True)
+        self.saveConfocalTickBox.setChecked(False)
         self.saveConfocalTickBox.setToolTip('Set/Tick to automatically save the confocal data.')
 
         coord_x_label = QtGui.QLabel('Center x (µm):')
@@ -302,7 +316,7 @@ class Frontend(QtGui.QMainWindow):
                                                          'bottom': self.xlabel} )
         self.vb.addItem(self.confocal_img_item)
         self.vb.addItem(self.point_graph_CM)
-        self.vb.invertY()
+        # self.vb.invertY()
         self.vb.setAspectLocked(True)
         self.hist = pg.HistogramLUTItem(image = self.confocal_img_item)
         # Select among 'thermal', 'flame', 'yellowy', 'bipolar', 'spectrum', 'cyclic', 'greyclip', 'grey'
@@ -504,6 +518,13 @@ class Frontend(QtGui.QMainWindow):
         self.child_window.show()
         return
 
+    @pyqtSlot(np.ndarray, np.ndarray, bool, str, int)
+    def get_sd_z_profile(self, z_scan_array, sd_z_profile, clear_flag, color, width):
+        # show the child window
+        self.child_window.plot_sd_z_profile(z_scan_array, sd_z_profile, clear_flag, color, width)
+        self.child_window.show()
+        return
+
     @pyqtSlot(float, float, float)
     def get_z_max(self, z_max, min_transmission, max_transmission):
         # show the child window
@@ -550,6 +571,7 @@ class Frontend(QtGui.QMainWindow):
     def make_modules_connections(self, backend):
         backend.sendConfocalImageSignal.connect(self.get_confocal_image)
         backend.sendZProfileSignal.connect(self.get_z_profile)
+        backend.sendSDZProfileSignal.connect(self.get_sd_z_profile)
         backend.sendZMaxValueSignal.connect(self.get_z_max)
         backend.sendCMSignal.connect(self.plot_CM)
         backend.confocalScanStopped.connect(self.confocal_scan_stopped)
@@ -578,6 +600,7 @@ class Backend(QtCore.QObject):
     zScanStoppedInnerSignal = pyqtSignal()
     sendConfocalImageSignal = pyqtSignal(np.ndarray)
     sendZProfileSignal = pyqtSignal(np.ndarray, np.ndarray, bool, str, int)
+    sendSDZProfileSignal = pyqtSignal(np.ndarray, np.ndarray, bool, str, int)
     sendZMaxValueSignal = pyqtSignal(float, float, float)
     confocalFilepathSignal = pyqtSignal(str)
     
@@ -688,6 +711,7 @@ class Backend(QtCore.QObject):
         print('\nPreparing for z scan...')
         # allocate profile and counter
         self.z_profile = np.zeros((self.scan_range_pixels_z))
+        self.sd_z_profile = np.zeros((self.scan_range_pixels_z))
         self.counter_z_steps = 0   
         # create z array
         # update piezostage position
@@ -739,25 +763,31 @@ class Backend(QtCore.QObject):
                 point_trace_data = self.apdTraceWorker.acquire_confocal_trace()
                 # assign the mean value to a point in the profile
                 self.z_profile[self.counter_z_steps] = np.mean(point_trace_data)
+                self.sd_z_profile[self.counter_z_steps] = np.std(point_trace_data, ddof=1)
                 # move step in z
                 self.counter_z_steps += 1
             else:
                 # stop confocal scan
                 self.zScanStoppedInnerSignal.emit()
                 self.sendZProfileSignal.emit(self.z_scan_array, self.z_profile, True, 'w', 2)
+                self.sendSDZProfileSignal.emit(self.z_scan_array, self.sd_z_profile, True, 'w', 2)
         return
 
     pyqtSlot()
     def move_to_max_z(self):
         # smooth z profile
         self.z_profile_smooth = sig.savgol_filter(self.z_profile, 3, 1) # array, window, poly-order
+        self.sd_z_profile_smooth = sig.savgol_filter(self.sd_z_profile, 3, 1) # array, window, poly-order
         new_z_array = np.arange(self.z_scan_array[0], self.z_scan_array[-1] - 0.001, 0.001)
         # interpolate to 1 nm steps
         self.z_profile_interp_fun = interp.interp1d(self.z_scan_array, self.z_profile_smooth)
+        self.sd_z_profile_interp_fun = interp.interp1d(self.z_scan_array, self.sd_z_profile_smooth)
         self.z_profile_interp = self.z_profile_interp_fun(new_z_array)
+        self.sd_z_profile_interp = self.sd_z_profile_interp_fun(new_z_array)
         self.max_z_pos = new_z_array[np.argmax(self.z_profile_interp)]
         # send data to Frontend and plot
         self.sendZProfileSignal.emit(new_z_array, self.z_profile_interp, False, 'm', 2)
+        self.sendSDZProfileSignal.emit(new_z_array, self.sd_z_profile_interp, False, 'm', 2)
         self.sendZMaxValueSignal.emit(self.max_z_pos, 0.95*min(self.z_profile_interp), 1.05*max(self.z_profile_interp))
         if not np.isnan(self.max_z_pos):
             self.piezoWorker.move_absolute([self.x_pos, \
