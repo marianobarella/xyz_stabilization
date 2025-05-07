@@ -20,8 +20,9 @@ from PIL import Image
 from tkinter import filedialog
 import tkinter as tk
 import time as tm
-import piezo_stage_xy_GUI
+import piezo_stage_xy_GUI # it uses the single-channel piezo controller
 import viewbox_tools
+from concurrent.futures import ThreadPoolExecutor
 
 import pco_camera_toolbox as pco
 import drift_correction_toolbox as drift
@@ -48,8 +49,9 @@ initial_filename = 'image_pco'
 
 # timers
 tempTimer_update = 10000 # in ms
-initial_tracking_period = 150 # in ms
-initial_bix_size = 51 # always odd number pixels
+initial_tracking_period = 500 # in ms
+initial_bix_size = 11 # always odd number pixels
+initial_number_of_boxes = 8
 driftbox_length = 10.0 # in seconds
 
 # PID constants
@@ -227,7 +229,7 @@ class Frontend(QtGui.QFrame):
         
         # tracking fiducials / ROIs
         number_of_fiducials_label = QtGui.QLabel('Number of fiducials:')
-        self.number_of_fiducials_value = QtGui.QLineEdit('4')
+        self.number_of_fiducials_value = QtGui.QLineEdit(str(initial_number_of_boxes))
         box_size_label = QtGui.QLabel('Box size (pixels):')
         self.box_size_value = QtGui.QLineEdit(str(initial_bix_size))
         self.box_size_value.setValidator(QtGui.QIntValidator(1, 999))
@@ -451,10 +453,11 @@ class Frontend(QtGui.QFrame):
     def correct_drift_status(self):
         if self.correct_drift_button.isChecked():
             self.correct_drift_flag = True
+            self.correctDriftSignal.emit(self.correct_drift_flag)
             self.lock_and_track()
         else:
             self.correct_drift_flag = False
-        self.correctDriftSignal.emit(self.correct_drift_flag)
+            self.correctDriftSignal.emit(self.correct_drift_flag)
         return
     
     def retrieve_fiducials_data(self):
@@ -615,7 +618,21 @@ class Frontend(QtGui.QFrame):
         self.file_path = file_path
         self.working_dir_path.setText(self.file_path)
         return
-    
+
+    def stop_stabilization_for_confocal_scan(self):
+        # remove stabilization
+        self.correct_drift_flag = False
+        self.correctDriftSignal.emit(self.correct_drift_flag)
+        self.correct_drift_button.setChecked(False)
+        # remove lock and track
+        self.lock_ROIs_button.setChecked(False)
+        self.lockAndTrackSignal.emit(False)
+        self.xy_fiducials.clear()
+        # remove live acquisition
+        self.liveViewSignal.emit(False, 0) # the exposure time is not relevant
+        self.live_view_button.setChecked(False)
+        return
+                
     # re-define the closeEvent to execute an specific command
     def closeEvent(self, event, *args, **kwargs):
         super(QtGui.QFrame, self).closeEvent(event, *args, **kwargs)
@@ -663,18 +680,13 @@ class Backend(QtCore.QObject):
         self.piezo_stage = piezo
         self.piezoWorker = piezo_backend
         self.viewTimer = QtCore.QTimer()
-        # configure the connection to allow queued executions to avoid interruption of previous calls
-        self.viewTimer.timeout.connect(self.update_view, QtCore.Qt.QueuedConnection) 
         self.tempTimer = QtCore.QTimer()
-        self.tempTimer.timeout.connect(self.update_temp)
         self.image_np = None
         self.binning = initial_binning
         self.pixel_size = initial_pixel_size
         self.exposure_time_ms = initial_exp_time
         self.file_path = initial_filepath
         self.trackingTimer = QtCore.QTimer()
-        # configure the connection to allow queued executions to avoid interruption of previous calls
-        self.trackingTimer.timeout.connect(self.call_pid, QtCore.Qt.QueuedConnection) 
         self.tracking_period = initial_tracking_period
         self.tracking_period_seconds = self.tracking_period/1000
         self.prop_correction = np.array([0, 0])
@@ -850,26 +862,39 @@ class Backend(QtCore.QObject):
             self.correct_drift(error_avg, correction)
         return
     
+    def fit_single_fiducial(self, index):
+        x1 = self.x1[index]
+        x2 = self.x2[index]
+        y1 = self.y1[index]
+        y2 = self.y2[index]
+        frame_intensity = self.image_np[x1:x2, y1:y2]
+        x_fitted, \
+        y_fitted, \
+        w0x_fitted, \
+        w0y_fitted = drift.fit_with_gaussian(frame_intensity, \
+                                             self.frame_coordinates[index], \
+                                             self.pixel_size, \
+                                             self.pixel_size)
+        self.centers[index] = np.array([x_fitted, y_fitted])
+        self.timeaxis[index] = timer() - self.start_tracking_time
+        return
+
     def fit_fiducials(self):
-        centers = {}
-        timeaxis = {}
+        self.centers = {}
+        self.timeaxis = {}
         # find centers for all fiducials
+        # the for loop with a single thread is faster that parallelization with ThreadPoolExecutor 
+        # single threaded time in average is below 90 ms
+        # multihreaded time in average is around 100 ms
+        # start_time = tm.time()
+        # with ThreadPoolExecutor(max_workers = 8) as executor:
+            # results = executor.map(self.fit_single_fiducial, list_of_fiducials)
         for i in range(self.number_of_fiducials):
-            x1 = self.x1[i]
-            x2 = self.x2[i]
-            y1 = self.y1[i]
-            y2 = self.y2[i]
-            frame_intensity = self.image_np[x1:x2, y1:y2]
-            x_fitted, \
-            y_fitted, \
-            w0x_fitted, \
-            w0y_fitted = drift.fit_with_gaussian(frame_intensity, \
-                                                 self.frame_coordinates[i], \
-                                                 self.pixel_size, \
-                                                 self.pixel_size)
-            centers[i] = np.array([x_fitted, y_fitted])
-            timeaxis[i] = timer() - self.start_tracking_time
-        return centers, timeaxis
+            self.fit_single_fiducial(i)
+        # end_time = tm.time()
+        # print(f'Single-threaded time: {end_time - start_time:.3f} s')
+        # print(f'Multi-threaded time: {end_time - start_time:.3f} s')
+        return self.centers, self.timeaxis
     
     def correct_drift(self, error, correction):
         # make float32 to avoid crashing the module
@@ -921,7 +946,10 @@ class Backend(QtCore.QObject):
     def update_view(self):
         # Image update while in Live view mode
         self.image_np, metadata = cam.get_image()
-        self.imageSignal.emit(self.image_np)
+        # stop sending the image to the frontend (no liveview available)
+        # when the stabilization is ON. It is not needed actually
+        if not self.correct_drift_flag:
+            self.imageSignal.emit(self.image_np)
         return
     
     def update_temp(self):
@@ -970,8 +998,8 @@ class Backend(QtCore.QObject):
     
     @pyqtSlot(bool)
     def set_correct_drift_flag(self, flag):
-        print('Drift correction set to: %s' % flag)
         self.correct_drift_flag = flag
+        print('>>> xy stablization set to: %s' % flag)
         return    
     
     @pyqtSlot(float)
@@ -1063,10 +1091,21 @@ if __name__ == '__main__':
     worker.viewTimer.moveToThread(workerThread)
     worker.tempTimer.moveToThread(workerThread)
     worker.trackingTimer.moveToThread(workerThread)
+
+    # move piezo timers
     worker.piezoWorker.updateTimer.moveToThread(workerThread)
+    worker.piezoWorker.updateTimer.timeout.connect(worker.piezoWorker.read_position)
     worker.piezoWorker.moveToThread(workerThread)
     worker.moveToThread(workerThread)
     
+    # configure the connection to allow queued executions to avoid interruption of previous calls
+    worker.viewTimer.timeout.connect(worker.update_view, QtCore.Qt.QueuedConnection) 
+    worker.tempTimer.timeout.connect(worker.update_temp)
+    worker.trackingTimer.timeout.connect(worker.call_pid, QtCore.Qt.QueuedConnection) 
+
+    # start timer when thread has started
+    workerThread.started.connect(worker.piezoWorker.run)
+
     # connect both classes 
     worker.make_connections(gui)
     gui.make_connections(worker)

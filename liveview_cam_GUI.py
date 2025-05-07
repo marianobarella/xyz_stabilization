@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+﻿    # -*- coding: utf-8 -*-
 """
 Created on Tue March 1, 2022
 
@@ -425,8 +425,6 @@ class Backend(QtCore.QObject):
         self.x_cursor_reference = 0
         self.y_cursor_reference = 0
         self.viewTimer = QtCore.QTimer()
-        # configure the connection to allow queued executions to avoid interruption of previous calls
-        self.viewTimer.timeout.connect(self.update_view, QtCore.Qt.QueuedConnection)
         self.image_np = initial_image_np
         self.file_path = initial_filepath
         self.counter_flag_ok = 0
@@ -590,17 +588,20 @@ if __name__ == '__main__':
     # create both classes
     gui = Frontend()
     worker = Backend()
-    
+
     # thread that run in background
     workerThread = QtCore.QThread()
     worker.viewTimer.moveToThread(workerThread)
+    # configure the connection to allow queued executions to avoid interruption of previous calls
+    worker.viewTimer.timeout.connect(worker.update_view, QtCore.Qt.QueuedConnection)
+    # move worker to a different thread (avoids GUI freezing)
     worker.moveToThread(workerThread)
 
     # connect both classes 
     worker.make_connections(gui)
     gui.make_connections(worker)
-    
-    # start worker in a different thread (avoids GUI freezing)
+
+    # start worker 
     workerThread.start()
     
     gui.show()

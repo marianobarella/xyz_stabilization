@@ -50,13 +50,13 @@ initial_filename = 'image_z_drift'
 initial_image_np = 128*np.ones((1080, 1440, 3))
 dummy_image_np = initial_image_np
 # timing parameterss
-initial_tracking_period = 100 # in ms
-initial_exp_time = 100 # in ms
+initial_tracking_period = 500 # in ms
+initial_exp_time = 50 # in ms
 driftbox_length = 10.0 # in s
 initial_gain = 0 # int
 
 # inital ROI definition
-initial_vertical_pos = 425
+initial_vertical_pos = 450
 initial_horizontal_pos = 0
 initial_vertical_size = 300
 initial_horizontal_size = 1440
@@ -540,10 +540,11 @@ class Frontend(QtGui.QFrame):
     def stabilize_status(self):
         if self.stabilize_z_button.isChecked():
             self.stabilize = True
+            self.stabilizationStatusChangedSignal.emit(self.stabilize)
             self.lock_and_track()
         else:
             self.stabilize = False
-        self.stabilizationStatusChangedSignal.emit(self.stabilize)
+            self.stabilizationStatusChangedSignal.emit(self.stabilize)
         return    
 
     def tracking_period_changed_check(self):
@@ -640,6 +641,20 @@ class Frontend(QtGui.QFrame):
         # check liveview button
         self.live_view_button.setChecked(True)
         return
+
+    def stop_stabilization_for_confocal_scan(self):
+        # remove stabilization
+        self.stabilize = False
+        self.stabilizationStatusChangedSignal.emit(self.stabilize)
+        self.stabilize_z_button.setChecked(False)
+        # remove lock and track
+        self.lock_z_position_button.setChecked(False)
+        self.lockAndTrackSignal.emit(False)
+        self.z_reflection.clear()
+        # remove live acquisition
+        self.liveViewSignal.emit(False, 0) # the exposure time is not relevant
+        self.live_view_button.setChecked(False)
+        return
     
     # re-define the closeEvent to execute an specific command
     def closeEvent(self, event, *args, **kwargs):
@@ -692,12 +707,8 @@ class Backend(QtCore.QObject):
         self.piezo_stage_z = piezo_z
         self.piezoWorker = piezo_backend
         self.viewTimer = QtCore.QTimer()
-        # configure the connection to allow queued executions to avoid interruption of previous calls
-        self.viewTimer.timeout.connect(self.update_view, QtCore.Qt.QueuedConnection)
         self.image_np = initial_image_np
         self.trackingTimer = QtCore.QTimer()
-        # configure the connection to allow queued executions to avoid interruption of previous calls
-        self.trackingTimer.timeout.connect(self.call_pid, QtCore.Qt.QueuedConnection) 
         self.tracking_period = initial_tracking_period
         self.threshold = initial_threshold
         self.file_path = initial_filepath
@@ -768,7 +779,10 @@ class Backend(QtCore.QObject):
             self.image_np = image_np
         else:
             print('Displaying last taken image.')
-        self.imageSignal.emit(self.image_np)
+        # stop sending the image to the frontend (no liveview available)
+        # when the stabilization is ON. It is not needed actually
+        if not self.stabilization_flag:
+            self.imageSignal.emit(self.image_np)
         return
         
     def stop_liveview(self):
@@ -943,11 +957,11 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool)
     def set_stabilization(self, stabilizebool):
         if stabilizebool:
-            print('Stabilization ON.')
+            print('>>> z stabilization ON.')
             self.stabilization_flag = True
             self.time_since_epoch = tm.time()
         else:
-            print('Stabilization OFF.')
+            print('>>> z stabilization OFF.')
             self.stabilization_flag = False
         return
 
@@ -985,20 +999,19 @@ class Backend(QtCore.QObject):
 
     @pyqtSlot(bool)
     def close_backend(self, main_app = True):
-        print('Dispossing camera objects...')
-        tl_cam.dispose_cam(mono_cam)
-        tl_cam.dispose_sdk(camera_constructor)
         print('Stopping timers...')
         self.viewTimer.stop()
         self.trackingTimer.stop()
         if main_app:
             self.piezoWorker.updateTimer.stop()
             print('Shutting down piezo stage...')
-            self.piezo_stage_xy.shutdown()
             self.piezo_stage_z.shutdown()
             print('Exiting thread...')
-            tm.sleep(1)
+            tm.sleep(5)
             workerThread.exit()
+        print('Dispossing camera objects...')
+        tl_cam.dispose_cam(mono_cam)
+        tl_cam.dispose_sdk(camera_constructor)
         return
 
     def make_connections(self, frontend):
@@ -1033,7 +1046,7 @@ if __name__ == '__main__':
     app = QtGui.QApplication([])
     
     # init stage
-    piezo = piezo_stage_z_GUI.piezo_stage
+    piezo = piezo_stage_z_GUI.piezo_stage_z
     piezo_frontend = piezo_stage_z_GUI.Frontend()
     piezo_backend = piezo_stage_z_GUI.Backend(piezo)
     
@@ -1041,14 +1054,23 @@ if __name__ == '__main__':
     gui = Frontend(piezo_frontend)
     worker = Backend(piezo, piezo_backend)
     
-    # for tracking and z camera
+    # Thread for the backend
     workerThread = QtCore.QThread()
     worker.trackingTimer.moveToThread(workerThread)
     worker.viewTimer.moveToThread(workerThread)
+    # configure the connection to allow queued executions to avoid interruption of previous calls
+    worker.viewTimer.timeout.connect(worker.update_view, QtCore.Qt.QueuedConnection)
+    worker.trackingTimer.timeout.connect(worker.call_pid, QtCore.Qt.QueuedConnection) 
     worker.piezoWorker.updateTimer.moveToThread(workerThread)
+    worker.piezoWorker.updateTimer.timeout.connect(worker.piezoWorker.read_position)
     worker.piezoWorker.moveToThread(workerThread)
+    
+    # move the work to its thread
     worker.moveToThread(workerThread)
     
+    # start timer when thread has started
+    workerThread.started.connect(worker.piezoWorker.run)
+
     # connect both classes
     worker.make_connections(gui)
     gui.make_connections(worker)

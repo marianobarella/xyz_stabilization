@@ -298,10 +298,7 @@ class Backend(QtCore.QObject):
         # set timer to update lasers status
         self.updatePosition_period = updatePosition_period
         self.updateTimer = QtCore.QTimer()
-        self.updateTimer.timeout.connect(self.read_position)
         self.updateTimer.setInterval(self.updatePosition_period) # in ms
-        self.updateTimer.start()
-        self.move_absolute([10, 10])
         return
     
     def initialize_piezo(self):
@@ -318,6 +315,8 @@ class Backend(QtCore.QObject):
         # perform zero routine for all axis
         self.piezo_stage_xy.zero('x')
         self.piezo_stage_xy.zero('y')
+        tm.sleep(5)
+        self.move_absolute([10, 10])
         return
     
     @pyqtSlot()
@@ -388,6 +387,10 @@ class Backend(QtCore.QObject):
         self.piezo_stage_xy.set_close_loop(close_flag)
         return
     
+    def run(self):
+        self.updateTimer.start()
+        return
+
     @pyqtSlot(bool)
     def close_backend(self, main_app = True):
         print('Stopping updater (QtTimer)...')
@@ -396,7 +399,7 @@ class Backend(QtCore.QObject):
             print('Shutting down piezo stage...')
             self.piezo_stage_xy.shutdown()
             print('Exiting thread...')
-            tm.sleep(1)
+            tm.sleep(5)
             workerThread.exit()
         return            
 
@@ -427,7 +430,11 @@ if __name__ == '__main__':
     workerThread = QtCore.QThread()
     worker.updateTimer.moveToThread(workerThread)
     worker.moveToThread(workerThread)
+    worker.updateTimer.timeout.connect(worker.read_position)
 
+    # start timer when thread has started
+    workerThread.started.connect(worker.run)
+    
     # connect both classes
     worker.make_connections(gui)
     gui.make_connections(worker)

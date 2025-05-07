@@ -18,7 +18,7 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
 from queue import Queue
 from pyqtgraph.dockarea import Dock, DockArea
-from PyQt5.QtCore import pyqtSignal, pyqtSlot, QThread
+from PyQt5.QtCore import pyqtSignal, pyqtSlot, QThread, QProcess
 from PyQt5.QtWidgets import QMessageBox, QPushButton, QLabel, QDialog
 import daq_board_toolbox as daq
 from tkinter import filedialog
@@ -29,7 +29,7 @@ import time as tm
 # The PC has a 12th Gen Interl Core i9-12900K
 # and  GPU Intel UHD Graphics 770 that supports OpenGL 3.0
 # https://www.intel.com/content/www/us/en/support/articles/000005524/graphics.html
-pg.setConfigOptions(antialias=False, useOpenGL=True)
+pg.setConfigOptions(antialias = False, useOpenGL = True)
 
 #=====================================
 
@@ -121,8 +121,10 @@ class FastLine(pg.QtGui.QGraphicsPathItem):
         self.path = pg.arrayToQPath(x, y, connect = 'all', finiteCheck = True)
         pg.QtGui.QGraphicsPathItem.__init__(self, self.path)
         self.setPen(pg.mkPen(color))
+
     def shape(self): # override because QGraphicsPathItem.shape is too expensive.
         return pg.QtGui.QGraphicsItem.shape(self)
+
     def boundingRect(self):
         return self.path.boundingRect()
 
@@ -187,7 +189,7 @@ class ChildWindow(QDialog):
 
 #=====================================
 
-class DataProcessorThread(QThread):
+class DataProcessor(QProcess):
 
     dataReadySignal = pyqtSignal(np.ndarray, \
                                  pg.QtGui.QGraphicsPathItem, pg.QtGui.QGraphicsPathItem, \
@@ -210,20 +212,19 @@ class DataProcessorThread(QThread):
         self.running = False
         self.displayDataTimer = QtCore.QTimer()
         # configure the connection to allow queued executions to avoid interruption of previous calls
-        self.displayDataTimer.timeout.connect(self.get_data_from_queue, QtCore.Qt.QueuedConnection)
         self.displayDataTimer.setInterval(displayTrace_period) # in ms
         return
 
     @pyqtSlot(float, float, int, bool)
     def get_displaying_parameters(self, viewbox_length, sampling_rate, downsampling_period, downsampling_by_average):
-        print('\nDataProcessorThread: setting displaying parameters...')
+        print('\nDataProcessor: setting displaying parameters...')
         self.viewbox_length = viewbox_length
         self.sampling_rate = sampling_rate
         self.downsampling_period = downsampling_period
         self.time_base = 1/(self.sampling_rate*1e3)
         self.downsampling_by_average = downsampling_by_average
         # allocate arrays to plot them with improved performance
-        print('DataProcessorThread: allocating data arrays...')
+        print('DataProcessor: allocating data arrays...')
         # sampling_rate is in kS/s
         # viewbox_length is in s
         # so multiply by 1000 to obtain the right size of "points_to_be_displayed"
@@ -764,7 +765,7 @@ class Frontend(QtGui.QFrame):
                     1/self.eff_sampling_rate, self.points_displayed)
         self.effSamplingRateLabel.setText(new_text)
         self.downsampling_period = downsampling_period
-        # emit signal to DataProcessorThread
+        # emit signal to DataProcessor
         self.parametersSignal.emit(self.viewbox_length, self.sampling_rate, \
                                        self.downsampling_period, self.downsampling_by_average)
         return
@@ -827,9 +828,11 @@ class Frontend(QtGui.QFrame):
     
     def enable_autorange(self, enablebool):
         if enablebool:
+            print('Autorange ON')
             self.signal_plot.enableAutoRange(True, True)
             self.monitor_plot.enableAutoRange(True, True)
         else:
+            print('Autorange OFF')
             self.signal_plot.enableAutoRange(False, False)
             self.monitor_plot.enableAutoRange(False, False)
         return
@@ -841,6 +844,8 @@ class Frontend(QtGui.QFrame):
         else:
             self.downsampling_by_average = False
             print('Downsampling by average disabled. Displaying data at a reduced sampling rate. One data point every %i samples.' % self.downsampling_period)
+        self.parametersSignal.emit(self.viewbox_length, self.sampling_rate, \
+                                       self.downsampling_period, self.downsampling_by_average)
         return
 
     def set_y_range(self):
@@ -993,7 +998,6 @@ class Backend(QtCore.QObject):
         # set timer to plot the data and check buttons
         self.acquireTimer = QtCore.QTimer()
         # configure the connection to allow queued executions to avoid interruption of previous calls
-        self.acquireTimer.timeout.connect(self.acquire_trace, QtCore.Qt.QueuedConnection)
         self.acquireTimer.setInterval(acquireTrace_period) # in ms
         # set APD acquisition channel
         self.sampling_rate = initial_sampling_rate
@@ -1335,21 +1339,22 @@ class Backend(QtCore.QObject):
         return
     
     @pyqtSlot()
-    def close_backend(self):
+    def close_backend(self, main_app = True):
         # data_queue.shutdown(immediate = True)
         self.APD_task.close()
-        print('Task closed.') 
+        print('Task closed.')
+        print('Stopping QTimer...')    
         self.acquireTimer.stop()
-        print('Exiting thread...')
-        workerThread.exit()
-        data_processor.quit()
-        data_processor.wait()
-        # delete temporary files
-        print('Removing temporary files...')
-        tm.sleep(5) # needed to close properly all modules
-        os.remove(self.data_array_filepath), 
-        os.remove(self.monitor_array_filepath)
-        os.remove(self.time_array_filepath)
+        if main_app:
+            print('Exiting thread...')
+            workerThread.exit()
+            data_processor.kill()
+            tm.sleep(5) # needed to close properly all modules
+            # delete temporary files
+            print('Removing temporary files...')
+            os.remove(self.data_array_filepath), 
+            os.remove(self.monitor_array_filepath)
+            os.remove(self.time_array_filepath)
         return
     
     def make_connections(self, frontend):
@@ -1385,8 +1390,11 @@ if __name__ == '__main__':
     # threads that run in background
     workerThread = QThread()
     worker.acquireTimer.moveToThread(workerThread)
+    worker.acquireTimer.timeout.connect(worker.acquire_trace, QtCore.Qt.QueuedConnection)
     worker.moveToThread(workerThread)
-    data_processor = DataProcessorThread()
+    
+    data_processor = DataProcessor()
+    data_processor.displayDataTimer.timeout.connect(data_processor.get_data_from_queue, QtCore.Qt.QueuedConnection)
 
     # connect both classes 
     worker.make_connections(gui)

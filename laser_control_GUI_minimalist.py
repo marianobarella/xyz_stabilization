@@ -29,10 +29,12 @@ shutterTrappingLaserObject = laserToolbox.Thorlabs_shutter(debug_mode = False)
 # build flippers objects
 flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
                                                   serial_port = laserToolbox.COM_port_flipper_apd_Thorlabs)
+flipperSpectrometerPath = laserToolbox.motorized_flipper(debug_mode = False, \
+                                                  serial_port = laserToolbox.COM_port_flipper_spectrometer)
 flipperTrappingLaserFilter = laserToolbox.motorized_flipper(debug_mode = False, \
                                                   serial_port = laserToolbox.COM_port_flipper_trapping_laser_Thorlabs)
 # set initial paramters
-initial_blue_power = 20 # in mW
+initial_blue_power = 15 # in mW
 
 #=====================================
 
@@ -45,6 +47,7 @@ class Frontend(QtGui.QFrame):
     shutterTrappingSignal = pyqtSignal(bool) 
     shutter488_signal = pyqtSignal(bool)
     flipper_apd_signal = pyqtSignal(bool)
+    flipper_spectrometer_path_signal = pyqtSignal(bool)
     flipper_trapping_laser_signal = pyqtSignal(bool)
     powerChangedSignal = pyqtSignal(float)
     closeSignal = pyqtSignal()
@@ -84,6 +87,12 @@ class Frontend(QtGui.QFrame):
         self.flipperTrappingLaserButton.clicked.connect(self.flipperTrappingLaserButton_check)
         self.flipperTrappingLaserButton.setToolTip('Up/Down flipper trapping laser')     
         
+        # Spectrometer/APD path selector
+        self.flipperSpectrometerButton = QtGui.QCheckBox('Spectrometer path')
+        self.flipperSpectrometerButton.setChecked(False)
+        self.flipperSpectrometerButton.clicked.connect(self.flipperSpectrometerButton_check)
+        self.flipperSpectrometerButton.setToolTip('Up/Down flipper to select the spectromter collection path')
+
         # 488 power
         power488_label = QtGui.QLabel('Power 488 (mW):')
         self.power488_edit = QtGui.QLineEdit(str(initial_blue_power))
@@ -104,6 +113,7 @@ class Frontend(QtGui.QFrame):
         minimalist_box_layout.addWidget(power488_label, 1, 1)
         minimalist_box_layout.addWidget(self.power488_edit, 1, 2)
         minimalist_box_layout.addWidget(self.flipperAPDButton, 2, 0)
+        minimalist_box_layout.addWidget(self.flipperSpectrometerButton, 2, 1)
 
         # Place layouts and boxes
         dockArea = DockArea()
@@ -137,6 +147,13 @@ class Frontend(QtGui.QFrame):
             self.flipper_apd_signal.emit(True)
         else:
             self.flipper_apd_signal.emit(False)
+        return
+
+    def flipperSpectrometerButton_check(self):
+        if self.flipperSpectrometerButton.isChecked():
+            self.flipper_spectrometer_path_signal.emit(True)
+        else:
+            self.flipper_spectrometer_path_signal.emit(False)
         return
 
     def flipperTrappingLaserButton_check(self):
@@ -189,6 +206,7 @@ class Backend(QtCore.QObject):
         self.shutter488(False) # close shutter
         self.flipper_trapping_laser_attenuation(True) # set filters IN
         self.flipper_apd_attenuation(True) # set filters IN
+        self.flipper_select_spectrometer(False) # set filters OUT
         return
 
     @pyqtSlot(bool)
@@ -213,16 +231,25 @@ class Backend(QtCore.QObject):
             flipperAPDFilter.set_flipper_down() # filter IN
         else:
             flipperAPDFilter.set_flipper_up() # filter OUT
-        print('Flipper status:', flipperAPDFilter.get_state())
+        print('Flipper APD attenuation status:', flipperAPDFilter.get_state())
         return
     
+    @pyqtSlot(bool)
+    def flipper_select_spectrometer(self, flipperbool):
+        if flipperbool:
+            flipperSpectrometerPath.set_flipper_down() # filter IN
+        else:
+            flipperSpectrometerPath.set_flipper_up() # filter OUT
+        print('Flipper Spectrometer path status:', flipperSpectrometerPath.get_state())
+        return
+
     @pyqtSlot(bool)
     def flipper_trapping_laser_attenuation(self, flipperbool):
         if flipperbool:
             flipperTrappingLaserFilter.set_flipper_down() # filter IN
         else:
             flipperTrappingLaserFilter.set_flipper_up() # filter OUT
-        print('Flipper status:', flipperTrappingLaserFilter.get_state())
+        print('Flipper Trapping laser attenuation status:', flipperTrappingLaserFilter.get_state())
         return
     
     @pyqtSlot(float)    
@@ -239,6 +266,7 @@ class Backend(QtCore.QObject):
         self.shutterTrappingLaser(False)
         print('Closing flippers...')
         flipperAPDFilter.close()
+        flipperSpectrometerPath.close()
         flipperTrappingLaserFilter.close() # TODO check if it is working
         print('Exiting thread...')
         workerThread.exit()
@@ -248,6 +276,7 @@ class Backend(QtCore.QObject):
         frontend.shutterTrappingSignal.connect(self.shutterTrappingLaser)
         frontend.shutter488_signal.connect(self.shutter488)
         frontend.flipper_apd_signal.connect(self.flipper_apd_attenuation)
+        frontend.flipper_spectrometer_path_signal.connect(self.flipper_select_spectrometer)
         frontend.flipper_trapping_laser_signal.connect(self.flipper_trapping_laser_attenuation)
         frontend.powerChangedSignal.connect(self.change_power)
         frontend.closeSignal.connect(self.close_backend)

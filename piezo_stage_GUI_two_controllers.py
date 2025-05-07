@@ -30,7 +30,7 @@ piezo_stage_z = piezoTool.BPC301(deviceID_BPC301)
 # time period used to update stage position
 initial_updatePosition_period = 500 # in ms
 # set True if you want to perform zero the stage during initialization
-zeroing_flag = False
+zeroing_flag = True
 
 #=====================================
 
@@ -387,10 +387,7 @@ class Backend(QtCore.QObject):
         # set timer to update lasers status
         self.updatePosition_period = updatePosition_period
         self.updateTimer = QtCore.QTimer()
-        self.updateTimer.timeout.connect(self.read_position)
         self.updateTimer.setInterval(self.updatePosition_period) # in ms
-        self.updateTimer.start()
-        self.move_absolute([10, 10, 10])
         return
     
     def initialize_piezo(self):
@@ -410,13 +407,16 @@ class Backend(QtCore.QObject):
         print(self.piezo_stage_xy.get_info())
         print(self.piezo_stage_z.get_info())
         if zeroing_flag:
-            print('Zeroing the xy piezo stage. This step takes around 30 s. Please wait...\n')
+            print('Zeroing the xy piezo stage. This step takes around 20 s. Please wait...\n')
             # perform zero routine for all axis
             self.piezo_stage_xy.zero('x')
             self.piezo_stage_xy.zero('y')
-            print('Zeroing the z piezo stage. This step takes around 30 s. Please wait...\n')
+            print('Zeroing the z piezo stage. This step takes around 10 s. Please wait...\n')
             # perform zero routine for all axis
             self.piezo_stage_z.zero()
+            # move to the center of the 3D range
+            tm.sleep(5)
+            self.move_absolute([10, 10, 10])
         return
     
     @pyqtSlot()
@@ -506,6 +506,10 @@ class Backend(QtCore.QObject):
         self.piezo_stage_xy.zero('y')
         self.piezo_stage_z.zero()
         return
+
+    def run(self):
+        self.updateTimer.start()
+        return
     
     @pyqtSlot(bool)
     def close_backend(self, main_app = True):
@@ -514,6 +518,7 @@ class Backend(QtCore.QObject):
         if main_app:
             print('Shutting down piezo stage...')
             self.piezo_stage_xy.shutdown()
+            tm.sleep(5)
             self.piezo_stage_z.shutdown()
             tm.sleep(5)
             print('Exiting thread...')
@@ -543,18 +548,23 @@ if __name__ == '__main__':
     # create both classes
     gui = Frontend()
     worker = Backend(piezo_stage_xy, piezo_stage_z)
-    
-    # # thread that run in background
+
+    # Threads that run in background
     workerThread = QtCore.QThread()
+    # move worker and its timers to a different thread (avoids GUI freezing)
     worker.updateTimer.moveToThread(workerThread)
+    worker.updateTimer.timeout.connect(worker.read_position)
     worker.moveToThread(workerThread)
 
+    # start timer when thread has started
+    workerThread.started.connect(worker.run)
+    
     # connect both classes
     worker.make_connections(gui)
     gui.make_connections(worker)
 
-    # # start worker in a different thread (avoids GUI freezing)
+    # start worker
     workerThread.start()
-
+    
     gui.show()
     app.exec()

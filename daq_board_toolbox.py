@@ -71,7 +71,7 @@ def set_task(task_name, number_of_channels, sampling_rate, samples_per_ch, min_r
     # estimate timeout (time_to_finish) for the task
     time_to_finish = samples_per_ch/sampling_rate # in s
     if debug:
-        print('Acquiring {} points at {} MS/s sampling rate would take:'.format(samples_per_ch, \
+        print('Acquiring {:d} points at {:.4f} MS/s sampling rate would take:'.format(samples_per_ch, \
                                                                             sampling_rate*1e-6))
         print('{} ms'.format(time_to_finish*1e3))
     # determine acquisition mode

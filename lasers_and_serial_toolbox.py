@@ -12,7 +12,7 @@ import sys
 import glob
 import serial
 import re
-import time
+import time as tm
 from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper # for flipper
 from pylablib.devices import M2 # Ti:Sa laser module
 from timeit import default_timer as timer
@@ -24,18 +24,19 @@ from timeit import default_timer as timer
 #=====================================
 # after sending the instruction, number of bytes
 # to read during serial communication (max length message received)
-# modify if it's not enoough
+# modify if it's not enough
 bytesToRead = 250
 # COM ports
-COM_port_oxxius = 'COM5' # 532 Oxxius Laser com port
-COM_port_flipper_cam_Thorlabs = 'COMX' # Serial number: 37004922 # NOT USED FOR THE MOMENT
-COM_port_flipper_apd_Thorlabs = 'COM8' # Serial number: 37005240
-COM_port_flipper_trapping_laser_Thorlabs = 'COM7' # Serial number: 37005241
-COM_port_shutter_Thorlabs = 'COM11' # USB to Serial cable
-COM_port_filter_wheel = 'COM12' # USB Serial Port (Thorlabs FIlter Wheel FW102C)
-COM_port_toptica = 'COM13' # 488 Toptica Laser using ATEN USB to Serial bridge 
-COM_valve = 'COM4' # microfluidics valve NOT USED HERE
-COM_pump = 'COM3' # microfluidics pump NOT USED HERE
+COM_port_oxxius = 'COMX' # 532 Oxxius Laser com port # NOT INSTALLED
+COM_port_flipper_spectrometer = 'COM6' # APT USB Serial number: 37004922
+COM_port_flipper_apd_Thorlabs = 'COM8' # APT USB Serial number: 37005240
+COM_port_flipper_trapping_laser_Thorlabs = 'COM7' # APT USB Serial number: 37005241
+# COM9 and COM10 are the Piezostages' controllers
+COM_port_shutter_Thorlabs = 'COM3' # USB to Serial cable
+COM_port_filter_wheel = 'COM12' # USB Serial Port (Thorlabs Filter Wheel FW102C)
+COM_port_toptica = 'COM13' # 488 Toptica Laser using ATEN USB to Serial Bridge 
+COM_valve = 'COM5' # microfluidics valve NOT USED HERE
+COM_pump = 'COM4' # microfluidics pump NOT USED HERE
 
 def serial_ports():
     """ Lists serial port names
@@ -101,7 +102,7 @@ def initSerial(port, baudRate):
 def closeSerial(serialInstance):
     print('Closing serial communication...')
     serialInstance.close()
-    time.sleep(0.2) # wait until serial comm is closed
+    tm.sleep(0.2) # wait until serial comm is closed
     return
 
 #=====================================
@@ -221,7 +222,7 @@ class oxxius_laser(object):
         return reply_clean_string
     
     def close(self):
-        time.sleep(0.1)
+        tm.sleep(0.1)
         print('Closing 532 laser communication. Clearing serial buffer...')
         self.serialInstance.flush() # empty serial buffer
         self.shutter('close')
@@ -347,7 +348,7 @@ class toptica_laser(object):
         return self.serialInstance.is_open
     
     def close(self):
-        time.sleep(0.1)
+        tm.sleep(0.1)
         print('Closing 488 laser communication. Clearing serial buffer...')
         self.serialInstance.flush() # empty serial buffer
         self.shutter('close')
@@ -426,7 +427,7 @@ class M2_laser(object):
         return
     
     def close(self):
-        time.sleep(0.1)
+        tm.sleep(0.1)
         print('Closing Ti:Sa laser communication...')
         self.tisa_laser.stop_all_operation()
         self.tisa_laser.close()
@@ -465,17 +466,19 @@ class motorized_flipper(object):
 
     def set_flipper_up(self):
         self.serialInstance.move_to_state(1)
+        tm.sleep(0.5)
         return
         
     def set_flipper_down(self):
         self.serialInstance.move_to_state(0)
+        tm.sleep(0.5)
         return
     
     def close(self):
         print('Closing motorized flipper serial communication...')
         self.set_flipper_down()
         self.serialInstance.close()
-        time.sleep(0.2)
+        tm.sleep(0.2)
         return
 
 #=====================================
@@ -554,7 +557,7 @@ class Thorlabs_shutter(object):
         return 
     
     def close(self):
-        time.sleep(0.1)
+        tm.sleep(0.1)
         print('Closing shutter communication. Clearing serial buffer...')
         self.serialInstance.flush() # empty serial buffer
         self.shutter('close')

@@ -25,7 +25,7 @@ import time as tm
 
 # 41401114 deviceID is the benchtop controller BPC 301 for 1 axis
 deviceID_BPC301 = '41401114'
-piezo_stage = piezoTool.BPC301(deviceID_BPC301)
+piezo_stage_z = piezoTool.BPC301(deviceID_BPC301)
 # time period used to update stage position
 initial_updatePosition_period = 500 # in ms
 
@@ -242,31 +242,30 @@ class Backend(QtCore.QObject):
                  updatePosition_period = initial_updatePosition_period, \
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.piezo_stage = piezo_stage
+        self.piezo_stage_z = piezo_stage
         self.initialize_piezo()
         # set timer to update lasers status
         self.updatePosition_period = updatePosition_period
         self.updateTimer = QtCore.QTimer()
-        self.updateTimer.timeout.connect(self.read_position)
         self.updateTimer.setInterval(self.updatePosition_period) # in ms
-        self.updateTimer.start()
-        self.move_absolute(10)
         return
     
     def initialize_piezo(self):
         # initialize (connect)
-        self.piezo_stage.connect()
+        self.piezo_stage_z.connect()
         # method to check if it's connected
-        if self.piezo_stage.controller.IsConnected:
+        if self.piezo_stage_z.controller.IsConnected:
             print('z piezo stage succesfully connected.')
         else:
             print('Couldn\'t connect to z piezo stage.')
 
         # get info
-        print(self.piezo_stage.get_info())
+        print(self.piezo_stage_z.get_info())
         print('Zeroing the z piezo stage. This step takes around 30 s. Please wait...\n')
         # perform zero routine for all axis
-        self.piezo_stage.zero()
+        self.piezo_stage_z.zero()
+        tm.sleep(5)
+        self.move_absolute(10)
         return
     
     @pyqtSlot()
@@ -274,7 +273,7 @@ class Backend(QtCore.QObject):
         """
         Read position from controller
         """ 
-        z_pos = self.piezo_stage.get_axis_position('z')
+        z_pos = self.piezo_stage_z.get_axis_position('z')
         z_pos = round(z_pos, 3)
         self.read_pos_signal.emit(z_pos)
         return z_pos
@@ -298,7 +297,7 @@ class Backend(QtCore.QObject):
         # print('z_pos', z_pos_before)
         # print('Asking for a %.3f step on %s axis' % (distance, axis) )
         if axis == 'z':
-            self.piezo_stage.move_relative(axis, distance)
+            self.piezo_stage_z.move_relative(axis, distance)
         else:
             print('Cannot do \"move relative\". Axis should be z.')
         # check piezo_toolbox.py\response_time function
@@ -318,7 +317,7 @@ class Backend(QtCore.QObject):
         Moves the stage to an absolute position.
         """
         # print("Setting Position:", position)
-        self.piezo_stage.set_position(z = position)
+        self.piezo_stage_z.set_position(z = position)
         self.read_position() 
         return
     
@@ -327,18 +326,22 @@ class Backend(QtCore.QObject):
         """ 
         Set (True) or Unset (False) feedback loop mode
         """
-        self.piezo_stage.set_close_loop(close_flag)
+        self.piezo_stage_z.set_close_loop(close_flag)
         return
     
+    def run(self):
+        self.updateTimer.start()
+        return
+
     @pyqtSlot(bool)
     def close_backend(self, main_app = True):
         print('Stopping updater (QtTimer)...')
         self.updateTimer.stop()
         if main_app:
             print('Shutting down piezo stage...')
-            self.piezo_stage.shutdown()
+            self.piezo_stage_z.shutdown()
             print('Exiting thread...')
-            tm.sleep(1)
+            tm.sleep(5)
             workerThread.exit()
         return            
 
@@ -363,12 +366,16 @@ if __name__ == '__main__':
 
     # create both classes
     gui = Frontend()
-    worker = Backend(piezo_stage)
+    worker = Backend(piezo_stage_z)
     
     # # thread that run in background
     workerThread = QtCore.QThread()
     worker.updateTimer.moveToThread(workerThread)
+    worker.updateTimer.timeout.connect(worker.read_position)
     worker.moveToThread(workerThread)
+    
+    # start timer when thread has started
+    workerThread.started.connect(worker.run)
 
     # connect both classes
     worker.make_connections(gui)

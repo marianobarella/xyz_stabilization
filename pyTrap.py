@@ -478,6 +478,20 @@ class Frontend(QtGui.QMainWindow):
 
     def play_pause_confocal_scan(self):
         if self.rasterScanButton.isChecked():
+            if self.zWidget.stabilize_z_button.isChecked() or self.xyWidget.correct_drift_button.isChecked():
+                reply = QtGui.QMessageBox.question(self, 'Stabilization warning', \
+                    '\nAre you sure you want to run a confocal/z scan?\n \nStabilization will go OFF',
+                               QtGui.QMessageBox.No |
+                               QtGui.QMessageBox.Yes)
+                if reply == QtGui.QMessageBox.Yes:
+                    # call functions to turn OFF the stabilization
+                    # stop xy stablization
+                    self.xyWidget.stop_stabilization_for_confocal_scan()                    
+                    # stop z stablization
+                    self.zWidget.stop_stabilization_for_confocal_scan()                    
+                else:
+                    self.rasterScanButton.setChecked(False)
+                    return
             # set the paramters for the scan
             self.set_parameters()
             # clear image and send signal to perform the scan
@@ -491,6 +505,20 @@ class Frontend(QtGui.QMainWindow):
 
     def play_pause_z_scan(self):
         if self.zScanButton.isChecked():
+            if self.zWidget.stabilize_z_button.isChecked() or self.xyWidget.correct_drift_button.isChecked():
+                reply = QtGui.QMessageBox.question(self, 'Stabilization warning', \
+                    '\nAre you sure you want to run a confocal/z scan?\n \nStabilization will go OFF',
+                               QtGui.QMessageBox.No |
+                               QtGui.QMessageBox.Yes)
+                if reply == QtGui.QMessageBox.Yes:
+                    # call functions to turn OFF the stabilization
+                    # stop xy stablization
+                    self.xyWidget.stop_stabilization_for_confocal_scan()                    
+                    # stop z stablization
+                    self.zWidget.stop_stabilization_for_confocal_scan()                    
+                else:
+                    self.zScanButton.setChecked(False)
+                    return
             # set the paramters for the scan
             self.set_parameters()
             self.zScanSignal.emit(True)
@@ -637,12 +665,8 @@ class Backend(QtCore.QObject):
         self.update_position()
         # set timer to do the confocal scan
         self.confocalTimer = QtCore.QTimer()
-        # configure the connection to allow queued executions to avoid interruption of previous calls
-        self.confocalTimer.timeout.connect(self.execute_confocal_scan, QtCore.Qt.QueuedConnection)
         # set timer to do the z scan
         self.zTimer = QtCore.QTimer()
-        # configure the connection to allow queued executions to avoid interruption of previous calls
-        self.zTimer.timeout.connect(self.execute_z_scan, QtCore.Qt.QueuedConnection)
         self.scan_step_time = initial_scan_step_time
         self.x0 = 10 # in um
         self.y0 = 10 # in um
@@ -689,6 +713,9 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool)
     def do_z_scan(self, enable_scan):
         if enable_scan:
+            # stop APD backend if running
+            if self.apdTraceWorker.acquisition_flag == True:
+                self.apdTraceWorker.play_pause(False)
             self.start_z_scan()
         else:
             self.stop_z_scan()
@@ -809,6 +836,9 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool)
     def do_confocal_scan(self, enable_scan):
         if enable_scan:
+            # stop APD backend if running
+            if self.apdTraceWorker.acquisition_flag == True:
+                self.apdTraceWorker.play_pause(False)
             self.start_confocal_scan()
         else:
             self.stop_confocal_scan()
@@ -1001,14 +1031,15 @@ class Backend(QtCore.QObject):
         self.piezoWorker.close_backend(main_app = False)
         self.xyWorker.close_backend(main_app = False)
         self.zWorker.close_backend(main_app = False)
-        self.apdTraceWorker.close_backend()
+        self.apdTraceWorker.close_backend(main_app = False)
         self.laserControlWorker.close_backend()
         print('Stopping QtTimers...')
         self.confocalTimer.stop()
         if main_app:
             print('Exiting thread...')
-            tm.sleep(1)
             workerThread.exit()
+            data_processor.kill()
+            tm.sleep(5) # needed to close properly all modules
         return
     
     def make_modules_connections(self, frontend, data_processor):
@@ -1061,28 +1092,57 @@ if __name__ == '__main__':
     # move the timer of the piezo and its main worker
     worker.piezoWorker.updateTimer.moveToThread(workerThread)
     worker.piezoWorker.moveToThread(workerThread)
+    # connect timer after moving it
+    worker.piezoWorker.updateTimer.timeout.connect(worker.piezoWorker.read_position)
+
     # move the timers of the xy and its main worker
     worker.xyWorker.viewTimer.moveToThread(workerThread)
     worker.xyWorker.trackingTimer.moveToThread(workerThread)
     worker.xyWorker.tempTimer.moveToThread(workerThread)
     worker.xyWorker.moveToThread(workerThread)
+    # connect timers after moving them
+    # configure the connection to allow queued executions to avoid interruption of previous calls
+    worker.xyWorker.viewTimer.timeout.connect(worker.xyWorker.update_view, QtCore.Qt.QueuedConnection) 
+    worker.xyWorker.tempTimer.timeout.connect(worker.xyWorker.update_temp)
+    worker.xyWorker.trackingTimer.timeout.connect(worker.xyWorker.call_pid, QtCore.Qt.QueuedConnection) 
+
     # move the timers of the z and its main worker
     worker.zWorker.trackingTimer.moveToThread(workerThread)
     worker.zWorker.viewTimer.moveToThread(workerThread)
     worker.zWorker.moveToThread(workerThread)
+    # connect timers after moving them
+    # configure the connection to allow queued executions to avoid interruption of previous calls
+    worker.zWorker.viewTimer.timeout.connect(worker.zWorker.update_view, QtCore.Qt.QueuedConnection)
+    worker.zWorker.trackingTimer.timeout.connect(worker.zWorker.call_pid, QtCore.Qt.QueuedConnection) 
+
     # move APD tranmission signal and its timers worker 
     worker.apdTraceWorker.acquireTimer.moveToThread(workerThread)
     worker.apdTraceWorker.moveToThread(workerThread)
-    # Instance the data processor thread
-    data_processor = apd_trace_GUI.DataProcessorThread()
-    # move lasers and shutters worker 
-    worker.laserControlWorker.moveToThread(workerThread)
-    # move the scan xy and z timers to the main worker
+    # connect timer after moving it
+    worker.apdTraceWorker.acquireTimer.timeout.connect(worker.apdTraceWorker.acquire_trace, QtCore.Qt.QueuedConnection)
+
+    # instance the data processor QProcess
+    data_processor = apd_trace_GUI.DataProcessor()
+    # connect timer
+    data_processor.displayDataTimer.timeout.connect(data_processor.get_data_from_queue, QtCore.Qt.QueuedConnection)
+
+    # move lasers and shutters to a new thread
+    laserControlThread = QtCore.QThread()
+    worker.laserControlWorker.moveToThread(laserControlThread)
+
+    # move the confocal scan xyz timers to the main worker
     worker.confocalTimer.moveToThread(workerThread)
     worker.zTimer.moveToThread(workerThread)
+    # connect timers after moving them
+    # configure the connection to allow queued executions to avoid interruption of previous calls
+    worker.zTimer.timeout.connect(worker.execute_z_scan, QtCore.Qt.QueuedConnection)
+    worker.confocalTimer.timeout.connect(worker.execute_confocal_scan, QtCore.Qt.QueuedConnection)
+
     # move the main worker
     worker.moveToThread(workerThread)
 
+    # start timers when thread has started
+    workerThread.started.connect(worker.piezoWorker.run)
 
     ###################################
 
@@ -1093,6 +1153,7 @@ if __name__ == '__main__':
     
     # start thread
     workerThread.start()
+    laserControlThread.start()
     data_processor.start()
 
     gui.show()
