@@ -73,6 +73,10 @@ initial_filename = 'signal'
 initial_voltage_range = 2.0
 daq.check_voltage_range(daq_board, initial_voltage_range)
 
+# power calibration factor
+power_calibration_factor = 0.42 # in mW/V
+power_calibration_offset = 0.00 # in mW
+
 # creating data Queue object
 data_queue = Queue(maxsize = queue_size)
 
@@ -134,7 +138,7 @@ class FastLine(pg.QtGui.QGraphicsPathItem):
 
 #===================================== 
 
-class ChildWindow(QDialog):
+class AutocorrelationChildWindow(QDialog):
 
     closeChildSignal = pyqtSignal()
 
@@ -183,9 +187,82 @@ class ChildWindow(QDialog):
         self.closeChildSignal.emit()
         return    
 
+
 #=====================================
 
-# Thread for Data Processing definition
+# Power calibration Dialog
+
+#===================================== 
+
+class PowerCalibrationChildWindow(QDialog):
+
+    closeChildSignal = pyqtSignal()
+    calibrationParamsSignal = pyqtSignal(float, float)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__( *args, **kwargs)
+        # set the title of the window
+        self.setWindowTitle("Power calibration")
+        self.setGeometry(100, 100, 100, 100)
+        self.power_calibration_factor = power_calibration_factor
+        self.power_calibration_offset = power_calibration_offset
+        self.setUpGUI()
+        return
+
+    def setUpGUI(self):
+        # labels and edits
+        # factor
+        self.factor_label = QtGui.QLabel('Factor (mW/V): ')
+        self.factor_value = QtGui.QLineEdit(str(self.power_calibration_factor))
+        self.factor_value.setFixedWidth(50)
+        self.factor_value.setValidator(QtGui.QDoubleValidator(0.000, 10000.000, 3))
+        self.factor_value.editingFinished.connect(self.factor_value_changed)
+        # offset
+        self.offset_label = QtGui.QLabel('Offset (mW): ')
+        self.offset_value = QtGui.QLineEdit(str(self.power_calibration_offset))
+        self.offset_value.setFixedWidth(50)
+        self.offset_value.setValidator(QtGui.QDoubleValidator(-10000.000, 10000.000, 3))
+        self.offset_value.editingFinished.connect(self.offset_value_changed)
+
+        # done button
+        self.done_button = QtGui.QPushButton('Done')
+        self.done_button.clicked.connect(self.send_parameters)
+        self.done_button.setStyleSheet(
+            "QPushButton:pressed { background-color: palegreen; }")
+
+        # grid layout
+        gridbox_layout = QtGui.QGridLayout(self)
+        gridbox_layout.addWidget(self.factor_label, 0, 0)
+        gridbox_layout.addWidget(self.factor_value, 0, 1)
+        gridbox_layout.addWidget(self.offset_label, 1, 0)
+        gridbox_layout.addWidget(self.offset_value, 1, 1)
+        gridbox_layout.addWidget(self.done_button, 2, 0)
+        self.setLayout(gridbox_layout)
+        return
+
+    def factor_value_changed(self):
+        self.power_calibration_factor = float(self.factor_value.text())
+        return
+    
+    def offset_value_changed(self):
+        self.power_calibration_offset = float(self.offset_value.text())
+        return
+    
+    def send_parameters(self):
+        self.calibrationParamsSignal.emit(self.power_calibration_factor, self.power_calibration_offset)
+        self.close()
+        return
+
+    # re-define the closeEvent to execute an specific command
+    def closeEvent(self, event, *args, **kwargs):
+        super(QDialog, self).closeEvent(event, *args, **kwargs)
+        self.close()
+        self.closeChildSignal.emit()
+        return    
+
+#=====================================
+
+# Process for Data Processing definition
 
 #=====================================
 
@@ -405,7 +482,7 @@ class Frontend(QtGui.QFrame):
         # set the title of the window
         title = "Acquisition module"
         self.setWindowTitle(title)
-        self.setGeometry(850, 30, 600, 1000) # x pos, y pos, width, height
+        self.setGeometry(800, 30, 600, 1000) # x pos, y pos, width, height
         self.set_y_range()
         self.mean_value = initial_mean_value # in V
         self.sd_value = initial_sd_value # in V
@@ -414,7 +491,10 @@ class Frontend(QtGui.QFrame):
         self.set_filename()
         self.sampling_rate_changed()
         # Create an instance of the child window
-        self.child_window = ChildWindow()
+        self.autocorrelation_child_window = AutocorrelationChildWindow()
+        self.power_calibration_child_window = PowerCalibrationChildWindow()
+        self.power_calibration_factor = power_calibration_factor
+        self.power_calibration_offset = power_calibration_offset
         return
     
     def setUpGUI(self):
@@ -508,26 +588,36 @@ class Frontend(QtGui.QFrame):
         # display mean and std of the signals using labels
         fontsize = 16
         font_family = 'Serif'
-        header_col_0 = QtGui.QLabel('Signal (APD)')
+        header_col_0 = QtGui.QLabel('Signal')
         header_col_0.setFont(QtGui.QFont(font_family, 14))
         header_col_1 = QtGui.QLabel('Mean (V)')
         header_col_1.setFont(QtGui.QFont(font_family, 14))
         header_col_2 = QtGui.QLabel('Std dev (mV)')
         header_col_2.setFont(QtGui.QFont(font_family, 14))
         # for transmission APD
-        self.label_apd = QtGui.QLabel('Transmission')
+        self.label_apd = QtGui.QLabel('Transmission (APD)')
         self.label_apd.setFont(QtGui.QFont(font_family, fontsize))
         self.signalMeanValue_apd = QtGui.QLabel('0.000')
         self.signalMeanValue_apd.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
         self.signalStdValue_apd = QtGui.QLabel('0.000')
         self.signalStdValue_apd.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
-        # for monitor APD
-        self.label_monitor = QtGui.QLabel('Monitor')
+        # for monitor PD
+        self.label_monitor = QtGui.QLabel('Monitor (PD)')
         self.label_monitor.setFont(QtGui.QFont(font_family, fontsize))
         self.signalMeanValue_monitor = QtGui.QLabel('0.000')
         self.signalMeanValue_monitor.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
         self.signalStdValue_monitor = QtGui.QLabel('0.000')
         self.signalStdValue_monitor.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
+        self.power_label = QtGui.QLabel('Power at sample (mW)')
+        self.power_label.setFont(QtGui.QFont(font_family, fontsize))
+        self.power_value = QtGui.QLabel('0.000')
+        self.power_value.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
+        # power calibration button
+        self.powerCalibrationButton = QtGui.QPushButton('Calibrate')
+        self.powerCalibrationButton.clicked.connect(self.open_power_calibration_window)
+        self.powerCalibrationButton.setStyleSheet(
+            "QPushButton:pressed { background-color: darkgrey; }")
+        self.powerCalibrationButton.setToolTip('Power calibration window. Input factor and offset.')
         
         # Y range 
         self.min_y_range = initial_min_y_range
@@ -593,16 +683,16 @@ class Frontend(QtGui.QFrame):
         
         # enable auto range tick button
         self.enableAutoRageTickBox = QtGui.QCheckBox('Autorange')
-        self.enableAutoRageTickBox.setChecked(False)
+        self.enableAutoRageTickBox.setChecked(True)
         self.enableAutoRageTickBox.stateChanged.connect(self.enable_autorange)
         self.enableAutoRageTickBox.setToolTip('Set/Tick to enable autorange.')
 
         # Create a button to open the autocorrelation child window
-        self.open_child_button = QtGui.QPushButton("Open Autocorrelation live window", self)
-        self.open_child_button.setCheckable(True)
-        self.open_child_button.clicked.connect(self.open_child_window)
-        self.open_child_button.setToolTip('Calculate the autocorrelation of the transmission signal in live mode.')
-        self.open_child_button.setStyleSheet(
+        self.open_autocorrelation_child_button = QtGui.QPushButton("Open live autocorrelation window", self)
+        self.open_autocorrelation_child_button.setCheckable(True)
+        self.open_autocorrelation_child_button.clicked.connect(self.open_autocorrelation_child_window)
+        self.open_autocorrelation_child_button.setToolTip('Calculate the autocorrelation of the transmission signal in live mode.')
+        self.open_autocorrelation_child_button.setStyleSheet(
             "QPushButton:pressed { background-color: green; }"
             "QPushButton::checked { background-color: lightgreen; }")
 
@@ -644,22 +734,25 @@ class Frontend(QtGui.QFrame):
         subgridDisp_layout.addWidget(self.label_monitor, 2, 0)
         subgridDisp_layout.addWidget(self.signalMeanValue_monitor, 2, 1)
         subgridDisp_layout.addWidget(self.signalStdValue_monitor, 2, 2)
+        subgridDisp_layout.addWidget(self.power_label, 3, 0)
+        subgridDisp_layout.addWidget(self.power_value, 3, 1)
+        subgridDisp_layout.addWidget(self.powerCalibrationButton, 3, 2)
         # display ranges
-        subgridDisp_layout.addWidget(self.minmax_apd_RangeLabel, 3, 0)
-        subgridDisp_layout.addWidget(self.minYRangeValue_apd, 3, 1)
-        subgridDisp_layout.addWidget(self.maxYRangeValue_apd, 3, 2)
-        subgridDisp_layout.addWidget(self.minmax_monitor_RangeLabel, 4, 0)
-        subgridDisp_layout.addWidget(self.minYRangeValue_monitor, 4, 1)
-        subgridDisp_layout.addWidget(self.maxYRangeValue_monitor, 4, 2)
-        subgridDisp_layout.addWidget(self.centerOnMeanButton, 5, 0, 1, 2)
-        subgridDisp_layout.addWidget(self.enableAutoRageTickBox, 5, 2)
-        subgridDisp_layout.addWidget(self.downsamplingLabel, 6, 0)
-        subgridDisp_layout.addWidget(self.downsamplingValue, 6, 1)
-        subgridDisp_layout.addWidget(self.enableAveragingTickBox, 6, 2)
-        subgridDisp_layout.addWidget(self.timeViewboxLength_label, 7, 0)
-        subgridDisp_layout.addWidget(self.timeViewboxLength_value, 7, 1)
-        subgridDisp_layout.addWidget(self.effSamplingRateLabel, 8, 0, 1, 3)
-        subgridDisp_layout.addWidget(self.open_child_button, 9, 0, 1, 3)
+        subgridDisp_layout.addWidget(self.minmax_apd_RangeLabel, 4, 0)
+        subgridDisp_layout.addWidget(self.minYRangeValue_apd, 4, 1)
+        subgridDisp_layout.addWidget(self.maxYRangeValue_apd, 4, 2)
+        subgridDisp_layout.addWidget(self.minmax_monitor_RangeLabel, 5, 0)
+        subgridDisp_layout.addWidget(self.minYRangeValue_monitor, 5, 1)
+        subgridDisp_layout.addWidget(self.maxYRangeValue_monitor, 5, 2)
+        subgridDisp_layout.addWidget(self.centerOnMeanButton, 6, 0, 1, 2)
+        subgridDisp_layout.addWidget(self.enableAutoRageTickBox, 6, 2)
+        subgridDisp_layout.addWidget(self.downsamplingLabel, 7, 0)
+        subgridDisp_layout.addWidget(self.downsamplingValue, 7, 1)
+        subgridDisp_layout.addWidget(self.enableAveragingTickBox, 7, 2)
+        subgridDisp_layout.addWidget(self.timeViewboxLength_label, 8, 0)
+        subgridDisp_layout.addWidget(self.timeViewboxLength_value, 8, 1)
+        subgridDisp_layout.addWidget(self.effSamplingRateLabel, 9, 0, 1, 3)
+        subgridDisp_layout.addWidget(self.open_autocorrelation_child_button, 10, 0, 1, 3)
 
         # widget for the data
         self.viewTraceWidget = pg.GraphicsLayoutWidget()
@@ -682,7 +775,7 @@ class Frontend(QtGui.QFrame):
         dockArea1 = DockArea()
         dockArea2 = DockArea()
         
-        acqTraceDock = Dock('Acquisition controls', size=(10,1))
+        acqTraceDock = Dock('Acquisition controls', size=(1,10))
         acqTraceDock.addWidget(self.paramAcqWidget)
         dockArea1.addDock(acqTraceDock)
 
@@ -703,15 +796,20 @@ class Frontend(QtGui.QFrame):
         self.setLayout(gridbox)
         return
 
-    def open_child_window(self):
-        # show the child window
-        self.child_window.show()
+    def open_autocorrelation_child_window(self):
+        # show the autocorrelation child window
+        self.autocorrelation_child_window.show()
         return
 
     def set_working_dir(self):
         self.setWorkDirSignal.emit()
         return
     
+    def open_power_calibration_window(self):
+        # open the power calibration child window
+        self.power_calibration_child_window.show()
+        return
+
     @pyqtSlot(str)
     def get_filepath(self, filepath):
         self.filepath = filepath
@@ -875,10 +973,13 @@ class Frontend(QtGui.QFrame):
         self.sd_mV_apd = sd_value_apd*1000 # to mV
         self.signalMeanValue_apd.setText('{:.3f}'.format(self.mean_value_apd))
         self.signalStdValue_apd.setText('{:.3f}'.format(self.sd_mV_apd))
-        # monnitor APD
+        # monitor PD
         self.sd_mV_monitor = sd_value_monitor*1000 # to mV
         self.signalMeanValue_monitor.setText('{:.3f}'.format(self.mean_value_monitor))
         self.signalStdValue_monitor.setText('{:.3f}'.format(self.sd_mV_monitor))
+        # power value
+        self.power_at_sample_plane = mean_value_monitor*self.power_calibration_factor + self.power_calibration_offset
+        self.power_value.setText('{:.3f}'.format(self.power_at_sample_plane))
         return
 
     @pyqtSlot(np.ndarray, \
@@ -890,17 +991,6 @@ class Frontend(QtGui.QFrame):
             item_std_apd_plus_data_curve, item_std_apd_minus_data_curve, \
             item_raw_monitor_data_curve, item_mean_monitor_data_curve, \
             item_std_monitor_plus_data_curve, item_std_monitor_minus_data_curve):   
-        # retrieve data from queue
-        # data_to_plot = queue_data.get()
-        # [mean_value_apd, sd_value_apd, \
-        #     mean_value_monitor, sd_value_monitor, \
-        #     time_array, item_raw_apd_data_curve, item_mean_apd_data_curve, \
-        #     item_std_apd_plus_data_curve, item_std_apd_minus_data_curve, \
-        #     item_raw_monitor_data_curve, item_mean_monitor_data_curve, \
-        #     item_std_monitor_plus_data_curve, item_std_monitor_minus_data_curve] = data_to_plot
-        # # update labels
-        # self.update_label_values(mean_value_apd, sd_value_apd, \
-        #                          mean_value_monitor, sd_value_monitor)
         # Add plots
         # Tranmissoin APD
         self.signal_plot.clear()
@@ -928,9 +1018,17 @@ class Frontend(QtGui.QFrame):
         return
 
     @pyqtSlot()
-    def child_window_close(self):
+    def autocorrelation_child_window_close(self):
         # uncheck Autocorrelation button
-        self.open_child_button.setChecked(False)
+        self.open_autocorrelation_child_button.setChecked(False)
+        return
+
+    @pyqtSlot(float, float)
+    def set_power_calibration_params(self, factor, offset):
+        self.power_calibration_factor = factor
+        self.power_calibration_offset = offset
+        print('\nPower calibration factor: {:.3f} mW/V'.format(self.power_calibration_factor))
+        print('Power calibration offset: {:.3f} mW'.format(self.power_calibration_offset))
         return
 
     @pyqtSlot(str)
@@ -943,8 +1041,8 @@ class Frontend(QtGui.QFrame):
 
     @pyqtSlot(np.ndarray, np.ndarray, float)
     def update_autocorr(self, transmission_signal, lag, sampling_rate):
-        if self.open_child_button.isChecked():
-            self.child_window.plot_autocorr(transmission_signal, lag, sampling_rate)
+        if self.open_autocorrelation_child_button.isChecked():
+            self.autocorrelation_child_window.plot_autocorr(transmission_signal, lag, sampling_rate)
         return
 
     # re-define the closeEvent to execute an specific command
@@ -974,7 +1072,8 @@ class Frontend(QtGui.QFrame):
         backend.autocorrSignal.connect(self.update_autocorr)
         processing_thread.updateLabelsSignal.connect(self.update_label_values)
         processing_thread.dataReadySignal.connect(self.displayTrace)
-        self.child_window.closeChildSignal.connect(self.child_window_close)
+        self.autocorrelation_child_window.closeChildSignal.connect(self.autocorrelation_child_window_close)
+        self.power_calibration_child_window.calibrationParamsSignal.connect(self.set_power_calibration_params)
         return
 
 #=====================================

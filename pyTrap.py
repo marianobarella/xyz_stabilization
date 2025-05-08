@@ -1038,6 +1038,7 @@ class Backend(QtCore.QObject):
         if main_app:
             print('Exiting thread...')
             workerThread.exit()
+            laserControlThread.exit()
             data_processor.kill()
             tm.sleep(5) # needed to close properly all modules
         return
