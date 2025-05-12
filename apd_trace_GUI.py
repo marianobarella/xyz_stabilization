@@ -74,7 +74,7 @@ initial_voltage_range = 2.0
 daq.check_voltage_range(daq_board, initial_voltage_range)
 
 # power calibration factor
-power_calibration_factor = 0.42 # in mW/V
+power_calibration_factor = 42.5 # in mW/V
 power_calibration_offset = 0.00 # in mW
 
 # creating data Queue object
@@ -187,7 +187,6 @@ class AutocorrelationChildWindow(QDialog):
         self.closeChildSignal.emit()
         return    
 
-
 #=====================================
 
 # Power calibration Dialog
@@ -273,7 +272,6 @@ class DataProcessor(QProcess):
                                  pg.QtGui.QGraphicsPathItem, pg.QtGui.QGraphicsPathItem, \
                                  pg.QtGui.QGraphicsPathItem, pg.QtGui.QGraphicsPathItem, \
                                  pg.QtGui.QGraphicsPathItem, pg.QtGui.QGraphicsPathItem)
-
     updateLabelsSignal = pyqtSignal(float, float, float, float)
 
     def __init__(self):
@@ -350,7 +348,10 @@ class DataProcessor(QProcess):
                         read_samples_list.append(read_samples)
                         n_available_per_ch_list.append(n_available_per_ch)
                 # do some minor stats
+                # if data is empty, do nothing
                 # use nanmean and nanstd, allocation is performed with nan values
+                if data_apd_array.size == 0 or monitor_array.size == 0:
+                    return
                 self.mean_value_apd = np.nanmean(data_apd_array)
                 self.sd_value_apd = np.nanstd(data_apd_array, ddof = 0)
                 self.mean_value_monitor = np.nanmean(monitor_array)
@@ -475,9 +476,11 @@ class Frontend(QtGui.QFrame):
     commentSignal = pyqtSignal(str)
     parametersSignal = pyqtSignal(float, float, int, bool)
     retrieveDataSignal = pyqtSignal(bool)
+    trappingShutterSignal = pyqtSignal(bool)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, enable_connection_to_laser_module = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.enable_connection_to_laser_module = enable_connection_to_laser_module
         self.setUpGUI()
         # set the title of the window
         title = "Acquisition module"
@@ -754,6 +757,14 @@ class Frontend(QtGui.QFrame):
         subgridDisp_layout.addWidget(self.effSamplingRateLabel, 9, 0, 1, 3)
         subgridDisp_layout.addWidget(self.open_autocorrelation_child_button, 10, 0, 1, 3)
 
+        if self.enable_connection_to_laser_module:
+            # enable connection to laser module tick button
+            self.connect_to_laser_module_tickbox = QtGui.QCheckBox('Connect to shutter')
+            self.connect_to_laser_module_tickbox.setChecked(True)
+            self.connect_to_laser_module_tickbox.stateChanged.connect(self.connect_to_laser_module)
+            self.connect_to_laser_module_tickbox.setToolTip('Set/Tick to enable the connection.')
+            subgridAcq_layout.addWidget(self.connect_to_laser_module_tickbox, 0, 2)
+
         # widget for the data
         self.viewTraceWidget = pg.GraphicsLayoutWidget()
         self.signal_plot = self.viewTraceWidget.addPlot(row = 1, col = 1, title = 'APD signal')
@@ -877,6 +888,9 @@ class Frontend(QtGui.QFrame):
             self.traceSignal.emit(True)
             # start displaying data
             self.retrieveDataSignal.emit(True)
+            # if modules are connected, send signal to open the shutter
+            if self.connect_to_laser_module:
+                self.trappingShutterSignal.emit(True)
         else:
             # send signal to stop acquisition
             self.traceSignal.emit(False) 
@@ -1015,6 +1029,9 @@ class Frontend(QtGui.QFrame):
     def acquisition_stopped(self):
         # uncheck Acquire button
         self.traceButton.setChecked(False)
+        # if modules are connected, send signal to close the shutter
+        if self.connect_to_laser_module:
+            self.trappingShutterSignal.emit(False)
         return
 
     @pyqtSlot()
@@ -1043,6 +1060,15 @@ class Frontend(QtGui.QFrame):
     def update_autocorr(self, transmission_signal, lag, sampling_rate):
         if self.open_autocorrelation_child_button.isChecked():
             self.autocorrelation_child_window.plot_autocorr(transmission_signal, lag, sampling_rate)
+        return
+
+    def connect_to_laser_module(self, enablebool):
+        if enablebool:
+            self.connect_to_laser_module = True
+            print('\nShutter is connected to acquisition')
+        else:
+            self.connect_to_laser_module = False
+            print('\nShutter is disconnected from acquisition')
         return
 
     # re-define the closeEvent to execute an specific command

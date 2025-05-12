@@ -55,6 +55,9 @@ initial_threshold = 0.3 # to filter the confocal image and find the CM
 initial_confocal_filepath = 'D:\\daily_data\\confocal_data' # save in SSD for fast and daily use
 initial_confocal_filename = 'confocal_scan'
 
+# do you want to connect the APD module with the laser module?
+enable_connection_to_laser_module = True
+
 #=====================================
 
 # Autocorrelation Window definition
@@ -162,7 +165,8 @@ class Frontend(QtGui.QMainWindow):
                                                        show_piezo_subGUI = False, \
                                                        main_app = False, \
                                                        connect_to_piezo_module = False)
-        self.apdTraceWidget = apd_trace_GUI.Frontend()
+        self.enable_connection_to_laser_module = enable_connection_to_laser_module
+        self.apdTraceWidget = apd_trace_GUI.Frontend(self.enable_connection_to_laser_module)
         self.laserControlWidget = laser_control_GUI_minimalist.Frontend()
         self.confocal_filename = initial_confocal_filename
         self.confocal_filepath = initial_confocal_filepath
@@ -677,6 +681,7 @@ class Backend(QtCore.QObject):
         self.confocal_filename = initial_confocal_filename
         self.confocal_filepath = initial_confocal_filepath
         self.save_counter = 0
+        self.enable_connection_to_laser_module = enable_connection_to_laser_module
         return
 
     @pyqtSlot(list)
@@ -1058,6 +1063,9 @@ class Backend(QtCore.QObject):
         frontend.setConfocalWorkDirSignal.connect(self.set_confocal_working_folder)
         frontend.confocalFilenameSignal.connect(self.set_confocal_filename)
         frontend.closeSignal.connect(self.close_all_backends)
+        # connect apd_trace_GUI start acquisition with the laser_control
+        if self.enable_connection_to_laser_module:
+            frontend.apdTraceWidget.trappingShutterSignal.connect(self.laserControlWorker.shutterTrappingLaser)
         # connect Backend modules with their respectives Frontend modules
         frontend.piezoWidget.make_connections(self.piezoWorker)
         frontend.xyWidget.make_connections(self.xyWorker)
