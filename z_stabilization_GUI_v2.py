@@ -56,19 +56,19 @@ driftbox_length = 10.0 # in s
 initial_gain = 0 # int
 
 # inital ROI definition
-initial_vertical_pos = 450
+initial_vertical_pos = 400
 initial_horizontal_pos = 0
 initial_vertical_size = 300
 initial_horizontal_size = 1440
 
 # for center of mass estimation, float between 0.00 and 1.00
-initial_threshold = 0.8
+initial_threshold = 0.5
 
 # PID constants
 # tested with a 200 ms tracking period
-initial_kp = 0.25 # proportinal factor of the PID
-initial_ki = 0.0005 # integral factor of the PID
-initial_kd = 0.01 # derivative factor of the PID
+initial_kp = 0.10 # proportinal factor of the PID
+initial_ki = 0.0001 # integral factor of the PID
+initial_kd = 0.001 # derivative factor of the PID
 # correction threshold in um
 # above this value (distance) the software starts to apply a correction
 # to compensate the drift

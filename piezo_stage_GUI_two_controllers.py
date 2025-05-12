@@ -30,7 +30,7 @@ piezo_stage_z = piezoTool.BPC301(deviceID_BPC301)
 # time period used to update stage position
 initial_updatePosition_period = 500 # in ms
 # set True if you want to perform zero the stage during initialization
-zeroing_flag = True
+zeroing_flag = False
 
 #=====================================
 

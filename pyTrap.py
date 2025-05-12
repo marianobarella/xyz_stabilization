@@ -151,7 +151,7 @@ class Frontend(QtGui.QMainWindow):
         self.cwidget = QtGui.QWidget()
         self.setCentralWidget(self.cwidget)
         self.setWindowTitle('pyTrap')
-        self.setGeometry(5, 30, 1900, 900) # x pos, y pos, width, height
+        self.setGeometry(5, 30, 1900, 880) # x pos, y pos, width, height
         self.main_app = main_app
         # import frontend modules
         # piezo widget (frontend) must be imported in the main

@@ -163,7 +163,7 @@ class pco_camera(object):
     def get_image(self):
         if self.recorder_set:
             image, metadata = self.camera.image()
-            image = np.flip(image, 1)
+            image = np.flip(image, 0)
         else:
             print('Recorder has to be configured. Run config_recorder first.')
         return image, metadata
