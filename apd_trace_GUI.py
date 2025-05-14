@@ -573,12 +573,12 @@ class Frontend(QtGui.QFrame):
 
         # Duration of the measurement
         self.duration = initial_duration
-        self.durationLabel = QtGui.QLabel('Duration (s) [max 10 min]: ')
+        self.durationLabel = QtGui.QLabel('Duration (s) [max 30 min]: ')
         self.durationValue = QtGui.QLineEdit(str(self.duration))
         self.durationValue.setFixedWidth(100)
-        self.durationValue.setValidator(QtGui.QDoubleValidator(1.0, 600.0, 1))
+        self.durationValue.setValidator(QtGui.QDoubleValidator(1.0, 1800.0, 1))
         self.durationValue.editingFinished.connect(self.duration_value_changed)
-        self.durationValue.setToolTip('Maximum duration set to 600 s (10 min).')
+        self.durationValue.setToolTip('Maximum duration set to 1800 s (30 min).')
         
         # Comments box
         self.comments_label = QtGui.QLabel('Comments:')
