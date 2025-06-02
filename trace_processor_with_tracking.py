@@ -18,6 +18,8 @@ import json
 import pandas as pd
 import datetime
 import ast
+import gaussian_filter as gf
+from matplotlib.gridspec import GridSpec
 
 ##############################################################################
 
@@ -40,10 +42,15 @@ def get_number_from_headerline(filepath, line_number):
 
 # INPUTS
 # base data's folder
+base_folder = 'C:\\datos_mariano\\posdoc\\unifr\\plasmonic_optical_trapping'
 
-base_folder = 'C:\\datos_mariano\\posdoc\\unifr\\plasmonic_optical_trapping\\transmission_signal_stability\\aperture\\5um'
-# average filtering window
+# filtering parameters
+# average filter window
 window_avg = 5
+# gaussian filter parameters
+sample_rate = 100000  # 100 kHz
+
+figure_name = 'test1'
 
 ##############################################################################
 # clear all plots
@@ -51,7 +58,7 @@ plt.ioff() # do not plot unless show is executed
 plt.close('all')
 
 ##############################################################################+
-# CONCATENATE FILES
+# CONCATENATE FILES if the trace was long
 
 # Prompt window to select any file (it will use the selected folder actually)
 root = tk.Tk()
@@ -59,6 +66,10 @@ dat_files = fd.askopenfilenames(initialdir = base_folder,
                                 filetypes=(("", "*.npy"), ("", "*.")))
 root.withdraw()
 working_folder = os.path.dirname(dat_files[0])
+save_folder = os.path.join(working_folder, 'figures') 
+if not os.path.exists(save_folder):
+    os.makedirs(save_folder)
+
 # create list of files
 list_of_files = os.listdir(working_folder)
 list_of_files.sort()
@@ -80,6 +91,7 @@ full_filepath_tra = os.path.join(working_folder, list_of_files_transmission[0])
 temporary_data = np.load(full_filepath_tra)
 # length
 length_of_trace = len(temporary_data)
+print('Length of trace: %d points' % length_of_trace)
 
 # allocate
 single_trace_tra = np.zeros((number_of_files, length_of_trace), dtype='float32')
@@ -110,11 +122,22 @@ np.save(full_new_file_path_mon, single_trace_mon)
 ##############################################################################
 # FILTERING
 # apply averaging filter
-single_trace_tra_avg = moving_average_sum(single_trace_tra, window_avg)
-single_trace_mon_avg = moving_average_sum(single_trace_mon, window_avg)
+# single_trace_tra_avg = moving_average_sum(single_trace_tra, window_avg)
+# single_trace_mon_avg = moving_average_sum(single_trace_mon, window_avg)
 
 # apply gaussian filtering
-#TODO
+# Process the signal
+cutoff_freq = 10e3  # 10 kHz
+original, filtered = gf.process_signal_file(full_new_file_path_tra, \
+                                            sample_rate, cutoff_freq, plot=False)
+# Save filtered signal if needed
+filtered_filename = 'filtered_signal_{:.1f}kHz.npy'.format(cutoff_freq)
+filtered_data_filepath = os.path.join(working_folder, filtered_filename)
+np.save(filtered_data_filepath, filtered)
+original, filtered1k = gf.process_signal_file(full_new_file_path_tra, \
+                                            sample_rate, 1e3, plot=False)
+original, filtered01k = gf.process_signal_file(full_new_file_path_tra, \
+                                            sample_rate, 0.1e3, plot=False) 
 
 ##############################################################################
 # BUILD TIME AXIS
@@ -157,26 +180,30 @@ diff_t0 = t0 - time_since_epoch_array
 # crop all data to start after t0
 
 index_ok = np.array(np.where(time_data >= diff_t0[0])[0], dtype='i4')
-time_data = time_data[index_ok]
-single_trace_tra = single_trace_tra[index_ok]
-single_trace_mon = single_trace_mon[index_ok]
+time_data = time_data/60 # to min
+# time_data = time_data[index_ok]/60 # to min
+# single_trace_tra = single_trace_tra[index_ok]
+# single_trace_mon = single_trace_mon[index_ok]
 
 # xy drift
-time_xy = np.where(time_xy >= diff_t0[1], time_xy, 0)
-x_error = np.where(time_xy >= diff_t0[1], x_error, 0)
-y_error = np.where(time_xy >= diff_t0[1], y_error, 0)
+index_ok = np.array(np.where(time_xy >= diff_t0[1])[0], dtype='i4')
+time_xy = time_xy[index_ok]/60 # to min
+x_error = x_error[index_ok]
+y_error = y_error[index_ok]
+msd = x_error**2 + y_error**2 # mean square displacement
 # z drift
-time_z = np.where(time_z >= diff_t0[2], time_z, 0)
-z_error = np.where(time_z >= diff_t0[2], z_error, 0)
+index_ok = np.array(np.where(time_z >= diff_t0[2])[0], dtype='i4')
+time_z = time_z[index_ok]/60 # to min
+z_error = z_error[index_ok]
 
 ##############################################################################
 # STATISTICS
-apd_mean = np.mean(single_trace_tra)
-apd_std = np.std(single_trace_tra)
-apd_cv = apd_std/apd_mean
-print('APD mean %.6f V' % apd_mean)
-print('APD std dev %.6f V' % apd_std)
-print('APD Coef. of Variation %.3f %%' % (apd_cv*100))
+tra_mean = np.mean(single_trace_tra)
+tra_std = np.std(single_trace_tra)
+tra_cv = tra_std/tra_mean
+print('Trans mean %.6f V' % tra_mean)
+print('Trans std dev %.6f V' % tra_std)
+print('Trans Coef. of Variation %.3f %%' % (tra_cv*100))
 
 monitor_mean = np.mean(single_trace_mon)
 monitor_std = np.std(single_trace_mon)
@@ -185,42 +212,95 @@ print('Monitor mean %.6f V' % monitor_mean)
 print('Monitor std dev %.6f V' % monitor_std)
 print('Monitor Coef. of Variation %.3f %%' % (monitor_cv*100))
 
+laser_power_trace = single_trace_mon*42.5 # in mW
+normalized_trans = single_trace_tra/tra_mean
+filtered1k_norm = filtered1k/tra_mean
+
 ##############################################################################
 # PLOT
-fig, (ax1, ax2, ax3) = plt.subplots(3, 1)
-fig.subplots_adjust(hspace=0.5) # extra space between the subplots
-ax1.plot(time_data, single_trace_tra, label='APD')
-ax1.set_xlabel('Time (s)')
-ax1.set_ylabel('Signal (V)')
-ax1.legend(loc='best')
-ax1.grid(True)
-ax2.plot(time_data, single_trace_mon, label='Monitor')
-ax2.set_xlabel('Time (s)')
-ax2.set_ylabel('Signal (V)')
-ax2.legend(loc='best')
-ax2.grid(True)
-ax3.plot(time_xy, x_error, label='x drift')
-ax3.plot(time_xy, y_error, label='y drift')
-ax3.plot(time_z, z_error, label='z drift')
-ax3.set_xlabel('Time (s)')
-ax3.set_ylabel(r'Drift ($\mu$m)')
-ax3.legend(loc='best')
-ax3.grid(True)
-plt.show()
+plt.rcParams.update({'font.size': 18})
+fig = plt.figure(figsize=(20, 10))
+gs = GridSpec(4, 2, figure=fig, width_ratios=[4, 1])
+gs.update(hspace=0.3)
 
-plt.figure(2)
-ax = plt.gca()
-ax.scatter(single_trace_tra, single_trace_mon, s=2)
-# ax.set_aspect('equal')
-plt.ylabel('Monitor signal (V)')
-plt.xlabel('APD signal (V)')
-ax.set_axisbelow(True)
-ax.grid(True)
-plt.show()
+# Main plots
+ax1 = fig.add_subplot(gs[0, 0])
+ax2 = fig.add_subplot(gs[1, 0])
+ax3 = fig.add_subplot(gs[2, 0])
+ax4 = fig.add_subplot(gs[3, 0])
+
+# Histogram plots
+ax3hist = fig.add_subplot(gs[2, 1])
+ax4hist = fig.add_subplot(gs[3, 1])
+[t_min, t_max] = 0, 10 # in min
+
+# Set axis below plots for all axes
+axes_list = [ax1, ax2, ax3, ax4, ax3hist, ax4hist]
+for ax in axes_list:
+    ax.set_axisbelow(True)
+    ax.tick_params(axis='both', which='major', labelsize=18)
     
-    
-    
-    
-    
-    
-    
+# Plotting the data
+ax1.plot(time_data, normalized_trans, color='C0', alpha=0.5, label='Original')
+ax1.plot(time_data, filtered1k_norm, color='C3', alpha=1, label='1 kHz')
+ax1.set_xlim([t_min, t_max])
+ax1.set_ylim([0.925, 1.05])
+ax1.set_ylabel('T/T$_{0}$', fontsize=18)
+ax1.grid(True, alpha=0.3)
+ax1.legend(loc='upper right', fontsize=18)
+
+ax2.plot(time_data, laser_power_trace)
+ax2.set_xlim([t_min, t_max])
+ax2.set_ylabel('Laser power (mW)', fontsize=18)
+ax2.grid(True, alpha=0.3)
+
+# Modified xy drift plot with histogram
+ax3.plot(time_xy, x_error, label='x')
+ax3.plot(time_xy, y_error, label='y')
+ax3.set_xlim([t_min, t_max])
+ax3.set_ylabel(r'Drift ($\mu$m)', fontsize=18)
+ax3.grid(True, alpha=0.3)
+ax3.legend(loc='upper right', fontsize=18)
+
+# Add xy drift histogram
+ax3hist.hist([x_error, y_error], bins=10, orientation='horizontal')
+# ax3hist.set_xlabel('Counts', fontsize=18)
+ax3hist.grid(True, alpha=0.3)
+
+# Modified z drift plot with histogram
+ax4.plot(time_z, z_error, color='C2', label='z')
+ax4.set_xlim([t_min, t_max])
+ax4.set_xlabel('Time (min)', fontsize=18)
+ax4.set_ylabel(r'Drift ($\mu$m)', fontsize=18)
+ax4.grid(True, alpha=0.3)
+ax4.legend(loc='upper right', fontsize=18)
+
+# Add z drift histogram
+ax4hist.hist(z_error, bins=10, rwidth=0.9, color='C2', orientation='horizontal')
+ax4hist.set_xlabel('Counts', fontsize=18)
+ax4hist.grid(True, alpha=0.3)
+
+figure_path = os.path.join(save_folder, '%s_trace_vs_time.png' % figure_name)
+plt.savefig(figure_path, dpi = 300, bbox_inches='tight')
+# figure_path = os.path.join(save_folder, '%s_trace_vs_time.pdf' % figure_name)
+# plt.savefig(figure_path, dpi = 300, bbox_inches='tight', format = 'pdf')
+
+# plt.figure(2)
+# ax = plt.gca()
+# ax.scatter(laser_power_trace, single_trace_tra, s=1, c='C0', alpha=0.7)
+# # ax.set_aspect('equal')
+# plt.xlabel('Laser power (mW)')
+# plt.ylabel('Transmission (V)')
+# plt.title('Correlation between laser power and transmission')
+# ax.set_axisbelow(True)
+# ax.grid(True)
+# figure_path = os.path.join(save_folder, '%s_power_transmission_correlation.png' % figure_name)
+# plt.savefig(figure_path, dpi = 300, bbox_inches='tight')
+# # figure_path = os.path.join(save_folder, '%s_correlation.pdf' % figure_name)
+# # plt.savefig(figure_path, dpi = 300, bbox_inches='tight', format = 'pdf')
+
+
+
+# plt.show()
+plt.close()
+

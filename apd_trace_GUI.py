@@ -480,7 +480,10 @@ class Frontend(QtGui.QFrame):
 
     def __init__(self, enable_connection_to_laser_module = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # connect modules?
         self.enable_connection_to_laser_module = enable_connection_to_laser_module
+        # initial connection setting
+        self.connection_with_laser_module = False
         self.setUpGUI()
         # set the title of the window
         title = "Acquisition module"
@@ -760,7 +763,7 @@ class Frontend(QtGui.QFrame):
         if self.enable_connection_to_laser_module:
             # enable connection to laser module tick button
             self.connect_to_laser_module_tickbox = QtGui.QCheckBox('Connect to shutter')
-            self.connect_to_laser_module_tickbox.setChecked(True)
+            self.connect_to_laser_module_tickbox.setChecked(self.connection_with_laser_module)
             self.connect_to_laser_module_tickbox.stateChanged.connect(self.connect_to_laser_module)
             self.connect_to_laser_module_tickbox.setToolTip('Set/Tick to enable the connection.')
             subgridAcq_layout.addWidget(self.connect_to_laser_module_tickbox, 0, 2)
@@ -889,7 +892,7 @@ class Frontend(QtGui.QFrame):
             # start displaying data
             self.retrieveDataSignal.emit(True)
             # if modules are connected, send signal to open the shutter
-            if self.connect_to_laser_module:
+            if self.connection_with_laser_module:
                 self.trappingShutterSignal.emit(True)
         else:
             # send signal to stop acquisition
@@ -1030,7 +1033,7 @@ class Frontend(QtGui.QFrame):
         # uncheck Acquire button
         self.traceButton.setChecked(False)
         # if modules are connected, send signal to close the shutter
-        if self.connect_to_laser_module:
+        if self.connection_with_laser_module:
             self.trappingShutterSignal.emit(False)
         return
 
@@ -1044,6 +1047,8 @@ class Frontend(QtGui.QFrame):
     def set_power_calibration_params(self, factor, offset):
         self.power_calibration_factor = factor
         self.power_calibration_offset = offset
+        print('\nPower calibration factor: {:.3f} mW/V'.format(self.power_calibration_factor))
+        print('Power calibration offset: {:.3f} mW'.format(self.power_calibration_offset))
         return
 
     @pyqtSlot(str)
@@ -1060,17 +1065,12 @@ class Frontend(QtGui.QFrame):
             self.autocorrelation_child_window.plot_autocorr(transmission_signal, lag, sampling_rate)
         return
 
-    @pyqtSlot(str, str)
-    def clear_comments(self, transmission_data_filepath, monitor_data_filepath):
-        self.comments.clear()
-        return
-
     def connect_to_laser_module(self, enablebool):
         if enablebool:
-            self.connect_to_laser_module = True
+            self.connection_with_laser_module = True
             print('\nShutter is connected to acquisition')
         else:
-            self.connect_to_laser_module = False
+            self.connection_with_laser_module = False
             print('\nShutter is disconnected from acquisition')
         return
 
@@ -1099,7 +1099,6 @@ class Frontend(QtGui.QFrame):
         backend.acqStoppedSignal.connect(self.acquisition_stopped)
         backend.saving_data_error_signal.connect(self.pop_up_window_error)
         backend.autocorrSignal.connect(self.update_autocorr)
-        backend.fileSavedSignal.connect(self.clear_comments)
         processing_thread.updateLabelsSignal.connect(self.update_label_values)
         processing_thread.dataReadySignal.connect(self.displayTrace)
         self.autocorrelation_child_window.closeChildSignal.connect(self.autocorrelation_child_window_close)
@@ -1156,8 +1155,6 @@ class Backend(QtCore.QObject):
         self.save_in_ascii = False
         self.spectrum_suffix = '' # for integration with specturm acquisition
         self.time_since_epoch = '0'
-        self.power_calibration_factor = power_calibration_factor
-        self.power_calibration_offset = power_calibration_offset
         return
 
     @pyqtSlot(bool)
@@ -1449,8 +1446,6 @@ class Backend(QtCore.QObject):
     
     def get_params_to_be_saved(self):
         dict_to_be_saved = {}
-        dict_to_be_saved["Power calibration factor (mW/V)"] = self.power_calibration_factor
-        dict_to_be_saved["Power calibration offset (mW)"] = self.power_calibration_offset
         dict_to_be_saved["Voltage range (V)"] = self.voltage_range
         dict_to_be_saved["Sampling rate (S/s)"] = self.sampling_rate
         dict_to_be_saved["Duration (s)"] = self.duration
@@ -1459,15 +1454,6 @@ class Backend(QtCore.QObject):
         dict_to_be_saved["Comments"] = self.comment
         return dict_to_be_saved
     
-    @pyqtSlot(float, float)
-    def get_power_calibration_params(self, factor, offset):
-        self.power_calibration_factor = factor
-        self.power_calibration_offset = offset
-        print('\nPower calibration factor: {:.3f} mW/V'.format(self.power_calibration_factor))
-        print('Power calibration offset: {:.3f} mW'.format(self.power_calibration_offset))
-        return
-        return
-
     @pyqtSlot(str)
     def set_filename(self, new_filename):
         self.filename = new_filename
@@ -1513,7 +1499,6 @@ class Backend(QtCore.QObject):
         frontend.setWorkDirSignal.connect(self.set_working_folder)
         frontend.filenameSignal.connect(self.set_filename)
         frontend.commentSignal.connect(self.set_comment)
-        frontend.power_calibration_child_window.calibrationParamsSignal.connect(self.get_power_calibration_params)
         return
 
 #=====================================
