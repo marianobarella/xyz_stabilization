@@ -100,7 +100,7 @@ class Frontend(QtGui.QFrame):
         # set the title of the window
         title = "XY stabilization module"
         self.setWindowTitle(title)
-        self.setGeometry(5, 30, 1900, 600) # x pos, y pos, width, height
+        self.setGeometry(5, 30, 1500, 600) # x pos, y pos, width, height
         self.sensor_temp = 0.00
         self.cam_temp = 0.00
         self.power_temp = 0.00
@@ -120,6 +120,8 @@ class Frontend(QtGui.QFrame):
         self.vb.setAspectLocked()
         self.img = pg.ImageItem()
         self.img.setOpts(axisOrder = 'row-major')
+        self.vb.invertY(True)
+        self.vb.invertX(True)
         self.vb.addItem(self.img)
         self.hist = pg.HistogramLUTItem(image = self.img, levelMode = 'mono')
         self.hist.gradient.loadPreset('grey')
@@ -363,7 +365,7 @@ class Frontend(QtGui.QFrame):
         dockArea = DockArea()
         hbox = QtGui.QHBoxLayout(self)
 
-        viewDock = Dock('Camera', size = (20, 200)) # optical format is squared
+        viewDock = Dock('Camera', size = (200, 20)) # optical format is squared
         viewDock.addWidget(self.imageWidget)
         dockArea.addDock(viewDock)
         
@@ -375,14 +377,14 @@ class Frontend(QtGui.QFrame):
         liveview_paramDock.addWidget(self.liveviewWidget)
         dockArea.addDock(liveview_paramDock, 'right', viewDock)
         
-        fiducialsDock = Dock('Fiducials selection', size = (20, 20))
+        fiducialsDock = Dock('Fiducials selection', size = (1, 20))
         fiducialsDock.addWidget(self.fiducialsWidget)
         dockArea.addDock(fiducialsDock, 'right', liveview_paramDock)
 
         ## Add Piezo stage GUI module if asked
         self.piezoWidget = self.piezo_frontend
         if show_piezo_subGUI:
-            piezoDock = Dock('Piezo stage')
+            piezoDock = Dock('Piezo stage', size = (1, 1))
             piezoDock.addWidget(self.piezoWidget)
             dockArea.addDock(piezoDock , 'right', fiducialsDock)
         

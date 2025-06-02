@@ -29,6 +29,8 @@ piezo_stage_xy = piezoTool.BPC303(deviceID_BPC303)
 # time period used to update stage position
 initial_updatePosition_period = 500 # in ms
 
+initialize_flag = True
+
 #=====================================
 
 # GUI / Frontend definition
@@ -313,10 +315,11 @@ class Backend(QtCore.QObject):
         print(self.piezo_stage_xy.get_info())
         print('Zeroing the xy piezo stage. This step takes around 30 s. Please wait...\n')
         # perform zero routine for all axis
-        self.piezo_stage_xy.zero('x')
-        self.piezo_stage_xy.zero('y')
-        tm.sleep(5)
-        self.move_absolute([10, 10])
+        if initialize_flag:
+            self.piezo_stage_xy.zero('x')
+            self.piezo_stage_xy.zero('y')
+            tm.sleep(5)
+            self.move_absolute([10, 10])
         return
     
     @pyqtSlot()

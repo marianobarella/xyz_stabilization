@@ -142,7 +142,7 @@ class Frontend(QtGui.QMainWindow):
     send_go_to_cm_auto_signal = pyqtSignal(bool)
     send_go_to_max_z_auto_signal = pyqtSignal(bool)
     saveConfocalSignal = pyqtSignal()
-    autoSaveConfocalSignal = pyqtSignal(bool)
+    autoSaveScanSignal = pyqtSignal(bool)
     setConfocalWorkDirSignal = pyqtSignal()
     confocalFilenameSignal = pyqtSignal(str)
     
@@ -177,7 +177,8 @@ class Frontend(QtGui.QMainWindow):
         self.go_to_max_z_auto_flag = True
         # Create an instance of the child window
         self.child_window = ChildWindow()
-        self.save_confocal_flag = False
+        self.save_scan_flag = False
+        self.universal_label = ''
         return
     
     def setUpGUI(self):
@@ -271,13 +272,13 @@ class Frontend(QtGui.QMainWindow):
         self.thresholdEdit.editingFinished.connect(self.set_parameters)
 
         self.saveConfocalButton = QtGui.QPushButton('Save confocal data')
-        self.saveConfocalButton.clicked.connect(self.save_confocal_data) 
+        self.saveConfocalButton.clicked.connect(self.save_scan) 
         self.saveConfocalButton.setToolTip('Saves the confocal image and the traces.')
 
         self.saveConfocalTickBox = QtGui.QCheckBox('Automatically save?')
-        self.saveConfocalTickBox.stateChanged.connect(self.enable_confocal_autosave) 
+        self.saveConfocalTickBox.stateChanged.connect(self.enable_scan_autosave) 
         self.saveConfocalTickBox.setChecked(False)
-        self.saveConfocalTickBox.setToolTip('Set/Tick to automatically save the confocal data.')
+        self.saveConfocalTickBox.setToolTip('Set/Tick to automatically save the confocal/z scan data.')
 
         coord_x_label = QtGui.QLabel('Center x (µm):')
         coord_y_label = QtGui.QLabel('Center y (µm):')        
@@ -418,7 +419,7 @@ class Frontend(QtGui.QMainWindow):
         self.goToMaxZSignal.emit()
         return
 
-    def save_confocal_data(self):
+    def save_scan(self):
         self.saveConfocalSignal.emit()
         return
 
@@ -438,12 +439,12 @@ class Frontend(QtGui.QMainWindow):
         self.send_go_to_max_z_auto_signal.emit(self.go_to_max_z_auto_flag)
         return
 
-    def enable_confocal_autosave(self, enablebool):
+    def enable_scan_autosave(self, enablebool):
         if enablebool:
-            self.save_confocal_flag = True
+            self.save_scan_flag = True
         else:
-            self.save_confocal_flag = False
-        self.autoSaveConfocalSignal.emit(self.save_confocal_flag)
+            self.save_scan_flag = False
+        self.autoSaveScanSignal.emit(self.save_scan_flag)
         return
 
     @pyqtSlot(list) 
@@ -557,10 +558,11 @@ class Frontend(QtGui.QMainWindow):
         self.child_window.show()
         return
 
-    @pyqtSlot(float, float, float)
-    def get_z_max(self, z_max, min_transmission, max_transmission):
+    @pyqtSlot(float, float, float, float, float)
+    def get_z_max(self, z_max, min_transmission, max_transmission, min_sd_transmission, max_sd_transmission):
         # show the child window
         self.child_window.plot_z_profile([z_max, z_max], [min_transmission, max_transmission], False, 'g', 2)
+        self.child_window.plot_sd_z_profile([z_max, z_max], [min_sd_transmission, max_sd_transmission], False, 'g', 2)
         self.child_window.show()
         return
 
@@ -633,7 +635,7 @@ class Backend(QtCore.QObject):
     sendConfocalImageSignal = pyqtSignal(np.ndarray)
     sendZProfileSignal = pyqtSignal(np.ndarray, np.ndarray, bool, str, int)
     sendSDZProfileSignal = pyqtSignal(np.ndarray, np.ndarray, bool, str, int)
-    sendZMaxValueSignal = pyqtSignal(float, float, float)
+    sendZMaxValueSignal = pyqtSignal(float, float, float, float, float)
     confocalFilepathSignal = pyqtSignal(str)
     
     def __init__(self, piezo_stage_xy, piezo_stage_z, piezo_backend, \
@@ -677,11 +679,12 @@ class Backend(QtCore.QObject):
         self.z0 = 10 # in um
         self.threshold_for_cm = initial_threshold
         self.number_of_points_confocal = 0
-        self.save_confocal_flag = False
+        self.save_scan_flag = False
         self.confocal_filename = initial_confocal_filename
         self.confocal_filepath = initial_confocal_filepath
         self.save_counter = 0
         self.enable_connection_to_laser_module = enable_connection_to_laser_module
+        self.universal_label = ''
         return
 
     @pyqtSlot(list)
@@ -778,10 +781,16 @@ class Backend(QtCore.QObject):
         # emit signal scan has ended
         self.zScanStopped.emit()
         if self.go_to_z_max_auto_flag:
-            self.move_to_max_z()
+            try:
+                self.move_to_max_z()
+            except:
+                # back to initial position
+                self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z_pos])
         else:
             # back to initial position
             self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z_pos])
+        if self.save_scan_flag:
+            self.save_z_scan()
         return
 
     def execute_z_scan(self):
@@ -820,7 +829,9 @@ class Backend(QtCore.QObject):
         # send data to Frontend and plot
         self.sendZProfileSignal.emit(new_z_array, self.z_profile_interp, False, 'm', 2)
         self.sendSDZProfileSignal.emit(new_z_array, self.sd_z_profile_interp, False, 'm', 2)
-        self.sendZMaxValueSignal.emit(self.max_z_pos, 0.95*min(self.z_profile_interp), 1.05*max(self.z_profile_interp))
+        self.sendZMaxValueSignal.emit(self.max_z_pos, \
+                                      0.95*min(self.z_profile_interp), 1.05*max(self.z_profile_interp), \
+                                      0.95*min(self.sd_z_profile_interp), 1.05*max(self.sd_z_profile_interp))
         if not np.isnan(self.max_z_pos):
             self.piezoWorker.move_absolute([self.x_pos, \
                                             self.y_pos, \
@@ -922,7 +933,7 @@ class Backend(QtCore.QObject):
         else:
             # back to initial position
             self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z_pos])
-        if self.save_confocal_flag:
+        if self.save_scan_flag:
             self.save_confocal()
         return
 
@@ -990,9 +1001,9 @@ class Backend(QtCore.QObject):
         return
 
     @pyqtSlot(bool)
-    def set_autosave_confocal(self, save_confocal_flag):
-        self.save_confocal_flag = save_confocal_flag
-        print('\nConfocal data will be saved:', save_confocal_flag)
+    def set_autosave_scan(self, save_scan_flag):
+        self.save_scan_flag = save_scan_flag
+        print('\nConfocal/z scan data will be saved:', save_scan_flag)
         return
 
     @pyqtSlot()
@@ -1000,14 +1011,26 @@ class Backend(QtCore.QObject):
         # define paths
         full_confocal_filepath = os.path.join(self.confocal_filepath, self.confocal_filename)
         full_filepath_confocal_image = full_confocal_filepath + '_image_%04d.npy' % self.save_counter
-        full_filepath_traces_array = full_confocal_filepath + '_traces_%04d.npy' % self.save_counter
-        full_filepath_xy_array = full_confocal_filepath + '_coords_%04d.npy' % self.save_counter
+        full_filepath_confocal_traces_array = full_confocal_filepath + '_confocal_traces_%04d.npy' % self.save_counter
+        full_filepath_xy_array = full_confocal_filepath + '_xy_coords_%04d.npy' % self.save_counter
         # save data
         xy_array = np.transpose([self.x_scan_array, self.y_scan_array])
         np.save(full_filepath_confocal_image, self.confocal_image, allow_pickle = False)
-        np.save(full_filepath_traces_array, self.traces_array, allow_pickle = False)
+        np.save(full_filepath_confocal_traces_array, self.traces_array, allow_pickle = False)
         np.save(full_filepath_xy_array, xy_array, allow_pickle = False)
         print('Confocal data has been saved.')
+        self.save_counter += 1
+        return
+
+    @pyqtSlot()
+    def save_z_scan(self):
+        # define paths
+        full_z_scan_filepath = os.path.join(self.confocal_filepath, self.confocal_filename)
+        full_filepath_z_scan_data = full_z_scan_filepath + '_z_scan_%04d.npy' % self.save_counter
+        # save data
+        z_scan_data_to_save = np.transpose([self.z_scan_array, self.z_profile, self.sd_z_profile])
+        np.save(full_filepath_z_scan_data, z_scan_data_to_save, allow_pickle = False)
+        print('Z scan data has been saved.')
         self.save_counter += 1
         return
 
@@ -1057,7 +1080,7 @@ class Backend(QtCore.QObject):
         frontend.goToMaxZSignal.connect(self.move_to_max_z)
         frontend.send_go_to_cm_auto_signal.connect(self.set_go_to_cm_auto)
         frontend.send_go_to_max_z_auto_signal.connect(self.set_go_to_max_z_auto)
-        frontend.autoSaveConfocalSignal.connect(self.set_autosave_confocal)
+        frontend.autoSaveScanSignal.connect(self.set_autosave_scan)
         frontend.saveConfocalSignal.connect(self.save_confocal)
         frontend.sendParametersSignal.connect(self.set_confocal_scan_parameters)
         frontend.setConfocalWorkDirSignal.connect(self.set_confocal_working_folder)
