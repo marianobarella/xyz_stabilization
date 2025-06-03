@@ -16,6 +16,7 @@ import time as tm
 from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper # for flipper
 from pylablib.devices import M2 # Ti:Sa laser module
 from timeit import default_timer as timer
+import daq_board_toolbox as daq_toolbox # for shutters control
 
 #=====================================
 
@@ -37,6 +38,12 @@ COM_port_filter_wheel = 'COM12' # USB Serial Port (Thorlabs Filter Wheel FW102C)
 COM_port_toptica = 'COM13' # 488 Toptica Laser using ATEN USB to Serial Bridge 
 COM_valve = 'COM5' # microfluidics valve NOT USED HERE
 COM_pump = 'COM4' # microfluidics pump NOT USED HERE
+
+shutter_number_dict = {
+    'white': 0, # NKT SuperK white laser
+    'NIR': 1, # Toptica NIR TA pro laser
+    'Ti:Sa': 2 # Ti:Sa laser
+}
 
 def serial_ports():
     """ Lists serial port names
@@ -483,7 +490,11 @@ class motorized_flipper(object):
 
 #=====================================
 
-# Thorlabs Shutter Class Definitions
+# Thorlabs Shutter Class Definitions 
+
+# This class is used to control the Thorlabs shutter SC10
+# Newwer setup configuration uses Trigger signals from the DAQ board
+# to control the shutter, so this class is not used anymore
 
 #=====================================
 
@@ -563,6 +574,49 @@ class Thorlabs_shutter(object):
         self.shutter('close')
         closeSerial(self.serialInstance)
         return
+    
+
+#======================================
+
+class shutters(object):
+
+    def __init__(self, daq_board, debug_mode = False):
+        self.debug_mode = debug_mode
+        # initialize the shutter task
+        self.shutter_task = daq_toolbox.init_shutters(daq_board)
+        print('Shutter task created.')
+        self.close_all_shutters()
+        return
+
+    def open_shutter(self, laser_name):
+        """ Open a specific shutter. """
+        print(f'Opening {laser_name} laser shutter...')
+        shutter_number = shutter_number_dict[laser_name]
+        daq_toolbox.open_shutter(self.shutter_task, shutter_number)
+        return
+    
+    def close_shutter(self, laser_name):
+        """ Close a specific shutter. """
+        print(f'Closing {laser_name} laser shutter...')
+        shutter_number = shutter_number_dict[laser_name]
+        daq_toolbox.close_shutter(self.shutter_task, shutter_number)
+        return
+    
+    def close_all_shutters(self):
+        """ Close all shutters. """
+        print('Closing all shutters...')
+        daq_toolbox.close_all_shutters(self.shutter_task)
+        return
+
+    def shutdown(self):
+        """ Close the shutter task and clean up resources. """
+        # Close all shutters before stopping the task
+        print('Closing shutters...')
+        self.close_all_shutters()
+        print('Stopping and closing the shutter task...')
+        self.shutter_task.stop()
+        self.shutter_task.close()
+        return
 
 #======================================
     
@@ -578,8 +632,20 @@ if __name__ == '__main__':
     
     # mff = motorized_flipper(debug_mode = False)
     
-    tisa_shutter = Thorlabs_shutter(debug_mode = False)
+    # tisa_shutter = Thorlabs_shutter(debug_mode = False)
     
+    print('\nDAQ board initialization...')
+    daq_board = daq_toolbox.init_daq()
+    shutters = shutters(daq_board)
+
+    shutters.open_shutter('white') # NKT SuperK white laser
+    tm.sleep(0.3)
+    shutters.open_shutter('NIR') # Toptica NIR TA pro laser
+    tm.sleep(5)
+    shutters.close_shutter('white')
+    tm.sleep(2)
+    shutters.shutdown()
+
     # tisa = M2_laser(debug_mode = False)
 
     # laser532.close()
