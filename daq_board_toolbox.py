@@ -307,13 +307,17 @@ if __name__ == '__main__':
     shutter_task = init_shutters(daq_board)
     print('Shutters task created.')
     # open all shutters
-    open_shutter(shutter_task, 1)
+    open_shutter(shutter_task, 2)
     print('Shutter opened.')
-    tm.sleep(2) # wait for the shutter to open
-    close_shutter(shutter_task, 1)
+    tm.sleep(5)
+    close_shutter(shutter_task, 2)
     print('Shutter closed.')
     # close_all_shutters(shutter_task)
-    
+    tm.sleep(5)
+    print('Stopping task')
+    shutter_task.stop()
+    print('Closing task')
+    shutter_task.close()
     
     # set measurement range
     min_range = -2.0
