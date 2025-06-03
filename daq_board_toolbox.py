@@ -1,7 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 """
 Created on Thu April 7, 2022
-Modiffied several times :)
+Modified several times :)
 
 Toolbox for PCIe-6361
 
@@ -27,7 +27,7 @@ from timeit import default_timer as timer
 import os.path as path
 from tempfile import mkdtemp
 import matplotlib.pyplot as plt
-# import time
+import time as tm
 
 #=====================================
 
@@ -39,6 +39,7 @@ apd_ch = 0 # analog input (ai) for apd, where it's connected
 power_pd_ch = 1 # analog input (ai) for amplified pd to monitor power, where it's connected
 apd_copy_ch = 2 # analog input (ai) for the copy of the apd signal, where it's connected (for the confocal scan)
 shutter_ch = [0, 1, 2] # digital output for a shutter, port 0, line 0/1/2
+shutter_state = [False, False, False] # list of shutters' state, True = open, False = closed
 plt.ioff()
 
 ##########################
@@ -63,46 +64,27 @@ def init_shutters(daq_board):
     # define the shutters task
     shutter_task = nidaqmx.Task(new_task_name = "shutters_task")
     for i in shutter_ch:
-        shutter_task.do_channels.add_do_chan(
-            lines="Dev1/port0/line{}".format(shutter_ch[i]),
+        shutter_task.do_channels.add_do_chan( \
+            lines = "Dev1/port0/line{}".format(shutter_ch[i]), \
             line_grouping = ctes.LineGrouping.CHAN_PER_LINE)
     return shutter_task
 
-# def open_shutter(shuttertask, channel):
-#      if channel == shutters[2]:
-#          shuttersignal[2] = True
-#          shuttertask.write(shuttersignal, auto_start=True)
-#      if channel == shutters[3]:
-#         shuttersignal[0] = False
-#         shuttertask.write(shuttersignal, auto_start=True)
-#      if channel == shutters[0]:
-#         shuttersignal[1] = True
-#         shuttertask.write(shuttersignal, auto_start=True)
-#      if channel == shutters[1]:
-#         shutter_status[2] = False
-#         shuttertask.write(shuttersignal, auto_start=True)
-#     return
+def open_shutter(shuttertask, channel):
+    '''Open a shutter by setting the corresponding channel to True'''
+    shutter_state[channel] = True
+    shuttertask.write(shutter_state, auto_start = True)
+    return
         
-# def close_shutter(shuttertask, channel):
-#      if p == shutters[2]:
-#         shuttersignal[2] = False
-#         shuttertask.write(shuttersignal, auto_start=True)
-#      if p == shutters[3]:
-#         shuttersignal[3] = True
-#         shuttertask.write(shuttersignal, auto_start=True)
-#      if p == shutters[0]:
-#         shuttersignal[0] = False
-#         shuttertask.write(shuttersignal, auto_start=True)
-#      if p == shutters[1] or p == shutters[4]:
-#         shuttersignal[1] = True
-#         shuttertask.write(shuttersignal, auto_start=True)
-#     return
+def close_shutter(shuttertask, channel):
+    '''Close a shutter by setting the corresponding channel to False'''
+    shutter_state[channel] = False
+    shuttertask.write(shutter_state, auto_start = True)
+    return
                       
-# def close_all_shutters():
-#     for i in shutter_ch:
-#         p = shutters[i]
-#         close_shutter(p)
-#     return
+def close_all_shutters(shuttertask):
+    for channel in shutter_ch:
+        close_shutter(shuttertask, channel)
+    return
 
 ########################################
 
@@ -320,6 +302,18 @@ if __name__ == '__main__':
     print('\nDAQ board toolbox test')
     number_of_channels = 1
     daq_board = init_daq()
+
+    # init_shutters
+    shutter_task = init_shutters(daq_board)
+    print('Shutters task created.')
+    # open all shutters
+    open_shutter(shutter_task, 1)
+    print('Shutter opened.')
+    tm.sleep(2) # wait for the shutter to open
+    close_shutter(shutter_task, 1)
+    print('Shutter closed.')
+    # close_all_shutters(shutter_task)
+    
     
     # set measurement range
     min_range = -2.0
@@ -336,52 +330,52 @@ if __name__ == '__main__':
     # measure a finite number of samples several times
     
     ########################################################
-    mode = 'finite'
-    number_of_points_per_run = 100
-    APD_task, time_to_finish = set_task('APD_task', number_of_channels, sampling_rate, number_of_points_per_run, \
-                                          min_range, max_range, mode)
+    # mode = 'finite'
+    # number_of_points_per_run = 100
+    # APD_task, time_to_finish = set_task(sampling_rate, number_of_points_per_run, \
+    #                                       min_range, max_range, mode)
     # APD_ch = APD_task.ai_channels[0]
     # ask_range(APD_ch)
     
-    # perform the measurements
-    max_num_of_meas = 2000
-    meas_finite_array = measure_data_n_times(APD_task, number_of_points_per_run, max_num_of_meas, \
-                                      time_to_finish, debug = True)
-    APD_task.close()
-    print('Task closed.') 
+    # # perform the measurements
+    # max_num_of_meas = 2000
+    # meas_finite_array = measure_data_n_times(APD_task, number_of_points_per_run, max_num_of_meas, \
+    #                                   time_to_finish, debug = True)
+    # APD_task.close()
+    # print('Task closed.') 
     
-    # fig, ax = plt.subplots(5, 2, sharex = 'col', sharey = 'row')
-    # for i in range(max_num_of_meas):
-    #     plt.subplot(5, 2, i+1)
-    #     plt.plot(meas_finite_array[i,:])
-    # plt.show()
+    # # fig, ax = plt.subplots(5, 2, sharex = 'col', sharey = 'row')
+    # # for i in range(max_num_of_meas):
+    # #     plt.subplot(5, 2, i+1)
+    # #     plt.plot(meas_finite_array[i,:])
+    # # plt.show()
     
-    ########################################################
+    # ########################################################
     
-    # measure continuosly number of samples several times
-    # with a different code structure
+    # # measure continuosly number of samples several times
+    # # with a different code structure
     
-    ########################################################
-    mode = 'continuous'
-    number_of_points = max_num_of_meas*number_of_points_per_run
-    time_base = 1/sampling_rate
-    APD_task, time_to_finish = set_task('APD_task', number_of_channels, sampling_rate, number_of_points, \
-                                          min_range, max_range, mode)
+    # ########################################################
+    # mode = 'continuous'
+    # number_of_points = max_num_of_meas*number_of_points_per_run
+    # time_base = 1/sampling_rate
+    # APD_task, time_to_finish = set_task(sampling_rate, number_of_points, \
+    #                                       min_range, max_range, mode)
     
-    # allocate array
-    data_array_filepath, data_array = allocate_datafile(number_of_points)
-    time_array_filepath, time_array = allocate_datafile(number_of_points)
-    # perform the measurement
-    APD_stream_reader = arm_measurement_in_loop(APD_task)
-    APD_task.start()
-    meas_cont_array = measure_in_loop_continuously(APD_task, \
-                                                        APD_stream_reader, \
-                                                        number_of_points, \
-                                                        time_base, \
-                                                        time_array, \
-                                                        data_array)
+    # # allocate array
+    # data_array_filepath, data_array = allocate_datafile(number_of_points)
+    # time_array_filepath, time_array = allocate_datafile(number_of_points)
+    # # perform the measurement
+    # APD_stream_reader = arm_measurement_in_loop(APD_task)
+    # APD_task.start()
+    # meas_cont_array = measure_in_loop_continuously(APD_task, \
+    #                                                     APD_stream_reader, \
+    #                                                     number_of_points, \
+    #                                                     time_base, \
+    #                                                     time_array, \
+    #                                                     data_array)
 
-    APD_task.close()
-    print('Task closed.')   
+    # APD_task.close()
+    # print('Task closed.')   
 
-    # plt.close('all')
+    # # plt.close('all')

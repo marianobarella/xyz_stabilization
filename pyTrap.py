@@ -7,11 +7,11 @@ allows the user to stabilize the system in xyz using a closed-loop system made
 of the piezostage, two cameras, lasers, shutters, flippers, etc.
 
 pyTrap Graphical User Interface integrates the following modules:
-    - laser control minimalist
+    - laser control GUI (minimalist version)
     - apd trace GUI
     - piezostage control
-    - xy stabilization
-    - z stabilization 
+    - xy stabilization GUI
+    - z stabilization GUI
 
 @author: Mariano Barella
 mariano.barella@unifr.ch
@@ -178,7 +178,6 @@ class Frontend(QtGui.QMainWindow):
         # Create an instance of the child window
         self.child_window = ChildWindow()
         self.save_scan_flag = False
-        self.universal_label = ''
         return
     
     def setUpGUI(self):
@@ -684,7 +683,6 @@ class Backend(QtCore.QObject):
         self.confocal_filepath = initial_confocal_filepath
         self.save_counter = 0
         self.enable_connection_to_laser_module = enable_connection_to_laser_module
-        self.universal_label = ''
         return
 
     @pyqtSlot(list)
@@ -944,15 +942,24 @@ class Backend(QtCore.QObject):
                 # move in columns
                 if self.counter_x_steps < self.scan_range_pixels_x:
                     # move to the target position
-                    current_x_pos = self.x_scan_array[self.counter_x_steps]
-                    current_y_pos = self.y_scan_array[self.counter_y_steps]
-                    # print(self.counter_x_steps, self.counter_y_steps, current_x_pos, current_y_pos)
+                    # define indeces for the scan arrays and images
+                    y_index = self.counter_y_steps
+                    # x index depends on the row parity
+                    if y_index % 2 == 0:
+                        # even row, scan from left to right
+                        x_index = self.counter_x_steps
+                    else:
+                        # odd row, scan from right to left
+                        x_index = self.scan_range_pixels_x - 1 - self.counter_x_steps
+                    current_x_pos = self.x_scan_array[x_index]
+                    current_y_pos = self.y_scan_array[y_index]
+                    # print(y_index, x_index, current_x_pos, current_y_pos)
                     self.piezoWorker.move_absolute([current_x_pos, current_y_pos, self.z_pos])
                     # acquire first
                     pixel_trace_data = self.apdTraceWorker.acquire_confocal_trace()
                     # assign the mean value to a pixel in the image
-                    self.confocal_image[self.counter_y_steps, self.counter_x_steps] = np.mean(pixel_trace_data)
-                    self.traces_array[self.counter_y_steps, self.counter_x_steps, :] = pixel_trace_data
+                    self.confocal_image[y_index, x_index] = np.mean(pixel_trace_data)
+                    self.traces_array[y_index, x_index, :] = pixel_trace_data
                     self.sendConfocalImageSignal.emit(self.confocal_image)
                     # move step in x
                     self.counter_x_steps += 1

@@ -1330,8 +1330,6 @@ class Backend(QtCore.QObject):
         # before saving assert that all data has been stored correctly onto RAM
         # check if all data has been written correctly from DAQ board to RAM
         try:
-            assert np.all(self.data_array > -1000), 'transmission data was not written correctly'
-            assert np.all(self.monitor_array > -1000), 'monitor data was not written correctly'
             # save data
             np.save(full_filepath_data, np.transpose(self.data_array), allow_pickle = False)
             np.save(full_filepath_monitor, np.transpose(self.monitor_array), allow_pickle = False)
@@ -1348,11 +1346,11 @@ class Backend(QtCore.QObject):
                 header_txt = 'time_since_epoch %s s\nsampling_rate %s Hz\ntransmission monitor\nV V' % (str(self.time_since_epoch), self.sampling_rate)
                 ascii_full_filepath = full_filepath_data + '.dat'
                 np.savetxt(ascii_full_filepath, data_to_save, fmt='%.6f', header=header_txt)
+            assert np.all(self.data_array > -1000), 'Transmission data was written but not fully. Some values are as allocated (-1000).'
+            assert np.all(self.monitor_array > -1000), 'Monitor data was written but not fully. Some values are as allocated (-1000).'
         except AssertionError as err:
             print('\n ------------------------> WARNING!', err)
             return
-            #if message_box:
-            #    self.saving_data_error_signal.emit(filename)
         finally:
             return
     
