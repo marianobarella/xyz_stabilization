@@ -1,6 +1,7 @@
 ﻿# -*- coding: utf-8 -*-
 """
 Created on Thu April 7, 2022
+Modiffied several times :)
 
 Toolbox for PCIe-6361
 
@@ -36,13 +37,15 @@ import matplotlib.pyplot as plt
 
 apd_ch = 0 # analog input (ai) for apd, where it's connected
 power_pd_ch = 1 # analog input (ai) for amplified pd to monitor power, where it's connected
+apd_copy_ch = 2 # analog input (ai) for the copy of the apd signal, where it's connected (for the confocal scan)
+shutter_ch = [0, 1, 2] # digital output for a shutter, port 0, line 0/1/2
 plt.ioff()
 
-#=====================================
+##########################
 
 # Functions definition
 
-#=====================================
+##########################
 
 def init_daq():
     daq_board = nidaqmx.system.device.Device('Dev1')
@@ -50,10 +53,67 @@ def init_daq():
     print('DAQ board serial number: {}'.format(daq_board.dev_serial_num))
     return daq_board
 
-# configure APD channels
-def set_task(task_name, number_of_channels, sampling_rate, samples_per_ch, min_rng, max_rng, mode, debug = False):
+##########################
+
+# Shutters
+
+##########################
+
+def init_shutters(daq_board):
+    # define the shutters task
+    shutter_task = nidaqmx.Task(new_task_name = "shutters_task")
+    for i in shutter_ch:
+        shutter_task.do_channels.add_do_chan(
+            lines="Dev1/port0/line{}".format(shutter_ch[i]),
+            line_grouping = ctes.LineGrouping.CHAN_PER_LINE)
+    return shutter_task
+
+# def open_shutter(shuttertask, channel):
+#      if channel == shutters[2]:
+#          shuttersignal[2] = True
+#          shuttertask.write(shuttersignal, auto_start=True)
+#      if channel == shutters[3]:
+#         shuttersignal[0] = False
+#         shuttertask.write(shuttersignal, auto_start=True)
+#      if channel == shutters[0]:
+#         shuttersignal[1] = True
+#         shuttertask.write(shuttersignal, auto_start=True)
+#      if channel == shutters[1]:
+#         shutter_status[2] = False
+#         shuttertask.write(shuttersignal, auto_start=True)
+#     return
+        
+# def close_shutter(shuttertask, channel):
+#      if p == shutters[2]:
+#         shuttersignal[2] = False
+#         shuttertask.write(shuttersignal, auto_start=True)
+#      if p == shutters[3]:
+#         shuttersignal[3] = True
+#         shuttertask.write(shuttersignal, auto_start=True)
+#      if p == shutters[0]:
+#         shuttersignal[0] = False
+#         shuttertask.write(shuttersignal, auto_start=True)
+#      if p == shutters[1] or p == shutters[4]:
+#         shuttersignal[1] = True
+#         shuttertask.write(shuttersignal, auto_start=True)
+#     return
+                      
+# def close_all_shutters():
+#     for i in shutter_ch:
+#         p = shutters[i]
+#         close_shutter(p)
+#     return
+
+########################################
+
+# APD and PD signal detection
+
+########################################
+                
+# configure APD channel
+def set_task(sampling_rate, samples_per_ch, min_rng, max_rng, mode, debug = False):
     # define the task object
-    APD_task = nidaqmx.task.Task(new_task_name = task_name)
+    APD_task = nidaqmx.task.Task(new_task_name = 'APD_task')
     # prepare task to read the APD channel
     # set voltage channel for "APD_task"
     APD_task.ai_channels.add_ai_voltage_chan(
@@ -61,13 +121,12 @@ def set_task(task_name, number_of_channels, sampling_rate, samples_per_ch, min_r
         name_to_assign_to_channel = 'APD_ch{}'.format(apd_ch), \
         min_val = min_rng, \
         max_val = max_rng)
-    if number_of_channels > 1:
-        # add Monitor laser power task
-        APD_task.ai_channels.add_ai_voltage_chan(
-            physical_channel = 'Dev1/ai{}'.format(power_pd_ch), \
-            name_to_assign_to_channel = 'monitor_ch{}'.format(power_pd_ch), \
-            min_val = min_rng, \
-            max_val = max_rng)
+    # add Monitor laser power task
+    APD_task.ai_channels.add_ai_voltage_chan(
+        physical_channel = 'Dev1/ai{}'.format(power_pd_ch), \
+        name_to_assign_to_channel = 'monitor_ch{}'.format(power_pd_ch), \
+        min_val = min_rng, \
+        max_val = max_rng)
     # estimate timeout (time_to_finish) for the task
     time_to_finish = samples_per_ch/sampling_rate # in s
     if debug:
@@ -87,6 +146,32 @@ def set_task(task_name, number_of_channels, sampling_rate, samples_per_ch, min_r
         print('\nError in sampling mode. Select "finite" or "continuous".')
         print('Acquisition mode set to "continuous".')
         acq_mode = ctes.AcquisitionType.CONTINUOUS
+    # set task timing characteristics
+    APD_task.timing.cfg_samp_clk_timing(
+        rate = sampling_rate, \
+        sample_mode = acq_mode, \
+        samps_per_chan = samples_per_ch)
+    return APD_task, time_to_finish
+
+# configure the copy of the APD channel for confocal
+def set_confocal_task(sampling_rate, samples_per_ch, min_rng, max_rng, debug = False):
+    # define the task object
+    APD_task = nidaqmx.task.Task(new_task_name = 'APD_confocal_task')
+    # prepare task to read the copy of the APD channel
+    # set voltage channel for "APD_confocal_task"
+    APD_task.ai_channels.add_ai_voltage_chan(
+        physical_channel = 'Dev1/ai{}'.format(apd_copy_ch), \
+        name_to_assign_to_channel = 'copy_of_APD_ch{}'.format(apd_copy_ch), \
+        min_val = min_rng, \
+        max_val = max_rng)
+    # estimate timeout (time_to_finish) for the task
+    time_to_finish = samples_per_ch/sampling_rate # in s
+    if debug:
+        print('Acquiring {:d} points at {:.4f} MS/s sampling rate would take:'.format(samples_per_ch, \
+                                                                            sampling_rate*1e-6))
+        print('{} ms'.format(time_to_finish*1e3))
+    # set acquisition mode to finite
+    acq_mode = ctes.AcquisitionType.FINITE
     # set task timing characteristics
     APD_task.timing.cfg_samp_clk_timing(
         rate = sampling_rate, \

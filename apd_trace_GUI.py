@@ -1137,14 +1137,11 @@ class Backend(QtCore.QObject):
         self.acquisition_mode = 'continuous'
         print('Setting up task...')
         # APD task
-        self.APD_task, self.time_to_finish = daq.set_task('APD_task', \
-                                                          number_of_channels, \
-                                                          self.sampling_rate, \
+        self.APD_task, self.time_to_finish = daq.set_task(self.sampling_rate, \
                                                           self.number_of_points, \
                                                           -self.voltage_range, \
                                                           +self.voltage_range, \
-                                                          self.acquisition_mode, \
-                                                          debug = True)
+                                                          self.acquisition_mode)
         self.acquire_continuously_bool = True
         self.save_automatically_bool = False
         self.filepath = initial_filepath
@@ -1276,29 +1273,24 @@ class Backend(QtCore.QObject):
             # send data for autocorrelation
             # self.calculate_autorrelation(self.data_array)
         return
-    
+
     def arm_for_confocal(self, pixel_time_confocal):
         # pixel_time_confocal in seconds
         self.number_of_points_confocal = calculate_num_of_points(pixel_time_confocal, \
                                                                  self.sampling_rate) 
-        self.confocal_acquisition_mode = 'finite'
-        print('Setting up new task...')
+        print('Setting up confocal task...')
         self.APD_task_confocal, \
-        self.time_to_finish_confocal = daq.set_task('APD_confocal_task', \
-                                                    1, 
-                                                    self.sampling_rate, \
-                                                    self.number_of_points_confocal, \
-                                                    -self.voltage_range, \
-                                                    +self.voltage_range, \
-                                                    self.confocal_acquisition_mode, \
-                                                    debug = True)
+        self.time_to_finish_confocal = daq.set_confocal_task(self.sampling_rate, \
+                                                             self.number_of_points_confocal, \
+                                                             -self.voltage_range, \
+                                                             +self.voltage_range)
         return self.number_of_points_confocal
 
     def acquire_confocal_trace(self):
         # measure a finite number of samples 
         meas_finite_array = daq.measure_data_one_time(self.APD_task_confocal, \
-                                                                     self.number_of_points_confocal, \
-                                                                     self.time_to_finish_confocal)
+                                                      self.number_of_points_confocal, \
+                                                      self.time_to_finish_confocal)
         return meas_finite_array
 
     def disarm_confocal_task(self):
@@ -1376,14 +1368,11 @@ class Backend(QtCore.QObject):
         print('Changing voltage ranges...')
         self.voltage_range = voltage_range # in V, is float
         print('Setting up new task...')
-        self.APD_task, self.time_to_finish = daq.set_task('APD_task', \
-                                                          number_of_channels, \
-                                                          self.sampling_rate, \
+        self.APD_task, self.time_to_finish = daq.set_task(self.sampling_rate, \
                                                           self.number_of_points, \
                                                           -self.voltage_range, \
                                                           +self.voltage_range, \
-                                                          self.acquisition_mode, \
-                                                          debug = False)
+                                                          self.acquisition_mode)
         return
 
     @pyqtSlot(int)    
@@ -1399,14 +1388,11 @@ class Backend(QtCore.QObject):
         print('Sampling rate changed to', sampling_rate, 'kS/s')
         self.number_of_points = calculate_num_of_points(self.duration, self.sampling_rate)
         print('Setting up new task...')
-        self.APD_task, self.time_to_finish = daq.set_task('APD_task', \
-                                                          number_of_channels, \
-                                                          self.sampling_rate, \
+        self.APD_task, self.time_to_finish = daq.set_task(self.sampling_rate, \
                                                           self.number_of_points, \
                                                           -self.voltage_range, \
                                                           +self.voltage_range, \
-                                                          self.acquisition_mode, \
-                                                          debug = False)
+                                                          self.acquisition_mode)
         return
     
     @pyqtSlot(float)    
@@ -1421,14 +1407,11 @@ class Backend(QtCore.QObject):
         print('Duration of the measurement changed to', duration, 's')
         self.number_of_points = calculate_num_of_points(self.duration, self.sampling_rate) 
         print('Setting up new task...')
-        self.APD_task, self.time_to_finish = daq.set_task('APD_task', \
-                                                          number_of_channels, \
-                                                          self.sampling_rate, \
+        self.APD_task, self.time_to_finish = daq.set_task(self.sampling_rate, \
                                                           self.number_of_points, \
                                                           -self.voltage_range, \
                                                           +self.voltage_range, \
-                                                          self.acquisition_mode, \
-                                                          debug = False)
+                                                          self.acquisition_mode)
         return
     
     @pyqtSlot()    

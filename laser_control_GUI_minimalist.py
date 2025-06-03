@@ -82,7 +82,7 @@ class Frontend(QtGui.QFrame):
         self.flipperAPDButton.setToolTip('Up/Down flipper APD')
 
         # Trapping laser attenuation
-        self.flipperTrappingLaserButton = QtGui.QCheckBox('Trapping laser attenuation')
+        self.flipperTrappingLaserButton = QtGui.QCheckBox('Trapping laser attenuation (10x)')
         self.flipperTrappingLaserButton.setChecked(True)
         self.flipperTrappingLaserButton.clicked.connect(self.flipperTrappingLaserButton_check)
         self.flipperTrappingLaserButton.setToolTip('Up/Down flipper trapping laser')     
