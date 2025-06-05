@@ -40,9 +40,9 @@ COM_valve = 'COM5' # microfluidics valve NOT USED HERE
 COM_pump = 'COM4' # microfluidics pump NOT USED HERE
 
 shutter_number_dict = {
-    'white': 0, # NKT SuperK white laser
-    'NIR': 1, # Toptica NIR TA pro laser
-    'Ti:Sa': 2 # Ti:Sa laser
+    'NIR': 0, # Toptica NIR TA pro laser
+    'white': 1, # NKT SuperK white laser
+    'tisa': 2 # Ti:Sa laser
 }
 
 def serial_ports():
@@ -638,11 +638,11 @@ if __name__ == '__main__':
     daq_board = daq_toolbox.init_daq()
     shutters = shutters(daq_board)
 
-    shutters.open_shutter('white') # NKT SuperK white laser
+    shutters.open_shutter('tisa') # NKT SuperK white laser
     tm.sleep(0.3)
     shutters.open_shutter('NIR') # Toptica NIR TA pro laser
     tm.sleep(5)
-    shutters.close_shutter('white')
+    shutters.close_shutter('tisa')
     tm.sleep(2)
     shutters.shutdown()
 

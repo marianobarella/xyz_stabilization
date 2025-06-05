@@ -307,10 +307,10 @@ if __name__ == '__main__':
     shutter_task = init_shutters(daq_board)
     print('Shutters task created.')
     # open all shutters
-    open_shutter(shutter_task, 2)
+    open_shutter(shutter_task, 0)
     print('Shutter opened.')
     tm.sleep(5)
-    close_shutter(shutter_task, 2)
+    close_shutter(shutter_task, 0)
     print('Shutter closed.')
     # close_all_shutters(shutter_task)
     tm.sleep(5)

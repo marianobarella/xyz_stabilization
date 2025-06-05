@@ -13,6 +13,7 @@ from PyQt5.QtCore import pyqtSignal, pyqtSlot
 from pyqtgraph.dockarea import Dock, DockArea
 import lasers_and_serial_toolbox as laserToolbox
 import time as tm
+import daq_board_toolbox as daq_toolbox # for shutters control
 
 #=====================================
 
@@ -291,6 +292,9 @@ class Backend(QtCore.QObject):
 if __name__ == '__main__':
     # make application
     app = QtGui.QApplication([])
+
+    print('\nDAQ board initialization...')
+    daq_board = daq_toolbox.init_daq()
 
     # create both classes
     gui = Frontend()
