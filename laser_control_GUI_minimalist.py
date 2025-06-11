@@ -46,6 +46,7 @@ initial_blue_power = 15 # in mW
 class Frontend(QtGui.QFrame):
     
     shutterTrappingSignal = pyqtSignal(bool) 
+    shutterWhiteSignal = pyqtSignal(bool) 
     shutter488_signal = pyqtSignal(bool)
     flipper_apd_signal = pyqtSignal(bool)
     flipper_spectrometer_path_signal = pyqtSignal(bool)
@@ -69,6 +70,11 @@ class Frontend(QtGui.QFrame):
         self.shutterTrappingLaserButton.clicked.connect(self.control_trapping_laser_button_check)
         self.shutterTrappingLaserButton.setStyleSheet("color: darkMagenta; ")
         self.shutterTrappingLaserButton.setToolTip('Open/close NIR laser shutter')
+
+        self.shutterWhiteLaserButton = QtGui.QCheckBox('White laser')
+        self.shutterWhiteLaserButton.clicked.connect(self.control_white_laser_button_check)
+        self.shutterWhiteLaserButton.setStyleSheet("color: black; ")
+        self.shutterWhiteLaserButton.setToolTip('Open/close white laser shutter')
 
         self.shutter488button = QtGui.QCheckBox('488 nm')
         self.shutter488button.clicked.connect(self.control_488_button_check)
@@ -115,6 +121,7 @@ class Frontend(QtGui.QFrame):
         minimalist_box_layout.addWidget(self.power488_edit, 1, 2)
         minimalist_box_layout.addWidget(self.flipperAPDButton, 2, 0)
         minimalist_box_layout.addWidget(self.flipperSpectrometerButton, 2, 1)
+        minimalist_box_layout.addWidget(self.shutterTrappingLaserButton, 3, 1)
 
         # Place layouts and boxes
         dockArea = DockArea()
@@ -134,6 +141,13 @@ class Frontend(QtGui.QFrame):
            self.shutterTrappingSignal.emit(True)
         else:
            self.shutterTrappingSignal.emit(False)
+        return
+    
+    def control_white_laser_button_check(self):
+        if self.shutterWhiteLaserButton.isChecked():
+           self.shutterWhiteSignal.emit(True)
+        else:
+           self.shutterWhiteSignal.emit(False)
         return
     
     def control_488_button_check(self):
@@ -202,7 +216,7 @@ class Frontend(QtGui.QFrame):
 class Backend(QtCore.QObject):
         
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(daq_board, *args, **kwargs)
         self.change_power(initial_blue_power)
         self.shutter488(False) # close shutter
         self.flipper_trapping_laser_attenuation(True) # set filters IN
@@ -212,6 +226,14 @@ class Backend(QtCore.QObject):
 
     @pyqtSlot(bool)
     def shutterTrappingLaser(self, shutterbool):
+        if shutterbool:
+            shutterTrappingLaserObject.shutter('open')
+        else:
+            shutterTrappingLaserObject.shutter('close')
+        return
+    
+    @pyqtSlot(bool)
+    def shutterWhiteLaser(self, shutterbool):
         if shutterbool:
             shutterTrappingLaserObject.shutter('open')
         else:
@@ -275,6 +297,7 @@ class Backend(QtCore.QObject):
        
     def make_connections(self, frontend):
         frontend.shutterTrappingSignal.connect(self.shutterTrappingLaser)
+        frontend.shutterWhiteSignal.connect(self.shutterWhiteLaser)
         frontend.shutter488_signal.connect(self.shutter488)
         frontend.flipper_apd_signal.connect(self.flipper_apd_attenuation)
         frontend.flipper_spectrometer_path_signal.connect(self.flipper_select_spectrometer)
@@ -298,7 +321,7 @@ if __name__ == '__main__':
 
     # create both classes
     gui = Frontend()
-    worker = Backend()
+    worker = Backend(daq_board)
     
     # thread that run in background
     workerThread = QtCore.QThread()

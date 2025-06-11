@@ -464,20 +464,23 @@ class Frontend(QtGui.QMainWindow):
 
     @pyqtSlot(float, float)
     def get_view_scale(self, px, py):
-       self.xlabel.setScale(scale = px)
-       self.ylabel.setScale(scale = py)
-       return
+        self.xlabel.setScale(scale = px)
+        self.ylabel.setScale(scale = py)
+        return
 
     def set_parameters(self):
+        number_of_pixels_x = int(self.NxEdit.text())
+        number_of_pixels_y = int(self.NyEdit.text())
         self.parameters_list = [float(self.scanRangeEdit_x.text()), \
                                 float(self.scanRangeEdit_y.text()), \
-                                int(self.NxEdit.text()), \
-                                int(self.NyEdit.text()), \
+                                number_of_pixels_x, \
+                                number_of_pixels_y, \
                                 int(self.pixel_time_edit.text()), \
                                 float(self.scanRangeEdit_z.text()), \
                                 int(self.NzEdit.text()), \
                                 float(self.thresholdEdit.text())]
         self.sendParametersSignal.emit(self.parameters_list)
+        self.get_view_scale(number_of_pixels_x, number_of_pixels_y)
         return
 
     def play_pause_confocal_scan(self):
@@ -883,9 +886,12 @@ class Backend(QtCore.QObject):
         # allocate image and counters
         self.confocal_image = np.zeros((self.scan_range_pixels_x, \
                                         self.scan_range_pixels_y))
-        self.traces_array = np.zeros((self.scan_range_pixels_x, \
-                                      self.scan_range_pixels_y, \
-                                      self.number_of_points_confocal))
+        self.apd_traces_array = np.zeros((self.scan_range_pixels_x, \
+                                          self.scan_range_pixels_y, \
+                                          self.number_of_points_confocal))
+        self.minitor_traces_array = np.zeros((self.scan_range_pixels_x, \
+                                              self.scan_range_pixels_y, \
+                                              self.number_of_points_confocal))
         self.counter_x_steps = 0
         self.counter_y_steps = 0
         return
@@ -956,10 +962,13 @@ class Backend(QtCore.QObject):
                     # print(y_index, x_index, current_x_pos, current_y_pos)
                     self.piezoWorker.move_absolute([current_x_pos, current_y_pos, self.z_pos])
                     # acquire first
-                    pixel_trace_data = self.apdTraceWorker.acquire_confocal_trace()
+                    pixel_data = self.apdTraceWorker.acquire_confocal_trace()
+                    pixel_apd_data = pixel_data[0,:]
+                    pixel_monitor_data = pixel_data[1,:]
                     # assign the mean value to a pixel in the image
-                    self.confocal_image[y_index, x_index] = np.mean(pixel_trace_data)
-                    self.traces_array[y_index, x_index, :] = pixel_trace_data
+                    self.confocal_image[y_index, x_index] = np.mean(pixel_apd_data)
+                    self.apd_traces_array[y_index, x_index, :] = pixel_apd_data
+                    self.monitor_traces_array[y_index, x_index, :] = pixel_monitor_data
                     self.sendConfocalImageSignal.emit(self.confocal_image)
                     # move step in x
                     self.counter_x_steps += 1
@@ -1018,12 +1027,14 @@ class Backend(QtCore.QObject):
         # define paths
         full_confocal_filepath = os.path.join(self.confocal_filepath, self.confocal_filename)
         full_filepath_confocal_image = full_confocal_filepath + '_image_%04d.npy' % self.save_counter
-        full_filepath_confocal_traces_array = full_confocal_filepath + '_confocal_traces_%04d.npy' % self.save_counter
+        full_filepath_confocal_apd_traces_array = full_confocal_filepath + '_confocal_apd_traces_%04d.npy' % self.save_counter
+        full_filepath_confocal_monitor_traces_array = full_confocal_filepath + '_confocal_monitor_traces_%04d.npy' % self.save_counter
         full_filepath_xy_array = full_confocal_filepath + '_xy_coords_%04d.npy' % self.save_counter
         # save data
         xy_array = np.transpose([self.x_scan_array, self.y_scan_array])
         np.save(full_filepath_confocal_image, self.confocal_image, allow_pickle = False)
-        np.save(full_filepath_confocal_traces_array, self.traces_array, allow_pickle = False)
+        np.save(full_filepath_confocal_apd_traces_array, self.apd_traces_array, allow_pickle = False)
+        np.save(full_filepath_confocal_monitor_traces_array, self.monitor_traces_array, allow_pickle = False)
         np.save(full_filepath_xy_array, xy_array, allow_pickle = False)
         print('Confocal data has been saved.')
         self.save_counter += 1

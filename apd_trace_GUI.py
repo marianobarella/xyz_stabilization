@@ -64,8 +64,6 @@ initial_downsampling_period = 100
 # initial Y range
 initial_min_y_range = -0.01
 initial_max_y_range = 0.03
-initial_mean_value = 0
-initial_sd_value = 0.2
 # initial filepath and filename
 initial_filepath = 'D:\\daily_data\\apd_traces' # save in SSD for fast and daily use
 initial_filename = 'signal'
@@ -74,7 +72,7 @@ initial_voltage_range = 2.0
 daq.check_voltage_range(daq_board, initial_voltage_range)
 
 # power calibration factor
-power_calibration_factor = 42.5 # in mW/V
+power_calibration_factor = 50 # in mW/V
 power_calibration_offset = 0.00 # in mW
 
 # creating data Queue object
@@ -477,6 +475,7 @@ class Frontend(QtGui.QFrame):
     parametersSignal = pyqtSignal(float, float, int, bool)
     retrieveDataSignal = pyqtSignal(bool)
     trappingShutterSignal = pyqtSignal(bool)
+    flagButtonSignal = pyqtSignal()
 
     def __init__(self, enable_connection_to_laser_module = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -490,8 +489,10 @@ class Frontend(QtGui.QFrame):
         self.setWindowTitle(title)
         self.setGeometry(800, 30, 600, 1000) # x pos, y pos, width, height
         self.set_y_range()
-        self.mean_value = initial_mean_value # in V
-        self.sd_value = initial_sd_value # in V
+        self.mean_value = 0 # in V
+        self.sd_value = 0 # in V
+        self.CoV_apd = 0
+        self.CoV_monitor = 0
         self.downsampling_by_average = False
         self.set_working_dir()
         self.set_filename()
@@ -583,6 +584,13 @@ class Frontend(QtGui.QFrame):
         self.durationValue.editingFinished.connect(self.duration_value_changed)
         self.durationValue.setToolTip('Maximum duration set to 1800 s (30 min).')
         
+        # trap flag button
+        self.trap_flag_button = QtGui.QPushButton('Filename flag trap')
+        self.trap_flag_button.clicked.connect(self.flagButtonSignal)
+        self.trap_flag_button.setToolTip('If pressed, it will add a flag/marker to the filename of the trace.')
+        self.trap_flag_button.setStyleSheet(
+            "QPushButton:pressed { background-color: green; }")
+
         # Comments box
         self.comments_label = QtGui.QLabel('Comments:')
         self.comment = ''
@@ -600,6 +608,8 @@ class Frontend(QtGui.QFrame):
         header_col_1.setFont(QtGui.QFont(font_family, 14))
         header_col_2 = QtGui.QLabel('Std dev (mV)')
         header_col_2.setFont(QtGui.QFont(font_family, 14))
+        header_col_3 = QtGui.QLabel('CoV (%)')
+        header_col_3.setFont(QtGui.QFont(font_family, 14))
         # for transmission APD
         self.label_apd = QtGui.QLabel('Transmission (APD)')
         self.label_apd.setFont(QtGui.QFont(font_family, fontsize))
@@ -607,6 +617,8 @@ class Frontend(QtGui.QFrame):
         self.signalMeanValue_apd.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
         self.signalStdValue_apd = QtGui.QLabel('0.000')
         self.signalStdValue_apd.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
+        self.signalCoV_apd = QtGui.QLabel('0.000')
+        self.signalCoV_apd.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
         # for monitor PD
         self.label_monitor = QtGui.QLabel('Monitor (PD)')
         self.label_monitor.setFont(QtGui.QFont(font_family, fontsize))
@@ -614,6 +626,8 @@ class Frontend(QtGui.QFrame):
         self.signalMeanValue_monitor.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
         self.signalStdValue_monitor = QtGui.QLabel('0.000')
         self.signalStdValue_monitor.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
+        self.signalCoV_monitor = QtGui.QLabel('0.000')
+        self.signalCoV_monitor.setFont(QtGui.QFont(font_family, 18, weight=QtGui.QFont.Bold))
         self.power_label = QtGui.QLabel('Power at sample (mW)')
         self.power_label.setFont(QtGui.QFont(font_family, fontsize))
         self.power_value = QtGui.QLabel('0.000')
@@ -722,6 +736,7 @@ class Frontend(QtGui.QFrame):
         subgridAcq_layout.addWidget(self.samplingRateValue, 6, 1)
         subgridAcq_layout.addWidget(self.durationLabel, 7, 0)
         subgridAcq_layout.addWidget(self.durationValue, 7, 1)
+        subgridAcq_layout.addWidget(self.trap_flag_button, 6, 2, 2, 1)
         subgridAcq_layout.addWidget(self.comments_label, 8, 0)
         subgridAcq_layout.addWidget(self.comments, 8, 1, 1, 2)
          
@@ -733,13 +748,16 @@ class Frontend(QtGui.QFrame):
         subgridDisp_layout.addWidget(header_col_0, 0, 0)
         subgridDisp_layout.addWidget(header_col_1, 0, 1)
         subgridDisp_layout.addWidget(header_col_2, 0, 2)
+        subgridDisp_layout.addWidget(header_col_3, 0, 3)
         subgridDisp_layout.addWidget(self.label_apd, 1, 0)
         subgridDisp_layout.addWidget(self.signalMeanValue_apd, 1, 1)
         subgridDisp_layout.addWidget(self.signalStdValue_apd, 1, 2)
+        subgridDisp_layout.addWidget(self.signalCoV_apd, 1, 3)
         # monitor APD
         subgridDisp_layout.addWidget(self.label_monitor, 2, 0)
         subgridDisp_layout.addWidget(self.signalMeanValue_monitor, 2, 1)
         subgridDisp_layout.addWidget(self.signalStdValue_monitor, 2, 2)
+        subgridDisp_layout.addWidget(self.signalCoV_monitor, 2, 3)
         subgridDisp_layout.addWidget(self.power_label, 3, 0)
         subgridDisp_layout.addWidget(self.power_value, 3, 1)
         subgridDisp_layout.addWidget(self.powerCalibrationButton, 3, 2)
@@ -933,6 +951,11 @@ class Frontend(QtGui.QFrame):
             self.comment = new_comment
             self.commentSignal.emit(self.comment)    
         return
+
+    @pyqtSlot(str, str)
+    def clear_comments(self, transmission_data_filepath, monitor_data_filepath):
+        self.comments.clear()
+        return
     
     def set_filename(self):
         filename = self.filename_name.text()
@@ -994,6 +1017,11 @@ class Frontend(QtGui.QFrame):
         self.sd_mV_monitor = sd_value_monitor*1000 # to mV
         self.signalMeanValue_monitor.setText('{:.3f}'.format(self.mean_value_monitor))
         self.signalStdValue_monitor.setText('{:.3f}'.format(self.sd_mV_monitor))
+        # Coefficient of Variation (CoV)
+        self.CoV_apd = sd_value_apd/mean_value_apd*100 # to percetage
+        self.CoV_monitor = sd_value_monitor/mean_value_monitor*100 # to percetage
+        self.signalCoV_apd.setText('{:.3f}'.format(self.CoV_apd))
+        self.signalCoV_monitor.setText('{:.3f}'.format(self.CoV_monitor))
         # power value
         self.power_at_sample_plane = mean_value_monitor*self.power_calibration_factor + self.power_calibration_offset
         self.power_value.setText('{:.3f}'.format(self.power_at_sample_plane))
@@ -1099,6 +1127,7 @@ class Frontend(QtGui.QFrame):
         backend.acqStoppedSignal.connect(self.acquisition_stopped)
         backend.saving_data_error_signal.connect(self.pop_up_window_error)
         backend.autocorrSignal.connect(self.update_autocorr)
+        backend.fileSavedSignal.connect(self.clear_comments)
         processing_thread.updateLabelsSignal.connect(self.update_label_values)
         processing_thread.dataReadySignal.connect(self.displayTrace)
         self.autocorrelation_child_window.closeChildSignal.connect(self.autocorrelation_child_window_close)
@@ -1152,6 +1181,9 @@ class Backend(QtCore.QObject):
         self.save_in_ascii = False
         self.spectrum_suffix = '' # for integration with specturm acquisition
         self.time_since_epoch = '0'
+        self.power_calibration_factor = power_calibration_factor
+        self.power_calibration_offset = power_calibration_offset
+        self.filename_trap_flag = False
         return
 
     @pyqtSlot(bool)
@@ -1289,6 +1321,7 @@ class Backend(QtCore.QObject):
     def acquire_confocal_trace(self):
         # measure a finite number of samples 
         meas_finite_array = daq.measure_data_one_time(self.APD_task_confocal, \
+                                                      number_of_channels, 
                                                       self.number_of_points_confocal, \
                                                       self.time_to_finish_confocal)
         return meas_finite_array
@@ -1322,7 +1355,10 @@ class Backend(QtCore.QObject):
         filename_timestamped = timestr + filename
         filename_data = filename_timestamped + '_transmission'
         filename_monitor = filename_timestamped + '_monitor'
-        filename_params = filename_timestamped + '_params.txt'
+        if self.filename_trap_flag:
+            filename_params = filename_timestamped + '_params_TRAP_FLAG.txt'
+        else:
+            filename_params = filename_timestamped + '_params.txt'
         # save data
         full_filepath_data = os.path.join(filepath, filename_data)
         full_filepath_monitor = os.path.join(filepath, filename_monitor)
@@ -1352,6 +1388,7 @@ class Backend(QtCore.QObject):
             print('\n ------------------------> WARNING!', err)
             return
         finally:
+            self.filename_trap_flag = False
             return
     
     @pyqtSlot(float)    
@@ -1427,6 +1464,8 @@ class Backend(QtCore.QObject):
     
     def get_params_to_be_saved(self):
         dict_to_be_saved = {}
+        dict_to_be_saved["Power calibration factor (mW/V)"] = self.power_calibration_factor
+        dict_to_be_saved["Power calibration offset (mW)"] = self.power_calibration_offset
         dict_to_be_saved["Voltage range (V)"] = self.voltage_range
         dict_to_be_saved["Sampling rate (S/s)"] = self.sampling_rate
         dict_to_be_saved["Duration (s)"] = self.duration
@@ -1435,6 +1474,14 @@ class Backend(QtCore.QObject):
         dict_to_be_saved["Comments"] = self.comment
         return dict_to_be_saved
     
+    @pyqtSlot(float, float)
+    def get_power_calibration_params(self, factor, offset):
+        self.power_calibration_factor = factor
+        self.power_calibration_offset = offset
+        print('\nPower calibration factor: {:.3f} mW/V'.format(self.power_calibration_factor))
+        print('Power calibration offset: {:.3f} mW'.format(self.power_calibration_offset))
+        return
+
     @pyqtSlot(str)
     def set_filename(self, new_filename):
         self.filename = new_filename
@@ -1445,6 +1492,12 @@ class Backend(QtCore.QObject):
     def set_comment(self, new_comment):
         self.comment = new_comment
         print('New comment written down.')
+        return
+
+    @pyqtSlot()
+    def print_filename_trap_flag(self):
+        self.filename_trap_flag = True
+        print('A trap flag in the filename will be added.')
         return
     
     @pyqtSlot()
@@ -1480,6 +1533,8 @@ class Backend(QtCore.QObject):
         frontend.setWorkDirSignal.connect(self.set_working_folder)
         frontend.filenameSignal.connect(self.set_filename)
         frontend.commentSignal.connect(self.set_comment)
+        frontend.power_calibration_child_window.calibrationParamsSignal.connect(self.get_power_calibration_params)
+        frontend.flagButtonSignal.connect(self.print_filename_trap_flag)
         return
 
 #=====================================

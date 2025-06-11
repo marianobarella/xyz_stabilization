@@ -38,6 +38,7 @@ import time as tm
 apd_ch = 0 # analog input (ai) for apd, where it's connected
 power_pd_ch = 1 # analog input (ai) for amplified pd to monitor power, where it's connected
 apd_copy_ch = 2 # analog input (ai) for the copy of the apd signal, where it's connected (for the confocal scan)
+power_pd_copy_ch = 3 # analog input (ai) for the copy of the apd signal, where it's connected (for the confocal scan)
 shutter_ch = [0, 1, 2] # digital output for a shutter, port 0, line 0/1/2
 shutter_state = [False, False, False] # list of shutters' state, True = open, False = closed
 plt.ioff()
@@ -146,6 +147,12 @@ def set_confocal_task(sampling_rate, samples_per_ch, min_rng, max_rng, debug = F
         name_to_assign_to_channel = 'copy_of_APD_ch{}'.format(apd_copy_ch), \
         min_val = min_rng, \
         max_val = max_rng)
+    # add Monitor laser power task
+    APD_task.ai_channels.add_ai_voltage_chan(
+        physical_channel = 'Dev1/ai{}'.format(power_pd_copy_ch), \
+        name_to_assign_to_channel = 'monitor_ch{}'.format(power_pd_copy_ch), \
+        min_val = min_rng, \
+        max_val = max_rng)
     # estimate timeout (time_to_finish) for the task
     time_to_finish = samples_per_ch/sampling_rate # in s
     if debug:
@@ -186,13 +193,13 @@ def installed_devices():
         print(i)
     return
 
-def measure_data_one_time(task, number_of_points, timeout):
+def measure_data_one_time(task, number_of_channels, number_of_points, timeout):
     '''Measure a finite number of samples 
     number_of_points = how many points are going to be measured
     timeout = time to wait until a single measurement run is performed'''
     # pre-allocate data array
-    data_array = np.zeros((number_of_points), dtype = 'float')
-    data_array[:] = -1000 # set data array to an impossible output
+    data_array = np.zeros((number_of_channels, number_of_points), dtype = 'float')
+    data_array[:, :] = -1000 # set data array to an impossible output
     # start the task
     task.start()
     task.wait_until_done(timeout = timeout)
