@@ -38,6 +38,7 @@ import z_stabilization_GUI_v2
 import laser_control_GUI_minimalist
 import apd_trace_GUI
 import drift_correction_toolbox as drift
+import daq_board_toolbox as daq_toolbox
 
 # Initial raster scan parameters
 initial_scan_range_xy = 4 # in um
@@ -170,6 +171,8 @@ class Frontend(QtGui.QMainWindow):
         self.laserControlWidget = laser_control_GUI_minimalist.Frontend()
         self.confocal_filename = initial_confocal_filename
         self.confocal_filepath = initial_confocal_filepath
+        self.scale_x = initial_scan_range_xy/initial_scan_range_pixels_xy
+        self.scale_y = initial_scan_range_xy/initial_scan_range_pixels_xy
         self.setUpGUI()
         self.set_parameters()
         self.get_confocal_image(initial_confocal_image_np)
@@ -181,7 +184,6 @@ class Frontend(QtGui.QMainWindow):
         return
     
     def setUpGUI(self):
-        
         # Raster scan button
         self.rasterScanButton = QtGui.QPushButton('Raster Scan')
         self.rasterScanButton.setCheckable(True)
@@ -314,8 +316,7 @@ class Frontend(QtGui.QMainWindow):
         self.xlabel.setLabel('x', units = 'um',**labelStyle)
         self.ylabel = pg.AxisItem(orientation = 'left')
         self.ylabel.setLabel('y', units = 'um',**labelStyle)
-        initial_pixel_size_xy = round(initial_scan_range_xy/initial_scan_range_pixels_xy, 3) # in um
-        self.get_view_scale(initial_pixel_size_xy, initial_pixel_size_xy)
+        self.set_view_scale(self.scale_x, self.scale_y)
         self.vb = self.confocalImageWidget.addPlot(axisItems={'left': self.ylabel, \
                                                          'bottom': self.xlabel} )
         self.vb.addItem(self.confocal_img_item)
@@ -463,16 +464,20 @@ class Frontend(QtGui.QMainWindow):
         return
 
     @pyqtSlot(float, float)
-    def get_view_scale(self, px, py):
-        self.xlabel.setScale(scale = px)
-        self.ylabel.setScale(scale = py)
+    def set_view_scale(self, scale_x, scale_y):
+        self.xlabel.setScale(scale_x)
+        self.ylabel.setScale(scale_y)
         return
 
     def set_parameters(self):
         number_of_pixels_x = int(self.NxEdit.text())
         number_of_pixels_y = int(self.NyEdit.text())
-        self.parameters_list = [float(self.scanRangeEdit_x.text()), \
-                                float(self.scanRangeEdit_y.text()), \
+        range_x = float(self.scanRangeEdit_x.text())
+        range_y = float(self.scanRangeEdit_y.text())
+        self.scale_x = range_x/number_of_pixels_x
+        self.scale_y = range_y/number_of_pixels_y
+        self.parameters_list = [range_x, \
+                                range_y, \
                                 number_of_pixels_x, \
                                 number_of_pixels_y, \
                                 int(self.pixel_time_edit.text()), \
@@ -480,7 +485,6 @@ class Frontend(QtGui.QMainWindow):
                                 int(self.NzEdit.text()), \
                                 float(self.thresholdEdit.text())]
         self.sendParametersSignal.emit(self.parameters_list)
-        self.get_view_scale(number_of_pixels_x, number_of_pixels_y)
         return
 
     def play_pause_confocal_scan(self):
@@ -504,6 +508,7 @@ class Frontend(QtGui.QMainWindow):
             # clear image and send signal to perform the scan
             self.confocal_img_item.clear()
             self.point_graph_CM.clear()
+            self.set_view_scale(self.scale_x, self.scale_y)
             self.rasterScanSignal.emit(True)
         else:
             # send signal to stop the scan
@@ -641,7 +646,7 @@ class Backend(QtCore.QObject):
     confocalFilepathSignal = pyqtSignal(str)
     
     def __init__(self, piezo_stage_xy, piezo_stage_z, piezo_backend, \
-                 *args, **kwargs):
+                 daq_board, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.piezo_stage_xy = piezo_stage_xy
         self.piezo_stage_z = piezo_stage_z
@@ -653,8 +658,8 @@ class Backend(QtCore.QObject):
         self.zWorker = z_stabilization_GUI_v2.Backend(piezo_stage_z, \
                                                    piezo_backend, \
                                                    connect_to_piezo_module = False)
-        self.apdTraceWorker = apd_trace_GUI.Backend()
-        self.laserControlWorker = laser_control_GUI_minimalist.Backend()
+        self.apdTraceWorker = apd_trace_GUI.Backend(daq_board)
+        self.laserControlWorker = laser_control_GUI_minimalist.Backend(daq_board)
         self.scan_flag = False
         self.scan_range_x = initial_scan_range_xy
         self.scan_range_y = initial_scan_range_xy
@@ -889,7 +894,7 @@ class Backend(QtCore.QObject):
         self.apd_traces_array = np.zeros((self.scan_range_pixels_x, \
                                           self.scan_range_pixels_y, \
                                           self.number_of_points_confocal))
-        self.minitor_traces_array = np.zeros((self.scan_range_pixels_x, \
+        self.monitor_traces_array = np.zeros((self.scan_range_pixels_x, \
                                               self.scan_range_pixels_y, \
                                               self.number_of_points_confocal))
         self.counter_x_steps = 0
@@ -963,8 +968,8 @@ class Backend(QtCore.QObject):
                     self.piezoWorker.move_absolute([current_x_pos, current_y_pos, self.z_pos])
                     # acquire first
                     pixel_data = self.apdTraceWorker.acquire_confocal_trace()
-                    pixel_apd_data = pixel_data[0,:]
-                    pixel_monitor_data = pixel_data[1,:]
+                    pixel_apd_data = pixel_data[0]
+                    pixel_monitor_data = pixel_data[1]
                     # assign the mean value to a pixel in the image
                     self.confocal_image[y_index, x_index] = np.mean(pixel_apd_data)
                     self.apd_traces_array[y_index, x_index, :] = pixel_apd_data
@@ -1125,6 +1130,9 @@ if __name__ == '__main__':
     # make application
     app = QtGui.QApplication([])
     
+    print('\nDAQ board initialization...')
+    daq_board = daq_toolbox.init_daq()
+
     # init stage
     piezo_xy = piezo_stage_GUI_two_controllers.piezo_stage_xy
     piezo_z = piezo_stage_GUI_two_controllers.piezo_stage_z
@@ -1133,7 +1141,7 @@ if __name__ == '__main__':
     
     # create both classes
     gui = Frontend(piezo_frontend)
-    worker = Backend(piezo_xy, piezo_z, piezo_backend)
+    worker = Backend(piezo_xy, piezo_z, piezo_backend, daq_board)
        
     ###################################
     # Thread instances

@@ -464,9 +464,9 @@ class motorized_flipper(object):
     def get_state(self):
         reply = self.serialInstance.get_state()
         if reply == 0:
-            state = 'up'
-        else:
             state = 'down'
+        else:
+            state = 'up'
         if self.debug_mode:
             print("State: ", state)
         return state

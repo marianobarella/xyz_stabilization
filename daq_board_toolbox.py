@@ -193,21 +193,18 @@ def installed_devices():
         print(i)
     return
 
-def measure_data_one_time(task, number_of_channels, number_of_points, timeout):
+def measure_data_one_time(task, number_of_points, timeout):
     '''Measure a finite number of samples 
     number_of_points = how many points are going to be measured
     timeout = time to wait until a single measurement run is performed'''
-    # pre-allocate data array
-    data_array = np.zeros((number_of_channels, number_of_points), dtype = 'float')
-    data_array[:, :] = -1000 # set data array to an impossible output
     # start the task
     task.start()
     task.wait_until_done(timeout = timeout)
     if task.is_task_done():
         # read
-        data_array = task.read(number_of_points)
+        data_list = task.read(number_of_points)
         task.stop()
-    return data_array
+    return data_list
 
 def measure_data_n_times(task, number_of_points, max_num_of_meas, timeout, debug = False):
     '''Measure a finite number of samples several times

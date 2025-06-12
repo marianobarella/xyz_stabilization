@@ -20,7 +20,7 @@ from queue import Queue
 from pyqtgraph.dockarea import Dock, DockArea
 from PyQt5.QtCore import pyqtSignal, pyqtSlot, QThread, QProcess
 from PyQt5.QtWidgets import QMessageBox, QPushButton, QLabel, QDialog
-import daq_board_toolbox as daq
+import daq_board_toolbox as daq_toolbox
 from tkinter import filedialog
 import tkinter as tk
 import time as tm
@@ -31,14 +31,7 @@ import time as tm
 # https://www.intel.com/content/www/us/en/support/articles/000005524/graphics.html
 pg.setConfigOptions(antialias = False, useOpenGL = True)
 
-#=====================================
-
-# Initialize DAQ board
-
-#=====================================
-
-print('\nInitializing DAQ board...')
-daq_board = daq.init_daq()
+############ INITIAL PARAMETERS #############
 # set measure period
 acquireTrace_period = 20 # in ms
 # set display/plot period 
@@ -47,12 +40,10 @@ displayTrace_period = 40 # in ms
 periods_ratio = int(round(displayTrace_period/acquireTrace_period))
 print('\nRatio between acquisition and displaying periods: %i' % periods_ratio)
 # set queue size for allocate data before plotting
-queue_size = 1000
-max_sampling_rate = daq_board.ai_max_single_chan_rate # set to maximum, here 2 MS/s    
+queue_size = 1000 
 # number of analog input channels to read
 number_of_channels = 2
 
-############ INITIAL PARAMETERS #############
 # set sampling rate
 initial_sampling_rate = 100e3 # in S/s
 # duration of the traces in s
@@ -69,7 +60,6 @@ initial_filepath = 'D:\\daily_data\\apd_traces' # save in SSD for fast and daily
 initial_filename = 'signal'
 # set measurement range
 initial_voltage_range = 2.0
-daq.check_voltage_range(daq_board, initial_voltage_range)
 
 # power calibration factor
 power_calibration_factor = 50 # in mW/V
@@ -487,7 +477,7 @@ class Frontend(QtGui.QFrame):
         # set the title of the window
         title = "Acquisition module"
         self.setWindowTitle(title)
-        self.setGeometry(800, 30, 600, 1000) # x pos, y pos, width, height
+        self.setGeometry(50, 30, 600, 900) # x pos, y pos, width, height
         self.set_y_range()
         self.mean_value = 0 # in V
         self.sd_value = 0 # in V
@@ -587,7 +577,7 @@ class Frontend(QtGui.QFrame):
         # trap flag button
         self.trap_flag_button = QtGui.QPushButton('Filename flag trap')
         self.trap_flag_button.clicked.connect(self.flagButtonSignal)
-        self.trap_flag_button.setToolTip('If pressed, it will add a flag/marker to the filename of the trace.')
+        self.trap_flag_button.setToolTip('If clicked, it will add a flag/marker to the filename of the trace.')
         self.trap_flag_button.setStyleSheet(
             "QPushButton:pressed { background-color: green; }")
 
@@ -955,6 +945,7 @@ class Frontend(QtGui.QFrame):
     @pyqtSlot(str, str)
     def clear_comments(self, transmission_data_filepath, monitor_data_filepath):
         self.comments.clear()
+        self.commentSignal.emit('')
         return
     
     def set_filename(self):
@@ -1020,8 +1011,8 @@ class Frontend(QtGui.QFrame):
         # Coefficient of Variation (CoV)
         self.CoV_apd = sd_value_apd/mean_value_apd*100 # to percetage
         self.CoV_monitor = sd_value_monitor/mean_value_monitor*100 # to percetage
-        self.signalCoV_apd.setText('{:.3f}'.format(self.CoV_apd))
-        self.signalCoV_monitor.setText('{:.3f}'.format(self.CoV_monitor))
+        self.signalCoV_apd.setText('{:.2f}'.format(self.CoV_apd))
+        self.signalCoV_monitor.setText('{:.2f}'.format(self.CoV_monitor))
         # power value
         self.power_at_sample_plane = mean_value_monitor*self.power_calibration_factor + self.power_calibration_offset
         self.power_value.setText('{:.3f}'.format(self.power_at_sample_plane))
@@ -1150,8 +1141,10 @@ class Backend(QtCore.QObject):
     fileSavedSignal = pyqtSignal(str, str)
     saving_data_error_signal = pyqtSignal(str)
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, daq_board, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        max_sampling_rate = daq_board.ai_max_single_chan_rate # set to maximum, here 2 MS/s   
+        daq_toolbox.check_voltage_range(daq_board, initial_voltage_range)
         # set timer to plot the data and check buttons
         self.acquireTimer = QtCore.QTimer()
         # configure the connection to allow queued executions to avoid interruption of previous calls
@@ -1166,11 +1159,11 @@ class Backend(QtCore.QObject):
         self.acquisition_mode = 'continuous'
         print('Setting up task...')
         # APD task
-        self.APD_task, self.time_to_finish = daq.set_task(self.sampling_rate, \
-                                                          self.number_of_points, \
-                                                          -self.voltage_range, \
-                                                          +self.voltage_range, \
-                                                          self.acquisition_mode)
+        self.APD_task, self.time_to_finish = daq_toolbox.set_task(self.sampling_rate, \
+                                                                  self.number_of_points, \
+                                                                  -self.voltage_range, \
+                                                                  +self.voltage_range, \
+                                                                  self.acquisition_mode)
         self.acquire_continuously_bool = True
         self.save_automatically_bool = False
         self.filepath = initial_filepath
@@ -1229,15 +1222,15 @@ class Backend(QtCore.QObject):
       
     def start_trace(self):
         # allocate arrays
-        self.data_array_filepath, self.data_array = daq.allocate_datafile(self.number_of_points)
-        self.monitor_array_filepath, self.monitor_array = daq.allocate_datafile(self.number_of_points)
-        self.time_array_filepath, self.time_array = daq.allocate_datafile(self.number_of_points)
+        self.data_array_filepath, self.data_array = daq_toolbox.allocate_datafile(self.number_of_points)
+        self.monitor_array_filepath, self.monitor_array = daq_toolbox.allocate_datafile(self.number_of_points)
+        self.time_array_filepath, self.time_array = daq_toolbox.allocate_datafile(self.number_of_points)
         # counter to account for the number of points already measured
         self.read_samples = 0
         self.read_samples_to_send = 0
         self.trace_number = 0
         # prepare stream reader
-        self.APD_stream_reader = daq.arm_measurement_in_loop(self.APD_task, number_of_channels)
+        self.APD_stream_reader = daq_toolbox.arm_measurement_in_loop(self.APD_task, number_of_channels)
         # stop (just in case) and start task
         self.APD_task.stop()
         self.APD_task.start()
@@ -1277,10 +1270,10 @@ class Backend(QtCore.QObject):
             # arracy need to be filled with read data
             if self.read_samples < self.number_of_points:
                 # read a short stream
-                n_available_per_ch, data = daq.measure_one_loop(self.APD_stream_reader, \
-                                                         number_of_channels, \
-                                                         self.number_of_points, \
-                                                         self.read_samples)
+                n_available_per_ch, data = daq_toolbox.measure_one_loop(self.APD_stream_reader, \
+                                                                        number_of_channels, \
+                                                                        self.number_of_points, \
+                                                                        self.read_samples)
                 data_APD = data[0,:]
                 data_monitor = data[1,:]
                 # assign data to backend arrays (raw data, to be saved)
@@ -1312,19 +1305,18 @@ class Backend(QtCore.QObject):
                                                                  self.sampling_rate) 
         print('Setting up confocal task...')
         self.APD_task_confocal, \
-        self.time_to_finish_confocal = daq.set_confocal_task(self.sampling_rate, \
-                                                             self.number_of_points_confocal, \
-                                                             -self.voltage_range, \
-                                                             +self.voltage_range)
+        self.time_to_finish_confocal = daq_toolbox.set_confocal_task(self.sampling_rate, \
+                                                                     self.number_of_points_confocal, \
+                                                                     -self.voltage_range, \
+                                                                     +self.voltage_range)
         return self.number_of_points_confocal
 
     def acquire_confocal_trace(self):
         # measure a finite number of samples 
-        meas_finite_array = daq.measure_data_one_time(self.APD_task_confocal, \
-                                                      number_of_channels, 
-                                                      self.number_of_points_confocal, \
-                                                      self.time_to_finish_confocal)
-        return meas_finite_array
+        meas_finite_list = daq_toolbox.measure_data_one_time(self.APD_task_confocal, \
+                                                              self.number_of_points_confocal, \
+                                                              self.time_to_finish_confocal)
+        return meas_finite_list
 
     def disarm_confocal_task(self):
         print('\nStopping task in progress...')
@@ -1357,8 +1349,12 @@ class Backend(QtCore.QObject):
         filename_monitor = filename_timestamped + '_monitor'
         if self.filename_trap_flag:
             filename_params = filename_timestamped + '_params_TRAP_FLAG.txt'
+            filename_data = filename_timestamped + '_transmission_TRAP_FLAG'
+            filename_monitor = filename_timestamped + '_monitor_TRAP_FLAG'
         else:
             filename_params = filename_timestamped + '_params.txt'
+            filename_data = filename_timestamped + '_transmission'
+            filename_monitor = filename_timestamped + '_monitor'
         # save data
         full_filepath_data = os.path.join(filepath, filename_data)
         full_filepath_monitor = os.path.join(filepath, filename_monitor)
@@ -1399,15 +1395,15 @@ class Backend(QtCore.QObject):
             self.acqStopped.emit()
         print('\nClosing task...')
         self.APD_task.close()
-        daq.check_voltage_range(daq_board, voltage_range)
+        daq_toolbox.check_voltage_range(daq_board, voltage_range)
         print('Changing voltage ranges...')
         self.voltage_range = voltage_range # in V, is float
         print('Setting up new task...')
-        self.APD_task, self.time_to_finish = daq.set_task(self.sampling_rate, \
-                                                          self.number_of_points, \
-                                                          -self.voltage_range, \
-                                                          +self.voltage_range, \
-                                                          self.acquisition_mode)
+        self.APD_task, self.time_to_finish = daq_toolbox.set_task(self.sampling_rate, \
+                                                                  self.number_of_points, \
+                                                                  -self.voltage_range, \
+                                                                  +self.voltage_range, \
+                                                                  self.acquisition_mode)
         return
 
     @pyqtSlot(int)    
@@ -1423,11 +1419,11 @@ class Backend(QtCore.QObject):
         print('Sampling rate changed to', sampling_rate, 'kS/s')
         self.number_of_points = calculate_num_of_points(self.duration, self.sampling_rate)
         print('Setting up new task...')
-        self.APD_task, self.time_to_finish = daq.set_task(self.sampling_rate, \
-                                                          self.number_of_points, \
-                                                          -self.voltage_range, \
-                                                          +self.voltage_range, \
-                                                          self.acquisition_mode)
+        self.APD_task, self.time_to_finish = daq_toolbox.set_task(self.sampling_rate, \
+                                                                  self.number_of_points, \
+                                                                  -self.voltage_range, \
+                                                                  +self.voltage_range, \
+                                                                  self.acquisition_mode)
         return
     
     @pyqtSlot(float)    
@@ -1442,11 +1438,11 @@ class Backend(QtCore.QObject):
         print('Duration of the measurement changed to', duration, 's')
         self.number_of_points = calculate_num_of_points(self.duration, self.sampling_rate) 
         print('Setting up new task...')
-        self.APD_task, self.time_to_finish = daq.set_task(self.sampling_rate, \
-                                                          self.number_of_points, \
-                                                          -self.voltage_range, \
-                                                          +self.voltage_range, \
-                                                          self.acquisition_mode)
+        self.APD_task, self.time_to_finish = daq_toolbox.set_task(self.sampling_rate, \
+                                                                  self.number_of_points, \
+                                                                  -self.voltage_range, \
+                                                                  +self.voltage_range, \
+                                                                  self.acquisition_mode)
         return
     
     @pyqtSlot()    
@@ -1546,10 +1542,13 @@ class Backend(QtCore.QObject):
 if __name__ == '__main__':
     # make application
     app = QtGui.QApplication([])
+
+    print('\nDAQ board initialization...')
+    daq_board = daq_toolbox.init_daq()
     
     # create both classes
     gui = Frontend()
-    worker = Backend()
+    worker = Backend(daq_board)
 
     # threads that run in background
     workerThread = QThread()

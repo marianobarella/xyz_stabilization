@@ -15,25 +15,6 @@ import lasers_and_serial_toolbox as laserToolbox
 import time as tm
 import daq_board_toolbox as daq_toolbox # for shutters control
 
-#=====================================
-
-# Initialize lasers
-
-#=====================================
-
-print('\nLooking for serial ports...')
-list_of_serial_ports = laserToolbox.serial_ports()
-print('Ports available:', list_of_serial_ports)   
-# build laser objects 
-laser488 = laserToolbox.toptica_laser(debug_mode = False)
-shutterTrappingLaserObject = laserToolbox.Thorlabs_shutter(debug_mode = False)
-# build flippers objects
-flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
-                                                  serial_port = laserToolbox.COM_port_flipper_apd_Thorlabs)
-flipperSpectrometerPath = laserToolbox.motorized_flipper(debug_mode = False, \
-                                                  serial_port = laserToolbox.COM_port_flipper_spectrometer)
-flipperTrappingLaserFilter = laserToolbox.motorized_flipper(debug_mode = False, \
-                                                  serial_port = laserToolbox.COM_port_flipper_trapping_laser_Thorlabs)
 # set initial paramters
 initial_blue_power = 15 # in mW
 
@@ -121,7 +102,7 @@ class Frontend(QtGui.QFrame):
         minimalist_box_layout.addWidget(self.power488_edit, 1, 2)
         minimalist_box_layout.addWidget(self.flipperAPDButton, 2, 0)
         minimalist_box_layout.addWidget(self.flipperSpectrometerButton, 2, 1)
-        minimalist_box_layout.addWidget(self.shutterTrappingLaserButton, 3, 1)
+        minimalist_box_layout.addWidget(self.shutterWhiteLaserButton, 3, 1)
 
         # Place layouts and boxes
         dockArea = DockArea()
@@ -215,9 +196,25 @@ class Frontend(QtGui.QFrame):
 
 class Backend(QtCore.QObject):
         
-    def __init__(self, *args, **kwargs):
-        super().__init__(daq_board, *args, **kwargs)
+    def __init__(self, daq_board, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        print('\nLooking for serial ports...')
+        list_of_serial_ports = laserToolbox.serial_ports()
+        print('Ports available:', list_of_serial_ports)   
+        # build laser objects 
+        self.laser488 = laserToolbox.toptica_laser(debug_mode = False)
+        self.shutterTrappingLaserObject = laserToolbox.Thorlabs_shutter(debug_mode = False)
+        self.shuttersObject = laserToolbox.shutters(daq_board) # initialize shutter and closes them all
+        # build flippers objects
+        self.flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
+                                                          serial_port = laserToolbox.COM_port_flipper_apd_Thorlabs)
+        self.flipperSpectrometerPath = laserToolbox.motorized_flipper(debug_mode = False, \
+                                                          serial_port = laserToolbox.COM_port_flipper_spectrometer)
+        self.flipperTrappingLaserFilter = laserToolbox.motorized_flipper(debug_mode = False, \
+                                                          serial_port = laserToolbox.COM_port_flipper_trapping_laser_Thorlabs)
+        # set blue laser power
         self.change_power(initial_blue_power)
+        # close shutters at the beggining
         self.shutter488(False) # close shutter
         self.flipper_trapping_laser_attenuation(True) # set filters IN
         self.flipper_apd_attenuation(True) # set filters IN
@@ -227,70 +224,71 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool)
     def shutterTrappingLaser(self, shutterbool):
         if shutterbool:
-            shutterTrappingLaserObject.shutter('open')
+            self.shutterTrappingLaserObject.shutter('open')
         else:
-            shutterTrappingLaserObject.shutter('close')
+            self.shutterTrappingLaserObject.shutter('close')
         return
     
     @pyqtSlot(bool)
     def shutterWhiteLaser(self, shutterbool):
         if shutterbool:
-            shutterTrappingLaserObject.shutter('open')
+            self.shuttersObject.open_shutter('white')
         else:
-            shutterTrappingLaserObject.shutter('close')
+            self.shuttersObject.close_shutter('white')
         return
     
     @pyqtSlot(bool)
     def shutter488(self, shutterbool):
         if shutterbool:
-            laser488.shutter('open')
+            self.laser488.shutter('open')
         else:
-            laser488.shutter('close')
+            self.laser488.shutter('close')
         return
     
     @pyqtSlot(bool)
     def flipper_apd_attenuation(self, flipperbool):
         if flipperbool:
-            flipperAPDFilter.set_flipper_down() # filter IN
+            self.flipperAPDFilter.set_flipper_down() # filter IN
         else:
-            flipperAPDFilter.set_flipper_up() # filter OUT
-        print('Flipper APD attenuation status:', flipperAPDFilter.get_state())
+            self.flipperAPDFilter.set_flipper_up() # filter OUT
+        print('Flipper APD attenuation status:', self.flipperAPDFilter.get_state())
         return
     
     @pyqtSlot(bool)
     def flipper_select_spectrometer(self, flipperbool):
         if flipperbool:
-            flipperSpectrometerPath.set_flipper_down() # filter IN
+            self.flipperSpectrometerPath.set_flipper_down() # filter IN
         else:
-            flipperSpectrometerPath.set_flipper_up() # filter OUT
-        print('Flipper Spectrometer path status:', flipperSpectrometerPath.get_state())
+            self.flipperSpectrometerPath.set_flipper_up() # filter OUT
+        print('Flipper Spectrometer path status:', self.flipperSpectrometerPath.get_state())
         return
 
     @pyqtSlot(bool)
     def flipper_trapping_laser_attenuation(self, flipperbool):
         if flipperbool:
-            flipperTrappingLaserFilter.set_flipper_down() # filter IN
+            self.flipperTrappingLaserFilter.set_flipper_down() # filter IN
         else:
-            flipperTrappingLaserFilter.set_flipper_up() # filter OUT
-        print('Flipper Trapping laser attenuation status:', flipperTrappingLaserFilter.get_state())
+            self.flipperTrappingLaserFilter.set_flipper_up() # filter OUT
+        print('Flipper Trapping laser attenuation status:', self.flipperTrappingLaserFilter.get_state())
         return
     
     @pyqtSlot(float)    
     def change_power(self, power488_mW):
         self.power488_mW = power488_mW # in mW, is float
-        laser488.set_power(self.power488_mW)
+        self.laser488.set_power(self.power488_mW)
         return
 
     @pyqtSlot()
     def close_backend(self):
         print('Disconnecting lasers...')
-        laser488.close()
-        print('\nClosing Trapping laser shutter...')
+        self.laser488.close()
+        print('\nClosing all shutters...')
         self.shutterTrappingLaser(False)
+        self.shuttersObject.shutdown()
         print('Closing flippers...')
-        flipperAPDFilter.close()
-        flipperSpectrometerPath.close()
-        flipperTrappingLaserFilter.close() # TODO check if it is working
+        self.flipperAPDFilter.close()
+        self.flipperSpectrometerPath.close()
+        self.flipperTrappingLaserFilter.close() # TODO check if it is working
         print('Exiting thread...')
         workerThread.exit()
         return
