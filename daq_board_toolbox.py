@@ -37,8 +37,8 @@ import time as tm
 
 apd_ch = 0 # analog input (ai) for apd, where it's connected
 power_pd_ch = 1 # analog input (ai) for amplified pd to monitor power, where it's connected
-apd_copy_ch = 2 # analog input (ai) for the copy of the apd signal, where it's connected (for the confocal scan)
-power_pd_copy_ch = 3 # analog input (ai) for the copy of the apd signal, where it's connected (for the confocal scan)
+apd_copy_ch = 4 # analog input (ai) for the copy of the apd signal, where it's connected (for the confocal scan)
+power_pd_copy_ch = 5 # analog input (ai) for the copy of the apd signal, where it's connected (for the confocal scan)
 shutter_ch = [0, 1, 2] # digital output for a shutter, port 0, line 0/1/2
 shutter_state = [False, False, False] # list of shutters' state, True = open, False = closed
 plt.ioff()

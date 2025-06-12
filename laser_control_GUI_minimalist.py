@@ -212,6 +212,7 @@ class Backend(QtCore.QObject):
                                                           serial_port = laserToolbox.COM_port_flipper_spectrometer)
         self.flipperTrappingLaserFilter = laserToolbox.motorized_flipper(debug_mode = False, \
                                                           serial_port = laserToolbox.COM_port_flipper_trapping_laser_Thorlabs)
+        tm.sleep(0.5)
         # set blue laser power
         self.change_power(initial_blue_power)
         # close shutters at the beggining

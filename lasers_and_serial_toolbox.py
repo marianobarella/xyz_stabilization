@@ -453,6 +453,7 @@ class motorized_flipper(object):
         self.serialPort = serial_port
         self.debug_mode = debug_mode
         self.initialize()
+        return
         
     def initialize(self):
         self.serialInstance = motoFlipper(self.serialPort)
@@ -460,6 +461,7 @@ class motorized_flipper(object):
             print('Serial port ' + self.serialPort + ' opened.')
         else:
             print('Serial port ' + self.serialPort + ' has NOT been opened.')
+        return
         
     def get_state(self):
         reply = self.serialInstance.get_state()
