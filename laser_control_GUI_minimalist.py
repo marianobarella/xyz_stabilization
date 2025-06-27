@@ -203,7 +203,7 @@ class Backend(QtCore.QObject):
         print('Ports available:', list_of_serial_ports)   
         # build laser objects 
         self.laser488 = laserToolbox.toptica_laser(debug_mode = False)
-        self.shutterTrappingLaserObject = laserToolbox.Thorlabs_shutter(debug_mode = False)
+        # self.shutterTrappingLaserObject = laserToolbox.Thorlabs_shutter(debug_mode = False)
         self.shuttersObject = laserToolbox.shutters(daq_board) # initialize shutter and closes them all
         # build flippers objects
         self.flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
@@ -225,9 +225,11 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool)
     def shutterTrappingLaser(self, shutterbool):
         if shutterbool:
-            self.shutterTrappingLaserObject.shutter('open')
+            # self.shutterTrappingLaserObject.shutter('open')
+            self.shuttersObject.open_shutter('NIR')
         else:
-            self.shutterTrappingLaserObject.shutter('close')
+            # self.shutterTrappingLaserObject.shutter('close')
+            self.shuttersObject.close_shutter('NIR')
         return
     
     @pyqtSlot(bool)
@@ -284,7 +286,7 @@ class Backend(QtCore.QObject):
         print('Disconnecting lasers...')
         self.laser488.close()
         print('\nClosing all shutters...')
-        self.shutterTrappingLaser(False)
+        # self.shutterTrappingLaser(False)
         self.shuttersObject.shutdown()
         print('Closing flippers...')
         self.flipperAPDFilter.close()

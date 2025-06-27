@@ -33,15 +33,15 @@ COM_port_flipper_spectrometer = 'COM6' # APT USB Serial number: 37004922
 COM_port_flipper_apd_Thorlabs = 'COM8' # APT USB Serial number: 37005240
 COM_port_flipper_trapping_laser_Thorlabs = 'COM7' # APT USB Serial number: 37005241
 # COM9 and COM10 are the Piezostages' controllers
-COM_port_shutter_Thorlabs = 'COM3' # USB to Serial cable
+COM_port_shutter_Thorlabs = 'COM3' # USB to Serial cable (REMOVED!!!! Switched to DAQ signal control)
 COM_port_filter_wheel = 'COM12' # USB Serial Port (Thorlabs Filter Wheel FW102C)
 COM_port_toptica = 'COM13' # 488 Toptica Laser using ATEN USB to Serial Bridge 
 COM_valve = 'COM5' # microfluidics valve NOT USED HERE
 COM_pump = 'COM4' # microfluidics pump NOT USED HERE
 
 shutter_number_dict = {
-    'NIR': 0, # Toptica NIR TA pro laser
-    'white': 1, # NKT SuperK white laser
+    'NIR': 1, # Toptica NIR TA pro laser
+    'white': 0, # NKT SuperK white laser
     'tisa': 2 # Ti:Sa laser
 }
 
