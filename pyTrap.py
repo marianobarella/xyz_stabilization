@@ -52,7 +52,7 @@ xy_tuple = (xv, yv)
 gaussian_example_spot = drift.gaussian_2D(xy_tuple, 1, 0.8, 1.5, 1, 1, 0)
 initial_confocal_image_np = gaussian_example_spot.reshape((initial_scan_range_pixels_xy, initial_scan_range_pixels_xy))
 initial_scan_step_time = 50 # in ms
-initial_threshold = 0.3 # to filter the confocal image and find the CM
+initial_threshold = 0.7 # to filter the confocal image and find the CM
 initial_confocal_filepath = 'D:\\daily_data\\confocal_data' # save in SSD for fast and daily use
 initial_confocal_filename = 'confocal_scan'
 
@@ -543,12 +543,14 @@ class Frontend(QtGui.QMainWindow):
     def confocal_scan_stopped(self):
         # uncheck scan button
         self.rasterScanButton.setChecked(False)
+        self.laserControlWidget.shutterTrappingLaserButton.setCheckState(False)
         return
 
     @pyqtSlot()
     def z_scan_stopped(self):
         # uncheck scan button
         self.zScanButton.setChecked(False)
+        self.laserControlWidget.shutterTrappingLaserButton.setCheckState(False)
         return
 
     @pyqtSlot(np.ndarray, np.ndarray, bool, str, int)
