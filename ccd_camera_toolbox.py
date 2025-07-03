@@ -53,16 +53,19 @@ print(cam.get_amp_mode(full=True)) # current
 
 
 
-cam.set_exposure(1000e-3)  # set 10ms exposure
+cam.set_exposure(0.01e-3)  # set 10ms exposure
 print(cam.get_exposure())
-print(cam.get_frame_timings())
+test_timing0, test_timing1 = cam.get_frame_timings()
+print(test_timing0)
+print(test_timing1)
+
 
 
 
 print(cam.get_temperature())
 
 cam.set_read_mode('fvb')
-cam.set_read_mode('image')
+# cam.set_read_mode('image')
 
 # setup_acquisition(mode=None, nframes=None)
 # cam.start_acquisition()  # start acquisition (automatically sets it up as well)
@@ -74,7 +77,7 @@ cam.set_read_mode('image')
 # get_acquisition_progress()
 
 img = cam.snap()  # grab a single frame
-print(img)
+print(type(img))
 # images = cam.grab(10)  # grab 10 frames (return a list of frames)
 
 # pylablib.devices.Andor.AndorSDK2.TAcqProgress
