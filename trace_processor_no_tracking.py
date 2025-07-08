@@ -91,7 +91,19 @@ full_filepath_tra = os.path.join(working_folder, list_of_files_transmission[0])
 temporary_data = np.load(full_filepath_tra)
 # length
 length_of_trace = len(temporary_data)
-print('Length of trace: %d points' % length_of_trace)
+print('Length of each trace: %d points' % length_of_trace)
+# sampling period
+sampling_period = 1/sample_rate
+trace_time = length_of_trace*sampling_period
+print('Length of each trace in time: %.1f ' % trace_time)
+# print number of files
+print('Number of files: %d' % number_of_files)
+total_time = L_tra*trace_time
+total_time_min = total_time/60  # in minutes   
+print('Total time of all traces: %d s' % total_time)
+print('Total time of all traces: %d min' % total_time_min)
+total_number_of_points = number_of_files*length_of_trace/1e6 # in millions
+print('Total number of points in (millions): %.1f ' % total_number_of_points)
 
 # allocate
 single_trace_tra = np.zeros((number_of_files, length_of_trace), dtype='float32')

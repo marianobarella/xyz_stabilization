@@ -50,6 +50,7 @@ initial_filepath = 'D:\\daily_data\\spectra' # save in SSD for fast and daily us
 initial_filename = 'nanostructure_X'
 initial_wavelength_array = np.arange(NumberofPixel)
 initial_image = 128*np.ones((256, 1024))
+initial_spectrum = np.ones(1024) # 1D array of size 1024
 
 ######################################################################################
 ######################################################################################
@@ -481,6 +482,7 @@ class Backend(QtCore.QObject):
     sensorTempSignal = pyqtSignal(float)
     filepathSignal = pyqtSignal(str)
     wavelengthCalibrationSignal = pyqtSignal(np.ndarray)
+    fileSavedSignal = pyqtSignal(str)
 
     def __init__(self, mySpectrometer, myCamera, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -488,13 +490,13 @@ class Backend(QtCore.QObject):
         self.mySpectrometer = mySpectrometer
         self.mySpectrometer.ShamrockSetNumberPixels(DEVICE, NumberofPixel)
         self.mySpectrometer.ShamrockSetPixelWidth(DEVICE, PixelWidth)
-        self.mySpectrometer.ShamrockSetGrating(DEVICE, GRATING_300_LINES)
         self.grating = GRATING_300_LINES
+        self.mySpectrometer.ShamrockSetGrating(DEVICE, self.grating)
         self.shutter_state = 0 # 0 = False, 1 = True
         self.wavelength = 0.0
         self.viewSpecTimer = QtCore.QTimer()
         self.tempTimer = QtCore.QTimer()
-        self.spectrum = np.array([])
+        self.spectrum = initial_spectrum
         self.temperature = -80 # in celcius
         self.save_automatically_bool = False
         self.filepath = initial_filepath
@@ -505,6 +507,7 @@ class Backend(QtCore.QObject):
         self.image = initial_image
         self.start_camera()
         self.live_flag = False
+        self.sensor_temp = 99
         return
         
     def start_camera(self):
@@ -538,7 +541,6 @@ class Backend(QtCore.QObject):
            ret = self.mySpectrometer.ShamrockSetGrating(DEVICE, GRATING_MIRROR)
            self.grating = GRATING_MIRROR
            print(datetime.now(), '[Kymera] Mode Grating =', nameGrating[2], ', Code', ret)
-
         (ret, Lines, Blaze, Home, Offset) = self.mySpectrometer.ShamrockGetGratingInfo(DEVICE, self.grating)
         print('Current grating information: ', Lines, 'lines/mm', Blaze.decode('UTF-8'), Home, Offset)
         return
@@ -641,16 +643,16 @@ class Backend(QtCore.QObject):
 
     def update_temp(self):
         # Update temp of the camera
-        sensor_temp = self.myCamera.get_temperature()
+        self.sensor_temp = self.myCamera.get_temperature()
         # print('\nNewton camera temperature retrieved at', datetime.now())
         # print('Sensor temp: %.1f °C' % sensor_temp)
-        self.sensorTempSignal.emit(sensor_temp)
+        self.sensorTempSignal.emit(self.sensor_temp)
         return
 
     def update_view(self):
         # update spectrum while in live spectrum view mode
         self.myCamera.wait_for_frame(timeout = (self.frame_timeout*self.number_of_acquisitions, self.frame_timeout))
-        spectrum = self.myCamera.read_oldest_image() # numpy array of size (1, 1024) that is a 2D array
+        spectrum = self.myCamera.read_newest_image() # numpy array of size (1, 1024) that is a 2D array
         if self.acq_mode == 'fvb':
             self.spectrum = spectrum.ravel() # numpy array of size (1024,) that is a 1D array
             self.spectrumSignal.emit(self.spectrum)
@@ -662,12 +664,12 @@ class Backend(QtCore.QObject):
             self.stop_live_spec_view()
         if self.save_automatically_bool:
             self.save_spectrum()
-        self.spectrum_number += 1
+            self.spectrum_number += 1
         return
 
     @pyqtSlot(bool, float)
     def take_single_spectrum(self, live_spec_bool, exposure_time_ms):
-        print('\nPicture taken at', datetime.now())
+        print('\nSpectrum taken at', datetime.now())
         if live_spec_bool:
             self.stop_live_spec_view()
         # acquire a single spectrum
@@ -755,9 +757,8 @@ class Backend(QtCore.QObject):
     def save_spectrum(self, message_box = False, baseline = False):
         # prepare full filepath
         filepath = self.filepath
-        if self.save_automatically_bool:
-            if self.live_flag:
-                self.suffix = '_{:04d}'.format(self.spectrum_number)
+        if self.live_flag:
+            self.suffix = '_{:04d}'.format(self.spectrum_number)
         elif baseline:
             self.suffix = '_baseline'
         else:
@@ -767,6 +768,7 @@ class Backend(QtCore.QObject):
         timestr = tm.strftime("%Y%m%d_%H%M%S_")
         filename_timestamped = timestr + filename
         filename_data = filename_timestamped + '_spectrum'
+        filename_params = filename_timestamped + '_params.txt'
         # save data
         full_filepath_data = os.path.join(filepath, filename_data)    
         # it will save an ASCII encoded text file
@@ -774,14 +776,26 @@ class Backend(QtCore.QObject):
         header_txt = 'wavelength(nm) integrated_counts'
         ascii_full_filepath = full_filepath_data + '.dat'
         np.savetxt(ascii_full_filepath, data_to_save, fmt='%.2f', header=header_txt)
-        # # save measurement parameters and comments
-        # self.params_to_be_saved = self.get_params_to_be_saved()
-        # with open(full_filepath_params, 'w') as f:
-        #     print(self.params_to_be_saved, file = f)
-        # print('Data %s has been saved.' % filename_timestamped)
-        # # emit signal for any other module that is importing this function
-        # self.fileSavedSignal.emit(full_filepath_data + '.npy', full_filepath_monitor + '.npy')
+        # save measurement parameters and comments
+        full_filepath_params = os.path.join(filepath, filename_params)
+        self.params_to_be_saved = self.get_params_to_be_saved()
+        with open(full_filepath_params, 'w') as f:
+            print(self.params_to_be_saved, file = f)
+        print('Data %s has been saved.' % filename_timestamped)
+        # emit signal for any other module that is importing this function
+        self.fileSavedSignal.emit(full_filepath_data + '.dat')
         return
+
+    def get_params_to_be_saved(self):
+        dict_to_be_saved = {}
+        dict_to_be_saved["Acquisition mode"] = self.acq_mode
+        dict_to_be_saved["Grating"] = self.grating
+        dict_to_be_saved["Pre-amp"] = self.preamp_value
+        dict_to_be_saved["HSSpeed"] = self.hsspeed_value
+        dict_to_be_saved["Exposure time (s)"] = self.exposure_time
+        dict_to_be_saved["Sensor temperature (°C)"] = self.sensor_temp
+        dict_to_be_saved["Number of acquisitions"] = self.number_of_acquisitions
+        return dict_to_be_saved
 
     @pyqtSlot()    
     def close(self):
