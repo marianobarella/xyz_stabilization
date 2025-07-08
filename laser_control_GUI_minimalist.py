@@ -147,9 +147,17 @@ class Frontend(QtGui.QFrame):
 
     def flipperSpectrometerButton_check(self):
         if self.flipperSpectrometerButton.isChecked():
+            # check if trapping laser is ON and close the shutter to protect the spectrometer
+            if self.shutterTrappingLaserButton.isChecked():
+                self.shutterTrappingSignal.emit(False)
+                self.shutterTrappingLaserButton.setChecked(False)
             self.flipper_spectrometer_path_signal.emit(True)
+            # disable trapping laser while the spectrometer path is slected
+            self.shutterTrappingLaserButton.setEnabled(False)
         else:
             self.flipper_spectrometer_path_signal.emit(False)
+            # restore the trapping laser checkbox
+            self.shutterTrappingLaserButton.setEnabled(True)
         return
 
     def flipperTrappingLaserButton_check(self):
