@@ -503,7 +503,9 @@ class Backend(QtCore.QObject):
         self.filename = initial_filename
         self.wavelength_array = initial_wavelength_array
         self.number_of_acquisitions = 1
-        self.acq_mode = 'fvb'
+        self.acq = 'Full Vertical Binning'
+        self.preamp = '1'
+        self.hsspeed = '3.0'
         self.image = initial_image
         self.start_camera()
         self.live_flag = False
@@ -513,7 +515,7 @@ class Backend(QtCore.QObject):
     def start_camera(self):
         self.set_shutter_state(0)
         print('Is camera opened?', self.myCamera.is_opened())
-        self.myCamera.set_read_mode(self.acq_mode)
+        self.set_camera_configuration(self.acq, self.preamp, self.hsspeed)
         fan_mode = 'full' # Options are 'full', 'low' or 'off'
         self.myCamera.set_fan_mode(fan_mode)
         self.myCamera.set_cooler(on = True)
