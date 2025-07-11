@@ -87,6 +87,7 @@ class Frontend(QtGui.QFrame):
         self.set_working_dir()
         self.set_filename()
         self.wavelength_array = initial_wavelength_array
+        self.autolevel_bool = False
         self.get_image(initial_image)
         self.hist._updateView
         self.file_path = initial_filepath
@@ -342,7 +343,7 @@ class Frontend(QtGui.QFrame):
 
     @pyqtSlot(np.ndarray)
     def get_image(self, image):
-        self.cam_image.setImage(image)
+        self.cam_image.setImage(image, autoLevels = self.autolevel_bool)
         return
 
     def camera_configuration(self):
