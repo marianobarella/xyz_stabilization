@@ -39,9 +39,12 @@ mono_to_color_processor = tl_cam.init_Thorlabs_color_camera(camera_constructor)
 
 camera = color_cam
 pixel_size = color_cam_sensor_pixel_width_um/100
+
+# initial parameters
 initial_filepath = 'D:\\daily_data\\inspection_cam' # save in SSD for fast and daily use
 initial_filename = 'image_Thorcam'
 initial_gain = 240 # int
+initial_autolevel_state = True
 
 # initial fake image
 initial_image_np = 128*np.ones((1080, 1440, 3))
@@ -98,11 +101,10 @@ class Frontend(QtGui.QFrame):
         self.imageWidget.addItem(self.hist, row = 0, col = 1)
 
         self.autolevel_tickbox = QtGui.QCheckBox('Autolevel')
-        self.initial_autolevel_state = True
-        self.autolevel_tickbox.setChecked(self.initial_autolevel_state)
+        self.autolevel_tickbox.setChecked(initial_autolevel_state)
         self.autolevel_tickbox.setText('Autolevel')
         self.autolevel_tickbox.stateChanged.connect(self.autolevel)
-        self.autolevel_bool = self.initial_autolevel_state
+        self.autolevel_bool = initial_autolevel_state
 
         # Buttons and labels
         self.take_picture_button = QtGui.QPushButton('Take a picture')
