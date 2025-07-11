@@ -27,6 +27,7 @@ initial_blue_power = 15 # in mW
 class Frontend(QtGui.QFrame):
     
     shutterTrappingSignal = pyqtSignal(bool) 
+    shutterSafetySignal = pyqtSignal(bool) 
     shutterWhiteSignal = pyqtSignal(bool) 
     shutter488_signal = pyqtSignal(bool)
     flipper_apd_signal = pyqtSignal(bool)
@@ -56,6 +57,12 @@ class Frontend(QtGui.QFrame):
         self.shutterWhiteLaserButton.clicked.connect(self.control_white_laser_button_check)
         self.shutterWhiteLaserButton.setStyleSheet("color: black; ")
         self.shutterWhiteLaserButton.setToolTip('Open/close white laser shutter')
+
+        self.shutterSafetyLaserButton = QtGui.QCheckBox('Safety shutter')
+        self.shutterSafetyLaserButton.clicked.connect(self.control_safety_shutter_button_check)
+        self.shutterSafetyLaserButton.setChecked(True)
+        self.shutterSafetyLaserButton.setStyleSheet("color: darkGreen; ")
+        self.shutterSafetyLaserButton.setToolTip('Open/close NIR laser second shutter')
 
         self.shutter488button = QtGui.QCheckBox('488 nm')
         self.shutter488button.clicked.connect(self.control_488_button_check)
@@ -96,13 +103,14 @@ class Frontend(QtGui.QFrame):
         minimalist_box_layout.setSpacing(0)
         self.minimalist_box.setLayout(minimalist_box_layout)
         minimalist_box_layout.addWidget(self.shutterTrappingLaserButton, 0, 0)
-        minimalist_box_layout.addWidget(self.flipperTrappingLaserButton, 0, 1)
-        minimalist_box_layout.addWidget(self.shutter488button, 1, 0)
-        minimalist_box_layout.addWidget(power488_label, 1, 1)
-        minimalist_box_layout.addWidget(self.power488_edit, 1, 2)
-        minimalist_box_layout.addWidget(self.flipperAPDButton, 2, 0)
-        minimalist_box_layout.addWidget(self.flipperSpectrometerButton, 2, 1)
-        minimalist_box_layout.addWidget(self.shutterWhiteLaserButton, 3, 1)
+        minimalist_box_layout.addWidget(self.flipperTrappingLaserButton, 0, 1, 1, 21)
+        minimalist_box_layout.addWidget(self.shutterSafetyLaserButton, 1, 0)
+        minimalist_box_layout.addWidget(self.shutter488button, 2, 0)
+        minimalist_box_layout.addWidget(power488_label, 2, 1)
+        minimalist_box_layout.addWidget(self.power488_edit, 2, 2)
+        minimalist_box_layout.addWidget(self.flipperAPDButton, 3, 0)
+        minimalist_box_layout.addWidget(self.flipperSpectrometerButton, 3, 1)
+        minimalist_box_layout.addWidget(self.shutterWhiteLaserButton, 4, 1)
 
         # Place layouts and boxes
         dockArea = DockArea()
@@ -124,6 +132,13 @@ class Frontend(QtGui.QFrame):
            self.shutterTrappingSignal.emit(False)
         return
     
+    def control_safety_shutter_button_check(self):
+        if self.shutterSafetyLaserButton.isChecked():
+           self.shutterSafetySignal.emit(True)
+        else:
+           self.shutterSafetySignal.emit(False)
+        return
+
     def control_white_laser_button_check(self):
         if self.shutterWhiteLaserButton.isChecked():
            self.shutterWhiteSignal.emit(True)
@@ -150,7 +165,12 @@ class Frontend(QtGui.QFrame):
             # check if trapping laser is ON and close the shutter to protect the spectrometer
             if self.shutterTrappingLaserButton.isChecked():
                 self.shutterTrappingSignal.emit(False)
+                # change the button state
                 self.shutterTrappingLaserButton.setChecked(False)
+            # close safety shutter
+            self.shutterSafetySignal.emit(False)
+            self.shutterSafetyLaserButton.setChecked(False)
+            # send flipper signal
             self.flipper_spectrometer_path_signal.emit(True)
             # disable trapping laser while the spectrometer path is slected
             self.shutterTrappingLaserButton.setEnabled(False)
@@ -158,6 +178,9 @@ class Frontend(QtGui.QFrame):
             self.flipper_spectrometer_path_signal.emit(False)
             # restore the trapping laser checkbox
             self.shutterTrappingLaserButton.setEnabled(True)
+            # open safety shutter
+            self.shutterSafetySignal.emit(True)
+            self.shutterSafetyLaserButton.setChecked(True)
         return
 
     def flipperTrappingLaserButton_check(self):
@@ -211,7 +234,6 @@ class Backend(QtCore.QObject):
         print('Ports available:', list_of_serial_ports)   
         # build laser objects 
         self.laser488 = laserToolbox.toptica_laser(debug_mode = False)
-        # self.shutterTrappingLaserObject = laserToolbox.Thorlabs_shutter(debug_mode = False)
         self.shuttersObject = laserToolbox.shutters(daq_board) # initialize shutter and closes them all
         # build flippers objects
         self.flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
@@ -228,15 +250,18 @@ class Backend(QtCore.QObject):
         self.flipper_trapping_laser_attenuation(True) # set filters IN
         self.flipper_apd_attenuation(True) # set filters IN
         self.flipper_select_spectrometer(False) # set filters OUT
+        for i in range(5):
+            self.shutterSafetyLaser(False) # let the safety shutter OPEN
+            tm.sleep(1)
+            self.shutterSafetyLaser(True) # let the safety shutter OPEN
+            tm.sleep(1)
         return
 
     @pyqtSlot(bool)
     def shutterTrappingLaser(self, shutterbool):
         if shutterbool:
-            # self.shutterTrappingLaserObject.shutter('open')
             self.shuttersObject.open_shutter('NIR')
         else:
-            # self.shutterTrappingLaserObject.shutter('close')
             self.shuttersObject.close_shutter('NIR')
         return
     
@@ -247,7 +272,15 @@ class Backend(QtCore.QObject):
         else:
             self.shuttersObject.close_shutter('white')
         return
-    
+
+    @pyqtSlot(bool)
+    def shutterSafetyLaser(self, shutterbool):
+        if shutterbool:
+            self.shuttersObject.open_shutter('safety')
+        else:
+            self.shuttersObject.close_shutter('safety')
+        return 
+
     @pyqtSlot(bool)
     def shutter488(self, shutterbool):
         if shutterbool:
@@ -306,6 +339,7 @@ class Backend(QtCore.QObject):
        
     def make_connections(self, frontend):
         frontend.shutterTrappingSignal.connect(self.shutterTrappingLaser)
+        frontend.shutterSafetySignal.connect(self.shutterSafetyLaser)
         frontend.shutterWhiteSignal.connect(self.shutterWhiteLaser)
         frontend.shutter488_signal.connect(self.shutter488)
         frontend.flipper_apd_signal.connect(self.flipper_apd_attenuation)

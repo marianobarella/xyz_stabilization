@@ -42,7 +42,7 @@ COM_pump = 'COM4' # microfluidics pump NOT USED HERE
 shutter_number_dict = {
     'NIR': 1, # Toptica NIR TA pro laser
     'white': 0, # NKT SuperK white laser
-    'tisa': 2 # Ti:Sa laser
+    'safety': 2 # second shutter for Toptica NIR TA pro laser
 }
 
 def serial_ports():
@@ -490,92 +490,93 @@ class motorized_flipper(object):
         tm.sleep(0.2)
         return
 
-#=====================================
+# #=====================================
 
-# Thorlabs Shutter Class Definitions 
+# # DEPREDICATED - DEPREDICATED - DEPREDICATED
+# # Shutters are now controlled using TTL signals triggered by the DAQ board
+# # This class is not used anymore
 
-# This class is used to control the Thorlabs shutter SC10
-# Newwer setup configuration uses Trigger signals from the DAQ board
-# to control the shutter, so this class is not used anymore
+# # Thorlabs Shutter Class Definitions 
+# # This class is used to control the Thorlabs shutter SC10
 
-#=====================================
+# #=====================================
 
-class Thorlabs_shutter(object):
+# class Thorlabs_shutter(object):
 
-    def __init__(self, debug_mode):
-        # Parameters for SC10 controller
-        self.baudRate = 9600 # default value for the SC10 unit
-        self.serialPort = COM_port_shutter_Thorlabs
-        self.debug_mode = debug_mode
-        self.serialInstance = initSerial(self.serialPort, self.baudRate)
-        self.initialize()
-        return
+#     def __init__(self, debug_mode):
+#         # Parameters for SC10 controller
+#         self.baudRate = 9600 # default value for the SC10 unit
+#         self.serialPort = COM_port_shutter_Thorlabs
+#         self.debug_mode = debug_mode
+#         self.serialInstance = initSerial(self.serialPort, self.baudRate)
+#         self.initialize()
+#         return
     
-    def initialize(self):
-        self.set_mode()
-        self.shutter('close')
-        return
+#     def initialize(self):
+#         self.set_mode()
+#         self.shutter('close')
+#         return
     
-    def ask_model(self):
-        command = 'id?\r'
-        reply = sendCommand(command, self.serialInstance, self.debug_mode)
-        reply_clean_string = reply.split('\r')[1]
-        return reply_clean_string
+#     def ask_model(self):
+#         command = 'id?\r'
+#         reply = sendCommand(command, self.serialInstance, self.debug_mode)
+#         reply_clean_string = reply.split('\r')[1]
+#         return reply_clean_string
     
-    def set_mode(self):
-        command = 'mode=1\r'
-        reply = sendCommand(command, self.serialInstance, self.debug_mode)
-        reply_clean_string = reply.split('\r')[1]
-        return reply_clean_string
+#     def set_mode(self):
+#         command = 'mode=1\r'
+#         reply = sendCommand(command, self.serialInstance, self.debug_mode)
+#         reply_clean_string = reply.split('\r')[1]
+#         return reply_clean_string
     
-    def toggle(self):
-        command = 'ens\r'
-        sendCommand(command, self.serialInstance, self.debug_mode)
-        return
+#     def toggle(self):
+#         command = 'ens\r'
+#         sendCommand(command, self.serialInstance, self.debug_mode)
+#         return
     
-    def get_state(self):
-        command = 'closed?\r'
-        reply = sendCommand(command, self.serialInstance, self.debug_mode)
-        reply_clean_string = reply.split('\r')[1]
-        state = int(reply_clean_string)
-        if reply_clean_string == '1':
-            if self.debug_mode:
-                print('Shutter is closed.')
-            # 1 means closed
-        elif reply_clean_string == '0':
-            if self.debug_mode:
-                print('Shutter is opened.')
-            # 0 means opened
-        else:
-            if self.debug_mode:
-                print('Error! Shutter state cannot be determined.')
-            # other numbers mean undefined state
-        return state
+#     def get_state(self):
+#         command = 'closed?\r'
+#         reply = sendCommand(command, self.serialInstance, self.debug_mode)
+#         reply_clean_string = reply.split('\r')[1]
+#         state = int(reply_clean_string)
+#         if reply_clean_string == '1':
+#             if self.debug_mode:
+#                 print('Shutter is closed.')
+#             # 1 means closed
+#         elif reply_clean_string == '0':
+#             if self.debug_mode:
+#                 print('Shutter is opened.')
+#             # 0 means opened
+#         else:
+#             if self.debug_mode:
+#                 print('Error! Shutter state cannot be determined.')
+#             # other numbers mean undefined state
+#         return state
     
-    def shutter(self, action):
-        # ask state
-        state = self.get_state()
-        if action == 'close' and state == 1:
-            print('Shutter already closed')
-        elif action == 'close' and state == 0:
-            self.toggle()
-            print('Shutter closed')
-        elif action == 'open' and state == 1:
-            self.toggle()
-            print('Shutter opened')
-        elif action == 'open' and state == 0:
-            print('Shutter already opened')
-        else:
-            print('Action was not determined.')
-        return 
+#     def shutter(self, action):
+#         # ask state
+#         state = self.get_state()
+#         if action == 'close' and state == 1:
+#             print('Shutter already closed')
+#         elif action == 'close' and state == 0:
+#             self.toggle()
+#             print('Shutter closed')
+#         elif action == 'open' and state == 1:
+#             self.toggle()
+#             print('Shutter opened')
+#         elif action == 'open' and state == 0:
+#             print('Shutter already opened')
+#         else:
+#             print('Action was not determined.')
+#         return 
     
-    def close(self):
-        tm.sleep(0.1)
-        print('Closing shutter communication. Clearing serial buffer...')
-        self.serialInstance.flush() # empty serial buffer
-        self.shutter('close')
-        closeSerial(self.serialInstance)
-        return
+#     def close(self):
+#         tm.sleep(0.1)
+#         print('Closing shutter communication. Clearing serial buffer...')
+#         self.serialInstance.flush() # empty serial buffer
+#         self.shutter('close')
+#         closeSerial(self.serialInstance)
+#         return
     
 
 #======================================

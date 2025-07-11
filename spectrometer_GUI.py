@@ -23,12 +23,11 @@ import pylablib
 pylablib.par["devices/dlls/andor_sdk2"] = "C:\\Program Files\\Andor SOLIS"
 from pylablib.devices import Andor
 
-# Spectrometer
+# Spectrometer Kymera 328i
 DEVICE = 0
-GRATING_300_LINES = 1
-GRATING_500_LINES = 2
-GRATING_MIRROR = 3
-nameGrating = ['300 lines/mm', '500 lines/mm', 'Mirror']
+gratingList = ['300 lines/mm', '500 lines/mm', 'Mirror']
+# DO NOT MODIFIED THE FOLLOWING DICT
+GRATING = {'300 lines/mm': 1, '500 lines/mm': 2, 'Mirror': 3}
 OPEN_SHUTTER = 1
 CLOSE_SHUTTER = 0
 
@@ -38,7 +37,7 @@ PixelWidth = 26 # um
 acqModeList = ['Full Vertical Binning', 'Image']
 initial_exp_time = 100 # in ms
 initial_cam_temp_tickbox_state = False
-initial_focus_mirror_step = 237
+initial_focus_mirror_step = 200
 tempTimer_update = 30000 # in ms
 preampList = ['1', '2', '4']
 hsspeedList = ['3.0', '1.0', '0.05']
@@ -62,7 +61,8 @@ initial_autolevel_state = False
 
 class Frontend(QtGui.QFrame):
 
-    spectrometerFrontendSignal = pyqtSignal(str, str)
+    gratingFrontendSignal = pyqtSignal(str)
+    focusMirrorFrontendSignal = pyqtSignal(int)
     zeroorderSignal = pyqtSignal()
     wavelengthSignal = pyqtSignal(float)
     shutterSignal = pyqtSignal(int)
@@ -102,18 +102,25 @@ class Frontend(QtGui.QFrame):
         # Grating settings
         grating_label = QtGui.QLabel('Grating:')
         self.grating = QtGui.QComboBox()
-        self.grating.addItems(nameGrating)
+        self.grating.addItems(gratingList)
         self.grating.setCurrentIndex(0)
         self.grating.setFixedWidth(150)
+
+        self.set_grating_button = QtGui.QPushButton('Set grating')  
+        self.set_grating_button.clicked.connect(self.spectrum_grating_configuration)
+        self.set_grating_button.setStyleSheet(
+            "QPushButton:pressed { background-color: lightcoral; }")
 
         # focus mirror accessory
         focus_mirror_label = QtGui.QLabel('Focus mirror step:')
         self.focus_mirror_edit = QtGui.QLineEdit(str(initial_focus_mirror_step))
-        self.focus_mirror_edit.setValidator(QtGui.QIntValidator(0, 100)) # TODO find max focus mirror step
-        
-        self.set_configuration_spectrometer_button = QtGui.QPushButton('Set configuration')
-        self.set_configuration_spectrometer_button.clicked.connect(self.spectrum_configuration)
-        self.set_configuration_spectrometer_button.setStyleSheet(
+        self.focus_mirror_edit.setValidator(QtGui.QIntValidator(0, 550))
+        self.focus_mirror_edit.setFixedWidth(150)
+        self.focus_mirror_edit.setToolTip('Change position of the focusing mirror. Values range from 0 to 550.')
+
+        self.set_focus_mirror_button = QtGui.QPushButton('Set focus mirror')
+        self.set_focus_mirror_button.clicked.connect(self.spectrum_focus_mirror_configuration)
+        self.set_focus_mirror_button.setStyleSheet(
             "QPushButton:pressed { background-color: lightcoral; }")
 
         self.zero_order_button = QtGui.QPushButton('Go to zero order')
@@ -127,9 +134,10 @@ class Frontend(QtGui.QFrame):
         self.shutter_button.setStyleSheet(
             "QPushButton:pressed { background-color: lightcoral; }")
 
-        lambda_label = QtGui.QLabel('Center λ (nm):')
-        self.lambda_Edit = QtGui.QLineEdit('0.0')
-        self.lambda_Edit.setValidator(QtGui.QDoubleValidator(0.0, 3000.0, 1))
+        wavelength_label = QtGui.QLabel('Center λ (nm):')
+        self.wavelength_edit = QtGui.QLineEdit('0.0')
+        self.wavelength_edit.setValidator(QtGui.QDoubleValidator(0.0, 3000.0, 1))
+        self.wavelength_edit.setFixedWidth(150)
 
         self.set_wavelength_button = QtGui.QPushButton('Set Wavelength')
         self.set_wavelength_button.clicked.connect(self.spectrum_set_wavelength)
@@ -272,12 +280,15 @@ class Frontend(QtGui.QFrame):
         self.spectrumWidget.setLayout(spectrum_parameters_layout)
         spectrum_parameters_layout.addWidget(grating_label,                     0, 0)
         spectrum_parameters_layout.addWidget(self.grating,                      0, 1)
-        spectrum_parameters_layout.addWidget(self.set_configuration_spectrometer_button,     1, 0, 1, 2)
-        spectrum_parameters_layout.addWidget(lambda_label,                      2, 0)
-        spectrum_parameters_layout.addWidget(self.lambda_Edit,                  2, 1)
-        spectrum_parameters_layout.addWidget(self.set_wavelength_button,        3, 0)
-        spectrum_parameters_layout.addWidget(self.zero_order_button,            3, 1)
-        spectrum_parameters_layout.addWidget(self.shutter_button,               4, 0, 1, 2)
+        spectrum_parameters_layout.addWidget(self.set_grating_button,           1, 0, 1, 2)
+        spectrum_parameters_layout.addWidget(focus_mirror_label,                2, 0)
+        spectrum_parameters_layout.addWidget(self.focus_mirror_edit,            2, 1)
+        spectrum_parameters_layout.addWidget(self.set_focus_mirror_button,      3, 0, 1, 2)
+        spectrum_parameters_layout.addWidget(wavelength_label,                  4, 0)
+        spectrum_parameters_layout.addWidget(self.wavelength_edit,              4, 1)
+        spectrum_parameters_layout.addWidget(self.set_wavelength_button,        5, 0)
+        spectrum_parameters_layout.addWidget(self.zero_order_button,            5, 1)
+        spectrum_parameters_layout.addWidget(self.shutter_button,               6, 0, 1, 2)
 
         self.camWidget = QtGui.QWidget()
         camera_parameters_layout = QtGui.QGridLayout()
@@ -334,18 +345,23 @@ class Frontend(QtGui.QFrame):
         self.setLayout(hbox)
         return
 
-    def spectrum_configuration(self):
+    def spectrum_grating_configuration(self):
         grating = str(self.grating.currentText())       
-        focus_mirror_step = str(self.focus_mirror_edit.currentText())
-        self.spectrometerFrontendSignal.emit(grating, focus_mirror_step)
+        self.gratingFrontendSignal.emit(grating)
         return
         
+    def spectrum_focus_mirror_configuration(self):
+        focus_mirror_steps = int(self.focus_mirror_edit.text())
+        self.focusMirrorFrontendSignal.emit(focus_mirror_steps)
+        return
+
     def spectrum_set_wavelength(self):
-        wavelength = float(self.lambda_Edit.text())
+        wavelength = float(self.wavelength_edit.text())
         self.wavelengthSignal.emit(wavelength)
         return
 
     def zero_order_check(self):
+        self.wavelength_edit.setText('0.0')
         self.zeroorderSignal.emit()
         return
 
@@ -513,12 +529,6 @@ class Backend(QtCore.QObject):
         super().__init__(*args, **kwargs)
         self.myCamera = myCamera
         self.mySpectrometer = mySpectrometer
-        self.mySpectrometer.ShamrockSetNumberPixels(DEVICE, NumberofPixel)
-        self.mySpectrometer.ShamrockSetPixelWidth(DEVICE, PixelWidth)
-        self.grating = GRATING_300_LINES
-        self.mySpectrometer.ShamrockSetGrating(DEVICE, self.grating)
-        self.shutter_state = 0 # 0 = False, 1 = True
-        self.wavelength = 0.0
         self.viewSpecTimer = QtCore.QTimer()
         self.tempTimer = QtCore.QTimer()
         self.spectrum = initial_spectrum
@@ -528,18 +538,22 @@ class Backend(QtCore.QObject):
         self.filename = initial_filename
         self.wavelength_array = initial_wavelength_array
         self.number_of_acquisitions = 1
-        self.acq = 'Full Vertical Binning'
-        self.preamp = '1'
-        self.hsspeed = '3.0'
         self.image = initial_image
         self.start_camera()
+        self.start_spectrometer()
         self.live_flag = False
         self.sensor_temp = 99
         return
         
     def start_camera(self):
-        self.set_shutter_state(CLOSE_SHUTTER)
+        ret = self.mySpectrometer.ShamrockShutterIsPresent(DEVICE)
+        print('Is camera shutter present?', ret)
+        self.shutter_state = CLOSE_SHUTTER
+        self.set_shutter_state(self.shutter_state)
         print('Is camera opened?', self.myCamera.is_opened())
+        self.acq = 'Full Vertical Binning'
+        self.preamp = '1'
+        self.hsspeed = '3.0'
         self.set_camera_configuration(self.acq, self.preamp, self.hsspeed)
         fan_mode = 'full' # Options are 'full', 'low' or 'off'
         self.myCamera.set_fan_mode(fan_mode)
@@ -551,34 +565,41 @@ class Backend(QtCore.QObject):
         print('Camera status:', self.myCamera.get_status())
         return
 
-    @pyqtSlot(str, str)
-    def set_spec_configuration(self, grating, focus_mirror_step):
-        print('Changing grating...')
-        if grating == nameGrating[0]:
-           ret = self.mySpectrometer.ShamrockSetGrating(DEVICE, GRATING_300_LINES)
-           self.grating = GRATING_300_LINES
-           print(datetime.now(), '[Kymera] Mode Grating =', nameGrating[0], ', Code', ret)
-           self.gratingBackendSignal.emit(nameGrating[0])  #to StepandGlue set_wavelength_window
-        elif grating == nameGrating[1]:
-           ret = self.mySpectrometer.ShamrockSetGrating(DEVICE, GRATING_500_LINES)
-           self.grating = GRATING_500_LINES
-           self.gratingBackendSignal.emit(nameGrating[1]) #to StepandGlue set_wavelength_window
-           print(datetime.now(), '[Kymera] Mode Grating =', nameGrating[1], ', Code', ret)
-        else:
-           ret = self.mySpectrometer.ShamrockSetGrating(DEVICE, GRATING_MIRROR)
-           self.grating = GRATING_MIRROR
-           print(datetime.now(), '[Kymera] Mode Grating =', nameGrating[2], ', Code', ret)
-        (ret, Lines, Blaze, Home, Offset) = self.mySpectrometer.ShamrockGetGratingInfo(DEVICE, self.grating)
-        print('Current grating information: ', Lines, 'lines/mm', Blaze.decode('UTF-8'), Home, Offset)
-        
-
-        (ret, present) = self.mySpectromoter.ShamrockFocusMirrorIsPresent(DEVICE)
-        print(ret, present)
-        (ret, maxsteps) = self.mySpectromoter.ShamrockGetFocusMirrorMaxSteps(DEVICE)
+    def start_spectrometer(self):
+        self.mySpectrometer.ShamrockSetNumberPixels(DEVICE, NumberofPixel)
+        self.mySpectrometer.ShamrockSetPixelWidth(DEVICE, PixelWidth)
+        self.grating = '300 lines/mm'
+        self.set_grating(self.grating)
+        self.wavelength = 0.0
+        (ret, present) = self.mySpectrometer.ShamrockFocusMirrorIsPresent(DEVICE)
+        print('Is focus mirror present?', present)
+        (ret, maxsteps) = self.mySpectrometer.ShamrockGetFocusMirrorMaxSteps(DEVICE)
         print('Max focus mirror steps: ', maxsteps)
-        (ret, current_focus_mirror_steps) = self.mySpectromoter.ShamrockGetFocusMirror(DEVICE)
+        (ret, current_focus_mirror_steps) = self.mySpectrometer.ShamrockGetFocusMirror(DEVICE)
         print('Current focus mirror steps:', current_focus_mirror_steps)
-        ret = self.mySpectromoter.ShamrockSetFocusMirror(DEVICE, relative_focus_mirror_steps)
+        return
+    
+    @pyqtSlot(str)
+    def set_grating(self, grating):
+        print('Changing grating...')
+        self.grating = grating
+        self.grating_number = GRATING[self.grating]
+        ret = self.mySpectrometer.ShamrockSetGrating(DEVICE, self.grating_number)
+        print(datetime.now(), '[Kymera] Grating =', self.grating, ', Code', ret)
+        tm.sleep(0.2)
+        (ret, Lines, Blaze, Home, Offset) = self.mySpectrometer.ShamrockGetGratingInfo(DEVICE, self.grating_number)
+        print('Current grating information: ', Lines, 'lines/mm', Blaze.decode('UTF-8'), Home, Offset)
+        return
+
+    @pyqtSlot(int)
+    def set_focus_mirror(self, focus_mirror_steps):
+        print('Setting new focus mirror position...')
+        (ret, current_focus_mirror_steps) = self.mySpectrometer.ShamrockGetFocusMirror(DEVICE)
+        relative_focus_mirror_steps = focus_mirror_steps - current_focus_mirror_steps
+        ret = self.mySpectrometer.ShamrockSetFocusMirror(DEVICE, relative_focus_mirror_steps)
+        tm.sleep(0.2)
+        (ret, current_focus_mirror_steps) = self.mySpectrometer.ShamrockGetFocusMirror(DEVICE)
+        print('Current focus mirror steps:', current_focus_mirror_steps)
         return
 
     @pyqtSlot()
@@ -606,9 +627,6 @@ class Backend(QtCore.QObject):
 
     @pyqtSlot(int)
     def set_shutter_state(self, shutter_state):
-        # is shutter present?
-        # ret = self.mySpectrometer.ShamrockShutterIsPresent(DEVICE)
-        # print(ret)
         ret = self.mySpectrometer.ShamrockSetShutter(DEVICE, shutter_state)
         (ret, state) = self.mySpectrometer.ShamrockGetShutter(DEVICE)
         if state == CLOSE_SHUTTER:
@@ -650,17 +668,16 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool, float)
     def live_spec_view(self, live_spec_bool, exposure_time_ms):
         if live_spec_bool:
-            self.set_shutter_state(OPEN_SHUTTER) # opens shutter
             self.start_live_spec_view(exposure_time_ms)
         else:
             self.stop_live_spec_view()
-            self.set_shutter_state(CLOSE_SHUTTER) # closes shutter
         return
 
     def start_live_spec_view(self, exposure_time_ms):
         self.live_flag = True
         self.spectrum_number = 0
         print('\nLive spec view started at', datetime.now())
+        self.set_shutter_state(OPEN_SHUTTER) # opens shutter
         self.set_exposure_time(False, exposure_time_ms)
         self.myCamera.setup_acquisition(mode = 'cont', nframes = self.number_of_acquisitions)
         self.myCamera.start_acquisition()
@@ -671,6 +688,7 @@ class Backend(QtCore.QObject):
         self.live_flag = False
         print('\nLive spec view stopped at', datetime.now())
         self.myCamera.stop_acquisition()
+        self.set_shutter_state(CLOSE_SHUTTER) # closes shutter
         self.viewSpecTimer.stop()
         return
 
@@ -852,7 +870,8 @@ class Backend(QtCore.QObject):
         return     
 
     def make_connection(self, frontend): 
-        frontend.spectrometerFrontendSignal.connect(self.set_spec_configuration)
+        frontend.gratingFrontendSignal.connect(self.set_grating)
+        frontend.focusMirrorFrontendSignal.connect(self.set_focus_mirror)
         frontend.cameraModeFrontendSignal.connect(self.set_camera_configuration)
         frontend.zeroorderSignal.connect(self.goto_zeroorder) 
         frontend.wavelengthSignal.connect(self.set_wavelength)
