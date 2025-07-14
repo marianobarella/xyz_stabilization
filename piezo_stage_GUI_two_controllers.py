@@ -62,12 +62,12 @@ class Frontend(QtGui.QFrame):
         # Read position from piezo controller
         self.read_pos_button = QtGui.QPushButton('Read position')
         self.read_pos_button.clicked.connect(self.get_pos)
-        self.read_pos_button.setToolTip('Get current position from the piezo controller')
+        self.read_pos_button.setToolTip('Get current position from the piezo controller.')
         
         # Zero the stage
-        self.zeroingButton = QtGui.QPushButton('Zero the stage')
+        self.zeroingButton = QtGui.QPushButton('Zero the stage and center')
         self.zeroingButton.clicked.connect(self.zero)
-        self.zeroingButton.setToolTip('Send instruction to zero the 3 axes')
+        self.zeroingButton.setToolTip('Send instruction to zero the 3 axes and go to the center of their range.')
 
         # # Set reference
         # self.set_ref_button = QtGui.QPushButton("Set reference")
@@ -171,7 +171,7 @@ class Frontend(QtGui.QFrame):
         layout_xyz_control.addWidget(self.zStepEdit,    7, 5)
         # feedback loop mode
         layout_xyz_control.addWidget(self.feedback_loop_mode_tickbox,   8, 0, 1, 3)
-        layout_xyz_control.addWidget(self.zeroingButton,   8, 3, 1, 2)
+        layout_xyz_control.addWidget(self.zeroingButton,   8, 3, 1, 3)
 
         size = 40
         self.StepEdit.setFixedWidth(size)
@@ -187,12 +187,19 @@ class Frontend(QtGui.QFrame):
         self.xgotoLabel = QtGui.QLineEdit("10")
         self.ygotoLabel = QtGui.QLineEdit("10")
         self.zgotoLabel = QtGui.QLineEdit("10")
-        self.gotoButton = QtGui.QPushButton("Go to")
+        self.gotoButton = QtGui.QPushButton("Go to XYZ")
         self.gotoButton.pressed.connect(self.go_to)
         self.xgotoLabel.setValidator(QtGui.QDoubleValidator(0.000, 20.000, 3))
         self.ygotoLabel.setValidator(QtGui.QDoubleValidator(0.000, 20.000, 3))
         self.zgotoLabel.setValidator(QtGui.QDoubleValidator(0.000, 20.000, 3))
         
+        # self.gotoButtonX = QtGui.QPushButton("Go to X")
+        # self.gotoButtonY = QtGui.QPushButton("Go to Y")
+        # self.gotoButtonZ = QtGui.QPushButton("Go to Z")
+        # self.gotoButtonX.pressed.connect(self.go_to_x)
+        # self.gotoButtonY.pressed.connect(self.go_to_y)
+        # self.gotoButtonZ.pressed.connect(self.go_to_z)
+
         layout_goto.addWidget(self.gotoButton, 0, 0, 1, 2)
         layout_goto.addWidget(self.xgotoLabel, 1, 1)
         layout_goto.addWidget(self.ygotoLabel, 2, 1)
@@ -221,8 +228,6 @@ class Frontend(QtGui.QFrame):
         gotoDock.setOrientation('vertical')
         gotoDock.addWidget(self.gotoWidget)
         dockArea.addDock(gotoDock, 'left', readPosDock)
-
-
         
         hbox.addWidget(dockArea)
         self.setLayout(hbox)
@@ -230,7 +235,9 @@ class Frontend(QtGui.QFrame):
       
     def get_pos(self):
         if self.read_pos_button.isChecked:
-            self.read_pos_button_signal.emit()
+            self.xgotoLabel.setText('{}'.format(self.xLabel.text()))
+            self.ygotoLabel.setText('{}'.format(self.yLabel.text()))
+            self.zgotoLabel.setText('{}'.format(self.zLabel.text()))
         return
         
     def xUp(self):
@@ -295,7 +302,7 @@ class Frontend(QtGui.QFrame):
 
     def zero(self):
         if self.zeroingButton.isChecked:
-            reply = QtGui.QMessageBox.question(self, 'Zeroing warning', '\nAre you sure you want to zero the stage?\n \nThe stage will: \n- go idle \n- do a calibration \n- move to (0,0,0)',
+            reply = QtGui.QMessageBox.question(self, 'Zeroing warning', '\nAre you sure you want to zero the stage?\n \nThe stage will: \n- go idle for 35 s\n- do the calibration \n- move to (10,10,10)',
                                            QtGui.QMessageBox.No |
                                            QtGui.QMessageBox.Yes)
             if reply == QtGui.QMessageBox.Yes:
@@ -500,11 +507,13 @@ class Backend(QtCore.QObject):
     @pyqtSlot()
     def do_zeroing(self):
         """ 
-        Perform zeroing of the axes
+        Perform zeroing of the axes and move to the center of their range
         """
         self.piezo_stage_xy.zero('x')
         self.piezo_stage_xy.zero('y')
         self.piezo_stage_z.zero()
+        tm.sleep(5)
+        self.move_absolute([10, 10, 10])
         return
 
     def run(self):

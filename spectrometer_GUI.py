@@ -22,6 +22,7 @@ import os
 import pylablib
 pylablib.par["devices/dlls/andor_sdk2"] = "C:\\Program Files\\Andor SOLIS"
 from pylablib.devices import Andor
+import viewbox_tools
 
 # Spectrometer Kymera 328i
 DEVICE = 0
@@ -34,7 +35,7 @@ CLOSE_SHUTTER = 0
 # Camera Andor Newton DU920P-BEX2-DD
 NumberofPixel = 1024
 PixelWidth = 26 # um
-acqModeList = ['Full Vertical Binning', 'Image']
+acqModeList = ['Full Vertical Binning', 'Image', 'Single-Track']
 initial_exp_time = 100 # in ms
 initial_cam_temp_tickbox_state = False
 initial_focus_mirror_step = 200
@@ -44,7 +45,9 @@ hsspeedList = ['3.0', '1.0', '0.05']
 # DO NOT MODIFIED THE FOLLOWING DICTS
 HSSPEED = {'3.0': 0, '1.0': 1, '0.05': 2}
 PREAMP = {'1': 0, '2': 1, '4': 2}
-ACQMODE = {'Full Vertical Binning': 'fvb', 'Image': 'image'}
+ACQMODE = {'Full Vertical Binning': 'fvb', 'Image': 'image', 'Single-Track': 'single_track'}
+initial_center_row = 128
+initial_track_width = 51
 
 # other inputs
 # initial filepath and filename
@@ -66,7 +69,7 @@ class Frontend(QtGui.QFrame):
     zeroorderSignal = pyqtSignal()
     wavelengthSignal = pyqtSignal(float)
     shutterSignal = pyqtSignal(int)
-    cameraModeFrontendSignal = pyqtSignal(str, str, str)
+    cameraModeFrontendSignal = pyqtSignal(str, str, str, int, int)
     exposureChangedSignal = pyqtSignal(bool, float)
     liveSpecViewSignal = pyqtSignal(bool, float)
     takeSpectrumSignal = pyqtSignal(bool, float)
@@ -168,6 +171,17 @@ class Frontend(QtGui.QFrame):
         self.hsspeed.setFixedWidth(150)
         self.hsspeed.setToolTip('Horizontal shift speed of the readout register.')
 
+        # Sensor ROI entry for Single-Track mode
+        define_roi = QtGui.QLabel('Define ROI (single-track mode):')
+        center_row_label = QtGui.QLabel('Center row (pixel):')
+        track_width_label = QtGui.QLabel('Track width (pixels):')
+        self.center_row_edit = QtGui.QLineEdit(str(initial_center_row))
+        self.track_width_edit = QtGui.QLineEdit(str(initial_track_width))
+        self.center_row_edit.setValidator(QtGui.QIntValidator(1, 256))
+        self.track_width_edit.setValidator(QtGui.QIntValidator(1, 256))
+        self.center_row_edit.editingFinished.connect(self.roi_edit_changed)
+        self.track_width_edit.editingFinished.connect(self.roi_edit_changed)
+
         self.set_configuration_camera_button = QtGui.QPushButton('Set configuration')
         self.set_configuration_camera_button.clicked.connect(self.camera_configuration)
         self.set_configuration_camera_button.setStyleSheet(
@@ -244,6 +258,13 @@ class Frontend(QtGui.QFrame):
         self.experiment_name_edit = QtGui.QLineEdit('WRITE ME')
 
         ########################################## DATA VISUALIZATION
+        # show ROI button
+        self.show_ROI_button = QtGui.QPushButton('Show ROI')
+        self.show_ROI_button.setCheckable(True)
+        self.show_ROI_button.clicked.connect(self.show_ROI)
+        self.show_ROI_button.setStyleSheet(
+            "QPushButton:pressed { background-color: steelblue; }")
+
         # Widget for the spectrum data
         self.plotSpectrumWidget = pg.GraphicsLayoutWidget()
         self.spectrum_plot = self.plotSpectrumWidget.addPlot(row = 1, col = 1, title = 'Spectrum signal')
@@ -262,7 +283,7 @@ class Frontend(QtGui.QFrame):
         # self.vb.invertX(True)
         self.viewbox.addItem(self.cam_image)
         self.hist = pg.HistogramLUTItem(image = self.cam_image, levelMode = 'mono')
-        self.hist.gradient.loadPreset('greyclip')
+        self.hist.gradient.loadPreset('grey')
         self.hist.disableAutoHistogramRange()
         # 'thermal', 'flame', 'yellowy', 'bipolar', 'spectrum', 'cyclic', 'greyclip', 'grey'
         self.hist.vb.setLimits(yMin = 0, yMax = 65536) # 16-bit camera
@@ -299,27 +320,33 @@ class Frontend(QtGui.QFrame):
         camera_parameters_layout.addWidget(self.preamp,                         1, 1)
         camera_parameters_layout.addWidget(hsspeed_label,                       2, 0)
         camera_parameters_layout.addWidget(self.hsspeed,                        2, 1)
+        camera_parameters_layout.addWidget(define_roi,                          0, 2)
+        camera_parameters_layout.addWidget(center_row_label,                    1, 2)
+        camera_parameters_layout.addWidget(self.center_row_edit,                1, 3)
+        camera_parameters_layout.addWidget(track_width_label,                   2, 2)
+        camera_parameters_layout.addWidget(self.track_width_edit,               2, 3)
+        camera_parameters_layout.addWidget(self.show_ROI_button,                3, 3)
         camera_parameters_layout.addWidget(self.set_configuration_camera_button,3, 0, 1, 2)
-        camera_parameters_layout.addWidget(self.sensor_temp_label,              4, 0)
-        camera_parameters_layout.addWidget(self.sensor_temp_value,              4, 1)
-        camera_parameters_layout.addWidget(exp_time_label,                      5, 0)
-        camera_parameters_layout.addWidget(self.exp_time_edit,                  5, 1)
-        camera_parameters_layout.addWidget(number_of_acq_label,                 6, 0)
-        camera_parameters_layout.addWidget(self.number_of_acq_edit,             6, 1)
-        camera_parameters_layout.addWidget(self.take_spectrum_button,           7, 0, 1, 2)
-        camera_parameters_layout.addWidget(self.take_baseline_button,           7, 2, 1, 2)
-        camera_parameters_layout.addWidget(self.saveButton,                     8, 0)
-        camera_parameters_layout.addWidget(self.saveAutomaticallyBox,           8, 1)
-        camera_parameters_layout.addWidget(self.working_dir_label,              9, 0)
-        camera_parameters_layout.addWidget(self.working_dir_path,               9, 1)
-        camera_parameters_layout.addWidget(self.working_dir_button,             9, 2)
-        camera_parameters_layout.addWidget(experiment_name_label,               10, 0)
-        camera_parameters_layout.addWidget(self.experiment_name_edit,           10, 1)
-        camera_parameters_layout.addWidget(self.create_today_folder_button,     10, 2)
-        camera_parameters_layout.addWidget(self.filename_label,                 11, 0)
-        camera_parameters_layout.addWidget(self.filename_name,                  11, 1, 1, 2)
-        camera_parameters_layout.addWidget(self.live_spec_button,               12, 0, 1, 3)
-        camera_parameters_layout.addWidget(self.autolevel_tickbox,              13, 0)
+        camera_parameters_layout.addWidget(self.sensor_temp_label,              5, 0)
+        camera_parameters_layout.addWidget(self.sensor_temp_value,              5, 1)
+        camera_parameters_layout.addWidget(exp_time_label,                      6, 0)
+        camera_parameters_layout.addWidget(self.exp_time_edit,                  6, 1)
+        camera_parameters_layout.addWidget(number_of_acq_label,                 7, 0)
+        camera_parameters_layout.addWidget(self.number_of_acq_edit,             7, 1)
+        camera_parameters_layout.addWidget(self.take_spectrum_button,           8, 0, 1, 2)
+        camera_parameters_layout.addWidget(self.take_baseline_button,           8, 2, 1, 2)
+        camera_parameters_layout.addWidget(self.saveButton,                     9, 0)
+        camera_parameters_layout.addWidget(self.saveAutomaticallyBox,           9, 1)
+        camera_parameters_layout.addWidget(self.working_dir_label,              10, 0)
+        camera_parameters_layout.addWidget(self.working_dir_path,               10, 1, 1, 2)
+        camera_parameters_layout.addWidget(self.working_dir_button,             10, 3)
+        camera_parameters_layout.addWidget(experiment_name_label,               11, 0)
+        camera_parameters_layout.addWidget(self.experiment_name_edit,           11, 1, 1, 2)
+        camera_parameters_layout.addWidget(self.create_today_folder_button,     11, 3)
+        camera_parameters_layout.addWidget(self.filename_label,                 12, 0)
+        camera_parameters_layout.addWidget(self.filename_name,                  12, 1, 1, 2)
+        camera_parameters_layout.addWidget(self.live_spec_button,               13, 0, 1, 3)
+        camera_parameters_layout.addWidget(self.autolevel_tickbox,              13, 3)
 
         # Place layouts and boxes
         dockArea = DockArea()
@@ -390,7 +417,9 @@ class Frontend(QtGui.QFrame):
         acq_mode = str(self.acq_mode.currentText())
         preamp_mode = str(self.preamp.currentText())
         hsspeed_mode = str(self.hsspeed.currentText())
-        self.cameraModeFrontendSignal.emit(acq_mode, preamp_mode, hsspeed_mode) 
+        center_row = int(self.center_row_edit.text())
+        track_width = int(self.track_width_edit.text())
+        self.cameraModeFrontendSignal.emit(acq_mode, preamp_mode, hsspeed_mode, center_row, track_width) 
         return
 
     def exposure_changed_check(self):
@@ -446,6 +475,35 @@ class Frontend(QtGui.QFrame):
     @pyqtSlot(float)
     def get_temperature(self, sensor_temp):   
         self.sensor_temp_value.setText('%.1f °C' % sensor_temp)
+        return
+
+    def show_ROI(self):
+        # show ROI for single-track
+        if self.show_ROI_button.isChecked():
+            center_pos = int(self.center_row_edit.text())
+            roi_width = int(self.track_width_edit.text())
+            box_size = (1024, roi_width) # (columns, rows)
+            x_pos = center_pos - int(roi_width/2)
+            y_pos = 0
+            ROIpos = (y_pos, x_pos) # (column, row) of the bottom left corner of the box
+            self.roi = viewbox_tools.ROI_rect(box_size, self.viewbox, ROIpos,
+                                              handlePos = (1, 1),
+                                              handleCenter = (0, 0), 
+                                              scaleSnap = False,
+                                              translateSnap = True)
+        else:
+            self.viewbox.removeItem(self.roi)
+            self.roi.hide()
+            self.roi = {}
+        return
+
+    def roi_edit_changed(self):
+        if self.show_ROI_button.isChecked():
+            print('ROI has changed.')
+            self.viewbox.removeItem(self.roi)
+            self.roi.hide()
+            self.roi = {}
+            self.show_ROI()
         return
 
     def set_filename(self):
@@ -546,6 +604,7 @@ class Backend(QtCore.QObject):
         return
         
     def start_camera(self):
+        print('Image ring buffer size:', self.myCamera.get_buffer_size())
         ret = self.mySpectrometer.ShamrockShutterIsPresent(DEVICE)
         print('Is camera shutter present?', ret)
         self.shutter_state = CLOSE_SHUTTER
@@ -554,7 +613,9 @@ class Backend(QtCore.QObject):
         self.acq = 'Full Vertical Binning'
         self.preamp = '1'
         self.hsspeed = '3.0'
-        self.set_camera_configuration(self.acq, self.preamp, self.hsspeed)
+        self.center_row = initial_center_row
+        self.track_width = initial_track_width
+        self.set_camera_configuration(self.acq, self.preamp, self.hsspeed, self.center_row, self.track_width)
         fan_mode = 'full' # Options are 'full', 'low' or 'off'
         self.myCamera.set_fan_mode(fan_mode)
         self.myCamera.set_cooler(on = True)
@@ -638,17 +699,21 @@ class Backend(QtCore.QObject):
         print(datetime.now(), '[Kymera] Shutter action =', ret, ', Shutter state =', self.shutter_state)
         return  
 
-    @pyqtSlot(str, str, str)
-    def set_camera_configuration(self, acq_mode, preamp_mode, hsspeed_mode):
+    @pyqtSlot(str, str, str, int, int)
+    def set_camera_configuration(self, acq_mode, preamp_mode, hsspeed_mode, center_row, track_width):
         print('Setting camera configuration...')
         self.acq_mode = ACQMODE[acq_mode]
         self.myCamera.set_read_mode(self.acq_mode)
+        print('Read mode:', self.myCamera.get_read_mode())
+        if self.acq_mode == 'single_track':
+            self.myCamera.setup_single_track_mode(center = center_row, width = track_width)
+            ret = self.myCamera.get_single_track_mode_parameters()
+            print('Single-track parameters:', ret)
         self.preamp_value = PREAMP[preamp_mode]
         self.hsspeed_value = HSSPEED[hsspeed_mode]
         self.myCamera.set_amp_mode(channel = 0, oamp = 0, hsspeed = self.hsspeed_value, preamp = self.preamp_value)
         ret = self.myCamera.get_amp_mode()
-        print('Camera configuration:', ret)
-        print('Read mode', self.myCamera.get_read_mode())
+        print('Camera amplifier configuration:', ret)
         return
 
     @pyqtSlot(bool, float)
@@ -709,7 +774,7 @@ class Backend(QtCore.QObject):
         # update spectrum while in live spectrum view mode
         self.myCamera.wait_for_frame(timeout = (self.frame_timeout*self.number_of_acquisitions, self.frame_timeout))
         spectrum = self.myCamera.read_newest_image() # numpy array of size (1, 1024) that is a 2D array
-        if self.acq_mode == 'fvb':
+        if self.acq_mode == 'fvb' or self.acq_mode == 'single_track':
             self.spectrum = spectrum.ravel() # numpy array of size (1024,) that is a 1D array
             self.spectrumSignal.emit(self.spectrum)
         elif self.acq_mode == 'image':

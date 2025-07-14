@@ -200,7 +200,7 @@ class BPC303:
         else:
             print("\t- axis invalid)")
         sleep(30)
-        print('Ready.')
+        print('\nReady.')
         return
     
     def __zero_axis(self, axis):
@@ -209,10 +209,9 @@ class BPC303:
         """
         if axis in ("x", "y", "z"):
             channelno = self.axis_chan_mapping[axis]
-            print("\t- zeroing channel %d (%s axis) -->" % (channelno, axis), end="")
+            print("\t- zeroing channel %d (%s axis)..." % (channelno, axis), end="")
             channel = self.__get_chan(axis)
             channel.SetZero()
-            print(" done")
         else:
             print("\t- axis invalid)")
         return
@@ -499,7 +498,7 @@ class BPC301:
         print("Performing Set Zero:")
         self.__zero_axis()
         sleep(20)
-        print('Ready.')
+        print('\nReady.')
         return
     
     def __zero_axis(self):
@@ -508,10 +507,9 @@ class BPC301:
         """
         axis = 'z'
         channelno = self.axis_chan_mapping[axis]
-        print("\t- zeroing channel %d (%s axis) -->" % (channelno, axis), end="")
+        print("\t- zeroing channel %d (%s axis)..." % (channelno, axis), end="")
         channel = self.__get_chan()
         channel.SetZero()
-        print(" done")
         return
     
     def set_position(self, z=None): 

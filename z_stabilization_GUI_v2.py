@@ -23,7 +23,6 @@ import tkinter as tk
 import time as tm
 import piezo_stage_z_GUI # it uses the single-channel piezo controller
 import viewbox_tools
-
 from scipy import ndimage
 # from PyQt5.QtWidgets import QFrame
 import thorlabs_camera_toolbox as tl_cam
