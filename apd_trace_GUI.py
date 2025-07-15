@@ -47,7 +47,7 @@ number_of_channels = 2
 # set sampling rate
 initial_sampling_rate = 100e3 # in S/s
 # duration of the traces in s
-initial_duration = 4
+initial_duration = 20
 # define a fixed length (in s) for the time axis of viewbox signal vs time
 initial_viewbox_length = 2 # in s
 # define a downsampling period for visualization purposes
