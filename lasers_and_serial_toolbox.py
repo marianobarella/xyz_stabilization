@@ -45,6 +45,12 @@ shutter_number_dict = {
     'safety': 2 # second shutter for Toptica NIR TA pro laser
 }
 
+flipper_number_dict = {
+    'trapping_attenuation': 1, # trapping laser neutral density filter attenuator
+    'apd_attenuation': 2, # transmission signal attenuation
+    'spectrometer_selector': 3 # spectrometer/transmission path selector
+}
+
 def serial_ports():
     """ Lists serial port names
 
@@ -614,11 +620,51 @@ class shutters(object):
     def shutdown(self):
         """ Close the shutter task and clean up resources. """
         # Close all shutters before stopping the task
-        print('Closing shutters...')
         self.close_all_shutters()
         print('Stopping and closing the shutter task...')
         self.shutter_task.stop()
         self.shutter_task.close()
+        return
+
+#======================================
+
+class flippers(object):
+
+    def __init__(self, daq_board, debug_mode = False):
+        self.debug_mode = debug_mode
+        # initialize the flipper task
+        self.flipper_task = daq_toolbox.init_flippers(daq_board)
+        print('Flipper task created.')
+        self.close_all_flippers()
+        return
+
+    def open_flipper(self, flipper_name):
+        """ Open/flip up a specific flipper. """
+        print(f'Opening {flipper_name} flipper...')
+        flipper_number = flipper_number_dict[flipper_name]
+        daq_toolbox.open_flipper(self.flipper_task, flipper_number)
+        return
+    
+    def close_flipper(self, flipper_name):
+        """ Close/flip down a specific flipper. """
+        print(f'Closing {flipper_name} flipper...')
+        flipper_number = flipper_number_dict[flipper_name]
+        daq_toolbox.close_flipper(self.flipper_task, flipper_number)
+        return
+    
+    def close_all_flippers(self):
+        """ Close/flip down all flippers. """
+        print('Flipping down all flippers...')
+        daq_toolbox.close_all_flippers(self.flipper_task)
+        return
+
+    def shutdown(self):
+        """ Close the flipper task and clean up resources. """
+        # Close/flip down all flippers before stopping the task
+        self.close_all_flippers()
+        print('Stopping and closing the flipper task...')
+        self.flipper_task.stop()
+        self.flipper_task.close()
         return
 
 #======================================

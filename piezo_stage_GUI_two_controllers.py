@@ -60,9 +60,9 @@ class Frontend(QtGui.QFrame):
     def setUpGUI(self):
         # Buttons for positionning
         # Read position from piezo controller
-        self.read_pos_button = QtGui.QPushButton('Read position')
+        self.read_pos_button = QtGui.QPushButton('Copy position')
         self.read_pos_button.clicked.connect(self.get_pos)
-        self.read_pos_button.setToolTip('Get current position from the piezo controller.')
+        self.read_pos_button.setToolTip('Copy current position from the piezo controller top go-to sub-module.')
         
         # Zero the stage
         self.zeroingButton = QtGui.QPushButton('Zero the stage and center')

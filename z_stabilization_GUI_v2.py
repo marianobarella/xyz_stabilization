@@ -50,7 +50,7 @@ initial_image_np = 128*np.ones((1080, 1440, 3))
 dummy_image_np = initial_image_np
 # timing parameterss
 initial_tracking_period = 500 # in ms
-initial_exp_time = 50 # in ms
+initial_exp_time = 30 # in ms
 driftbox_length = 10.0 # in s
 initial_gain = 0 # int
 

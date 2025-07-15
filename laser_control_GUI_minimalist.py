@@ -16,7 +16,7 @@ import time as tm
 import daq_board_toolbox as daq_toolbox # for shutters control
 
 # set initial paramters
-initial_blue_power = 15 # in mW
+initial_blue_power = 5 # in mW
 
 #=====================================
 
@@ -250,11 +250,6 @@ class Backend(QtCore.QObject):
         self.flipper_trapping_laser_attenuation(True) # set filters IN
         self.flipper_apd_attenuation(True) # set filters IN
         self.flipper_select_spectrometer(False) # set filters OUT
-        for i in range(5):
-            self.shutterSafetyLaser(False) # let the safety shutter OPEN
-            tm.sleep(1)
-            self.shutterSafetyLaser(True) # let the safety shutter OPEN
-            tm.sleep(1)
         return
 
     @pyqtSlot(bool)

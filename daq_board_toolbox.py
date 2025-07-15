@@ -41,6 +41,8 @@ apd_copy_ch = 4 # analog input (ai) for the copy of the apd signal, where it's c
 power_pd_copy_ch = 5 # analog input (ai) for the copy of the apd signal, where it's connected (for the confocal scan)
 shutter_ch = [0, 1, 2] # digital output for a shutter, port 0, line 0/1/2
 shutter_state = [False, False, False] # list of shutters' state, True = open, False = closed
+flipper_ch = [1, 2, 3] # digital output for a shutter, port 1, line 1/2/3 
+flipper_state = [False, False, False] # list of shutters' state, True = open/up, False = closed/down
 plt.ioff()
 
 ##########################
@@ -54,6 +56,38 @@ def init_daq():
     print('DAQ board model: {}'.format(daq_board.product_type))
     print('DAQ board serial number: {}'.format(daq_board.dev_serial_num))
     return daq_board
+
+##########################
+
+# Flippers
+
+##########################
+
+def init_flippers(daq_board):
+    # define the flippers task
+    flipper_task = nidaqmx.Task(new_task_name = "flippers_task")
+    for i in flipper_ch:
+        flipper_task.do_channels.add_do_chan( \
+            lines = "Dev1/port1/line{}".format(flipper_ch[i]), \
+            line_grouping = ctes.LineGrouping.CHAN_PER_LINE)
+    return flipper_task
+
+def open_flipper(flippertask, channel):
+    '''Flip up a flipper by setting the corresponding channel to True'''
+    flipper_state[channel] = True
+    flippertask.write(flipper_state, auto_start = True)
+    return
+        
+def close_flipper(flippertask, channel):
+    '''Flip down a flipper by setting the corresponding channel to False'''
+    flipper_state[channel] = False
+    flippertask.write(flipper_state, auto_start = True)
+    return
+                      
+def close_all_flippers(flippertask):
+    for channel in flipper_ch:
+        close_flipper(flippertask, channel)
+    return
 
 ##########################
 

@@ -23,6 +23,7 @@ import pylablib
 pylablib.par["devices/dlls/andor_sdk2"] = "C:\\Program Files\\Andor SOLIS"
 from pylablib.devices import Andor
 import viewbox_tools
+from PIL import Image
 
 # Spectrometer Kymera 328i
 DEVICE = 0
@@ -38,7 +39,7 @@ PixelWidth = 26 # um
 acqModeList = ['Full Vertical Binning', 'Image', 'Single-Track']
 initial_exp_time = 100 # in ms
 initial_cam_temp_tickbox_state = False
-initial_focus_mirror_step = 200
+initial_focus_mirror_steps = 228 # found to be the best on 15/July/2025
 tempTimer_update = 30000 # in ms
 preampList = ['1', '2', '4']
 hsspeedList = ['3.0', '1.0', '0.05']
@@ -47,7 +48,7 @@ HSSPEED = {'3.0': 0, '1.0': 1, '0.05': 2}
 PREAMP = {'1': 0, '2': 1, '4': 2}
 ACQMODE = {'Full Vertical Binning': 'fvb', 'Image': 'image', 'Single-Track': 'single_track'}
 initial_center_row = 128
-initial_track_width = 51
+initial_track_width = 71
 
 # other inputs
 # initial filepath and filename
@@ -116,7 +117,7 @@ class Frontend(QtGui.QFrame):
 
         # focus mirror accessory
         focus_mirror_label = QtGui.QLabel('Focus mirror step:')
-        self.focus_mirror_edit = QtGui.QLineEdit(str(initial_focus_mirror_step))
+        self.focus_mirror_edit = QtGui.QLineEdit(str(initial_focus_mirror_steps))
         self.focus_mirror_edit.setValidator(QtGui.QIntValidator(0, 550))
         self.focus_mirror_edit.setFixedWidth(150)
         self.focus_mirror_edit.setToolTip('Change position of the focusing mirror. Values range from 0 to 550.')
@@ -590,7 +591,7 @@ class Backend(QtCore.QObject):
         self.viewSpecTimer = QtCore.QTimer()
         self.tempTimer = QtCore.QTimer()
         self.spectrum = initial_spectrum
-        self.temperature = -80 # in celcius
+        self.temperature = -70 # in celcius
         self.save_automatically_bool = False
         self.filepath = initial_filepath
         self.filename = initial_filename
@@ -636,8 +637,7 @@ class Backend(QtCore.QObject):
         print('Is focus mirror present?', present)
         (ret, maxsteps) = self.mySpectrometer.ShamrockGetFocusMirrorMaxSteps(DEVICE)
         print('Max focus mirror steps: ', maxsteps)
-        (ret, current_focus_mirror_steps) = self.mySpectrometer.ShamrockGetFocusMirror(DEVICE)
-        print('Current focus mirror steps:', current_focus_mirror_steps)
+        self.set_focus_mirror(initial_focus_mirror_steps)
         return
     
     @pyqtSlot(str)
@@ -809,7 +809,7 @@ class Backend(QtCore.QObject):
         else:
             print('Error while taking a single spectrum! Number of acquisitions %i' % self.number_of_acquisitions)
         # emit
-        if self.acq_mode == 'fvb':
+        if self.acq_mode == 'fvb' or self.acq_mode == 'single_track':
             self.spectrum = spectrum.ravel() # numpy array of size (1024,) that is a 1D array
             self.spectrumSignal.emit(self.spectrum)
         elif self.acq_mode == 'image':
@@ -893,12 +893,18 @@ class Backend(QtCore.QObject):
         filename_data = filename_timestamped + '_spectrum'
         filename_params = filename_timestamped + '_params.txt'
         # save data
-        full_filepath_data = os.path.join(filepath, filename_data)    
-        # it will save an ASCII encoded text file
-        data_to_save = np.transpose(np.vstack((self.wavelength_array, self.spectrum)))
-        header_txt = 'wavelength(nm) integrated_counts'
-        ascii_full_filepath = full_filepath_data + '.dat'
-        np.savetxt(ascii_full_filepath, data_to_save, fmt='%.2f', header=header_txt)
+        full_filepath_data = os.path.join(filepath, filename_data)
+        if self.acq_mode == 'image':
+            image_full_filepath = full_filepath_data + '.jpg'
+            image_to_save = Image.fromarray(self.spectrum)
+            image_to_save.save(image_full_filepath) 
+            print('Image %s saved' % filename)
+        else:
+            # it will save an ASCII encoded text file
+            data_to_save = np.transpose(np.vstack((self.wavelength_array, self.spectrum)))
+            header_txt = 'wavelength(nm) integrated_counts'
+            ascii_full_filepath = full_filepath_data + '.dat'
+            np.savetxt(ascii_full_filepath, data_to_save, fmt='%.2f', header=header_txt)
         # save measurement parameters and comments
         full_filepath_params = os.path.join(filepath, filename_params)
         self.params_to_be_saved = self.get_params_to_be_saved()
