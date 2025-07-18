@@ -235,21 +235,22 @@ class Backend(QtCore.QObject):
         # build laser objects 
         self.laser488 = laserToolbox.toptica_laser(debug_mode = False)
         self.shuttersObject = laserToolbox.shutters(daq_board) # initialize shutter and closes them all
+        self.flippersObject = laserToolbox.flippers(daq_board) # initialize flippers and closes them all
         # build flippers objects
-        self.flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
-                                                          serial_port = laserToolbox.COM_port_flipper_apd_Thorlabs)
-        self.flipperSpectrometerPath = laserToolbox.motorized_flipper(debug_mode = False, \
-                                                          serial_port = laserToolbox.COM_port_flipper_spectrometer)
-        self.flipperTrappingLaserFilter = laserToolbox.motorized_flipper(debug_mode = False, \
-                                                          serial_port = laserToolbox.COM_port_flipper_trapping_laser_Thorlabs)
+        # self.flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
+        #                                                   serial_port = laserToolbox.COM_port_flipper_apd_Thorlabs)
+        # self.flipperSpectrometerPath = laserToolbox.motorized_flipper(debug_mode = False, \
+        #                                                   serial_port = laserToolbox.COM_port_flipper_spectrometer)
+        # self.flipperTrappingLaserFilter = laserToolbox.motorized_flipper(debug_mode = False, \
+                                                          # serial_port = laserToolbox.COM_port_flipper_trapping_laser_Thorlabs)
         tm.sleep(0.5)
         # set blue laser power
         self.change_power(initial_blue_power)
         # close shutters at the beggining
         self.shutter488(False) # close shutter
         self.flipper_trapping_laser_attenuation(True) # set filters IN
-        self.flipper_apd_attenuation(True) # set filters IN
-        self.flipper_select_spectrometer(False) # set filters OUT
+        # self.flipper_apd_attenuation(True) # set filters IN
+        # self.flipper_select_spectrometer(False) # set filters OUT
         return
 
     @pyqtSlot(bool)
@@ -287,28 +288,25 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool)
     def flipper_apd_attenuation(self, flipperbool):
         if flipperbool:
-            self.flipperAPDFilter.set_flipper_down() # filter IN
+            self.flippersObject.close_flipper('apd_attenuation') # filter IN
         else:
-            self.flipperAPDFilter.set_flipper_up() # filter OUT
-        print('Flipper APD attenuation status:', self.flipperAPDFilter.get_state())
+            self.flippersObject.open_flipper('apd_attenuation') # filter OUT
         return
     
     @pyqtSlot(bool)
     def flipper_select_spectrometer(self, flipperbool):
         if flipperbool:
-            self.flipperSpectrometerPath.set_flipper_down() # filter IN
+            self.flippersObject.close_flipper('spectrometer_selector') # filter IN
         else:
-            self.flipperSpectrometerPath.set_flipper_up() # filter OUT
-        print('Flipper Spectrometer path status:', self.flipperSpectrometerPath.get_state())
+            self.flippersObject.open_flipper('spectrometer_selector') # filter OUT
         return
 
     @pyqtSlot(bool)
     def flipper_trapping_laser_attenuation(self, flipperbool):
         if flipperbool:
-            self.flipperTrappingLaserFilter.set_flipper_down() # filter IN
+            self.flippersObject.close_flipper('laser_attenuation') # filter IN
         else:
-            self.flipperTrappingLaserFilter.set_flipper_up() # filter OUT
-        print('Flipper Trapping laser attenuation status:', self.flipperTrappingLaserFilter.get_state())
+            self.flippersObject.open_flipper('laser_attenuation') # filter OUT
         return
     
     @pyqtSlot(float)    
@@ -325,9 +323,7 @@ class Backend(QtCore.QObject):
         # self.shutterTrappingLaser(False)
         self.shuttersObject.shutdown()
         print('Closing flippers...')
-        self.flipperAPDFilter.close()
-        self.flipperSpectrometerPath.close()
-        self.flipperTrappingLaserFilter.close() # TODO check if it is working
+        self.flippersObject.shutdown()
         print('Exiting thread...')
         workerThread.exit()
         return

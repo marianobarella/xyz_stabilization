@@ -40,9 +40,9 @@ power_pd_ch = 1 # analog input (ai) for amplified pd to monitor power, where it'
 apd_copy_ch = 4 # analog input (ai) for the copy of the apd signal, where it's connected (for the confocal scan)
 power_pd_copy_ch = 5 # analog input (ai) for the copy of the apd signal, where it's connected (for the confocal scan)
 shutter_ch = [0, 1, 2] # digital output for a shutter, port 0, line 0/1/2
-shutter_state = [False, False, False] # list of shutters' state, True = open, False = closed
-flipper_ch = [1, 2, 3] # digital output for a shutter, port 1, line 1/2/3 
-flipper_state = [False, False, False] # list of shutters' state, True = open/up, False = closed/down
+shutter_state = {0: False, 1: False, 2: False} # dict of shutters' state, True = open, False = closed
+flipper_ch = [5, 6, 7] # digital output for a shutter, port 0, line 1/2/3 
+flipper_state = {5: False, 6: False, 7: False} # dict of shutters' state, True = open/up, False = closed/down
 plt.ioff()
 
 ##########################
@@ -66,22 +66,24 @@ def init_daq():
 def init_flippers(daq_board):
     # define the flippers task
     flipper_task = nidaqmx.Task(new_task_name = "flippers_task")
-    for i in flipper_ch:
+    for channel in flipper_ch:
         flipper_task.do_channels.add_do_chan( \
-            lines = "Dev1/port1/line{}".format(flipper_ch[i]), \
+            lines = "Dev1/port0/line{}".format(channel), \
             line_grouping = ctes.LineGrouping.CHAN_PER_LINE)
     return flipper_task
 
 def open_flipper(flippertask, channel):
     '''Flip up a flipper by setting the corresponding channel to True'''
     flipper_state[channel] = True
-    flippertask.write(flipper_state, auto_start = True)
+    flipper_state_list = list(flipper_state.values())
+    flippertask.write(flipper_state_list, auto_start = True)
     return
         
 def close_flipper(flippertask, channel):
     '''Flip down a flipper by setting the corresponding channel to False'''
     flipper_state[channel] = False
-    flippertask.write(flipper_state, auto_start = True)
+    flipper_state_list = list(flipper_state.values())
+    flippertask.write(flipper_state_list, auto_start = True)
     return
                       
 def close_all_flippers(flippertask):
@@ -98,22 +100,24 @@ def close_all_flippers(flippertask):
 def init_shutters(daq_board):
     # define the shutters task
     shutter_task = nidaqmx.Task(new_task_name = "shutters_task")
-    for i in shutter_ch:
+    for channel in shutter_ch:
         shutter_task.do_channels.add_do_chan( \
-            lines = "Dev1/port0/line{}".format(shutter_ch[i]), \
+            lines = "Dev1/port0/line{}".format(channel), \
             line_grouping = ctes.LineGrouping.CHAN_PER_LINE)
     return shutter_task
 
 def open_shutter(shuttertask, channel):
     '''Open a shutter by setting the corresponding channel to True'''
     shutter_state[channel] = True
-    shuttertask.write(shutter_state, auto_start = True)
+    shutter_state_list = list(shutter_state.values())
+    shuttertask.write(shutter_state_list, auto_start = True)
     return
         
 def close_shutter(shuttertask, channel):
     '''Close a shutter by setting the corresponding channel to False'''
     shutter_state[channel] = False
-    shuttertask.write(shutter_state, auto_start = True)
+    shutter_state_list = list(shutter_state.values())
+    shuttertask.write(shutter_state_list, auto_start = True)
     return
                       
 def close_all_shutters(shuttertask):

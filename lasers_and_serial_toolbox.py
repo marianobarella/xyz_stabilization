@@ -29,11 +29,11 @@ import daq_board_toolbox as daq_toolbox # for shutters control
 bytesToRead = 250
 # COM ports
 COM_port_oxxius = 'COMX' # 532 Oxxius Laser com port # NOT INSTALLED
-COM_port_flipper_spectrometer = 'COM6' # APT USB Serial number: 37004922
-COM_port_flipper_apd_Thorlabs = 'COM8' # APT USB Serial number: 37005240
-COM_port_flipper_trapping_laser_Thorlabs = 'COM7' # APT USB Serial number: 37005241
+# COM_port_flipper_spectrometer = 'COM6' # APT USB Serial number: 37004922
+# COM_port_flipper_apd_Thorlabs = 'COM8' # APT USB Serial number: 37005240
+# COM_port_flipper_trapping_laser_Thorlabs = 'COM7' # APT USB Serial number: 37005241
 # COM9 and COM10 are the Piezostages' controllers
-COM_port_shutter_Thorlabs = 'COM3' # USB to Serial cable (REMOVED!!!! Switched to DAQ signal control)
+# COM_port_shutter_Thorlabs = 'COM3' # USB to Serial cable (REMOVED!!!! Switched to DAQ signal control)
 COM_port_filter_wheel = 'COM12' # USB Serial Port (Thorlabs Filter Wheel FW102C)
 COM_port_toptica = 'COM13' # 488 Toptica Laser using ATEN USB to Serial Bridge 
 COM_valve = 'COM5' # microfluidics valve NOT USED HERE
@@ -46,9 +46,9 @@ shutter_number_dict = {
 }
 
 flipper_number_dict = {
-    'trapping_attenuation': 1, # trapping laser neutral density filter attenuator
-    'apd_attenuation': 2, # transmission signal attenuation
-    'spectrometer_selector': 3 # spectrometer/transmission path selector
+    'laser_attenuation': 5, # trapping laser neutral density filter attenuator
+    'apd_attenuation': 6, # transmission signal attenuation
+    'spectrometer_selector': 7 # spectrometer/transmission path selector
 }
 
 def serial_ports():
@@ -448,53 +448,58 @@ class M2_laser(object):
     
 #=====================================
 
-# Motorized Flipper Mount Class Definitions
+# # DEPREDICATED - DEPREDICATED - DEPREDICATED
+# # Flippers are now controlled using TTL signals triggered by the DAQ board
+# # This class is not used anymore
+
+# # Motorized Flipper Mount Class Definitions
+# # This class is used to control the Motorized Flip Mount of Thorlabs via USB
 
 #=====================================
 
-class motorized_flipper(object):
-    def __init__(self, debug_mode, serial_port):
-        # Parameters for Motorized Flipper
-        self.baudRate = 9600
-        self.serialPort = serial_port
-        self.debug_mode = debug_mode
-        self.initialize()
-        return
+# class motorized_flipper(object):
+#     def __init__(self, debug_mode, serial_port):
+#         # Parameters for Motorized Flipper
+#         self.baudRate = 9600
+#         self.serialPort = serial_port
+#         self.debug_mode = debug_mode
+#         self.initialize()
+#         return
         
-    def initialize(self):
-        self.serialInstance = motoFlipper(self.serialPort)
-        if self.serialInstance.is_opened:
-            print('Serial port ' + self.serialPort + ' opened.')
-        else:
-            print('Serial port ' + self.serialPort + ' has NOT been opened.')
-        return
+#     def initialize(self):
+#         self.serialInstance = motoFlipper(self.serialPort)
+#         if self.serialInstance.is_opened:
+#             print('Serial port ' + self.serialPort + ' opened.')
+#         else:
+#             print('Serial port ' + self.serialPort + ' has NOT been opened.')
+#         return
         
-    def get_state(self):
-        reply = self.serialInstance.get_state()
-        if reply == 0:
-            state = 'down'
-        else:
-            state = 'up'
-        if self.debug_mode:
-            print("State: ", state)
-        return state
+#     def get_state(self):
+#         reply = self.serialInstance.get_state()
+#         if reply == 0:
+#             state = 'down'
+#         else:
+#             state = 'up'
+#         if self.debug_mode:
+#             print("State: ", state)
+#         return state
 
-    def set_flipper_up(self):
-        self.serialInstance.move_to_state(1)
-        tm.sleep(0.5)
-        return
+#     def set_flipper_up(self):
+#         self.serialInstance.move_to_state(1)
+#         tm.sleep(0.5)
+#         return
         
-    def set_flipper_down(self):
-        self.serialInstance.move_to_state(0)
-        tm.sleep(0.5)
-        return
+#     def set_flipper_down(self):
+#         self.serialInstance.move_to_state(0)
+#         tm.sleep(0.5)
+#         return
     
-    def close(self):
-        print('Closing motorized flipper serial communication...')
-        self.set_flipper_down()
-        self.serialInstance.close()
-        tm.sleep(0.2)
-        return
+#     def close(self):
+#         print('Closing motorized flipper serial communication...')
+#         self.set_flipper_down()
+#         self.serialInstance.close()
+#         tm.sleep(0.2)
+#         return
 
 # #=====================================
 
@@ -685,15 +690,35 @@ if __name__ == '__main__':
     
     print('\nDAQ board initialization...')
     daq_board = daq_toolbox.init_daq()
-    shutters = shutters(daq_board)
+    # shutters = shutters(daq_board)
 
-    shutters.open_shutter('tisa') # NKT SuperK white laser
-    tm.sleep(0.3)
-    shutters.open_shutter('NIR') # Toptica NIR TA pro laser
+    # shutters.open_shutter('tisa') # NKT SuperK white laser
+    # tm.sleep(0.3)
+    # shutters.open_shutter('NIR') # Toptica NIR TA pro laser
+    # tm.sleep(5)
+    # shutters.close_shutter('tisa')
+    # tm.sleep(2)
+    # shutters.shutdown()
+
+
+# flipper_number_dict = {
+#     'laser_attenuation': 1, # trapping laser neutral density filter attenuator
+#     'apd_attenuation': 2, # transmission signal attenuation
+#     'spectrometer_selector': 3 # spectrometer/transmission path selector
+# }
+
+
+    flippers = flippers(daq_board)
     tm.sleep(5)
-    shutters.close_shutter('tisa')
+
+    flippers.open_flipper('apd_attenuation')
+    tm.sleep(3)
+    # flipper.open_flipper('apd_attenuation')
+    # tm.sleep(5)
+    flippers.close_flipper('apd_attenuation')
     tm.sleep(2)
-    shutters.shutdown()
+    flippers.shutdown()
+
 
     # tisa = M2_laser(debug_mode = False)
 
