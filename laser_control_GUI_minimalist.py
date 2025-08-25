@@ -127,30 +127,40 @@ class Frontend(QtGui.QFrame):
     
     def control_trapping_laser_button_check(self):
         if self.shutterTrappingLaserButton.isChecked():
-           self.shutterTrappingSignal.emit(True)
+            self.shutterTrappingSignal.emit(True)
         else:
-           self.shutterTrappingSignal.emit(False)
+            self.shutterTrappingSignal.emit(False)
         return
     
     def control_safety_shutter_button_check(self):
         if self.shutterSafetyLaserButton.isChecked():
-           self.shutterSafetySignal.emit(True)
+            self.shutterSafetySignal.emit(True)
         else:
-           self.shutterSafetySignal.emit(False)
+            self.shutterSafetySignal.emit(False)
         return
 
     def control_white_laser_button_check(self):
         if self.shutterWhiteLaserButton.isChecked():
-           self.shutterWhiteSignal.emit(True)
+            if not self.flipperSpectrometerButton.isChecked():
+                # dialog box
+                reply = QtGui.QMessageBox.question(self, 'Warning!', 'APD path is selected! \nAre you sure you want to open the white laser shutter?',
+                                           QtGui.QMessageBox.No |
+                                           QtGui.QMessageBox.Yes)
+                if reply == QtGui.QMessageBox.Yes:
+                    self.shutterWhiteSignal.emit(True)
+                else:
+                    self.shutterWhiteSignal.emit(False)
+            else:
+                self.shutterWhiteSignal.emit(True)
         else:
-           self.shutterWhiteSignal.emit(False)
+            self.shutterWhiteSignal.emit(False)
         return
     
     def control_488_button_check(self):
         if self.shutter488button.isChecked():
-           self.shutter488_signal.emit(True)
+            self.shutter488_signal.emit(True)
         else:
-           self.shutter488_signal.emit(False)
+            self.shutter488_signal.emit(False)
         return
     
     def flipperAPDButton_check(self):
@@ -172,7 +182,7 @@ class Frontend(QtGui.QFrame):
             self.shutterSafetyLaserButton.setChecked(False)
             # send flipper signal
             self.flipper_spectrometer_path_signal.emit(True)
-            # disable trapping laser while the spectrometer path is slected
+            # disable trapping laser while the spectrometer path is selected
             self.shutterTrappingLaserButton.setEnabled(False)
         else:
             self.flipper_spectrometer_path_signal.emit(False)

@@ -62,7 +62,7 @@ initial_filename = 'signal'
 initial_voltage_range = 2.0
 
 # power calibration factor
-power_calibration_factor = 50 # in mW/V
+power_calibration_factor = 95.2 # in mW/V
 power_calibration_offset = 0.00 # in mW
 
 # creating data Queue object

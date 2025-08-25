@@ -56,9 +56,9 @@ initial_gain = 0 # int
 
 # inital ROI definition
 initial_vertical_pos = 400
-initial_horizontal_pos = 0
+initial_horizontal_pos = 100
 initial_vertical_size = 300
-initial_horizontal_size = 1440
+initial_horizontal_size = 1200
 
 # for center of mass estimation, float between 0.00 and 1.00
 initial_threshold = 0.5
