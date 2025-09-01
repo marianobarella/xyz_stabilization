@@ -148,13 +148,17 @@ class Frontend(QtGui.QFrame):
                                            QtGui.QMessageBox.Yes)
                 if reply == QtGui.QMessageBox.Yes:
                     self.shutterWhiteSignal.emit(True)
+                    return
                 else:
                     self.shutterWhiteSignal.emit(False)
+                    self.shutterWhiteLaserButton.setChecked(False)
+                    return
             else:
                 self.shutterWhiteSignal.emit(True)
+                return
         else:
             self.shutterWhiteSignal.emit(False)
-        return
+            return
     
     def control_488_button_check(self):
         if self.shutter488button.isChecked():

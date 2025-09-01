@@ -24,6 +24,9 @@ import daq_board_toolbox as daq_toolbox
 from tkinter import filedialog
 import tkinter as tk
 import time as tm
+from power_calibration_auxiliaries import read_power_calibration_params_file, \
+                                          update_power_calibration_params_file, \
+                                          param_power_calib_filename
 
 # enable OpenGL for fast rendering
 # The PC has a 12th Gen Interl Core i9-12900K
@@ -61,9 +64,13 @@ initial_filename = 'signal'
 # set measurement range
 initial_voltage_range = 2.0
 
-# power calibration factor
-power_calibration_factor = 95.2 # in mW/V
-power_calibration_offset = 0.00 # in mW
+# initial autocorrelation time length in seconds
+initial_autocorr_time_window = 1
+
+# assign loaded power calibration parameters
+factor, offset = read_power_calibration_params_file(param_power_calib_filename)
+power_calibration_factor = factor
+power_calibration_offset = offset
 
 # creating data Queue object
 data_queue = Queue(maxsize = queue_size)
@@ -139,33 +146,57 @@ class AutocorrelationChildWindow(QDialog):
         return
 
     def setUpGUI(self):
+        # enable auto range tick button
+        self.enableAutoRangeTickBox = QtGui.QCheckBox('Autorange')
+        self.enableAutoRangeTickBox.setChecked(True)
+        self.enableAutoRangeTickBox.stateChanged.connect(self.enable_autorange)
+        self.enableAutoRangeTickBox.setToolTip('Set/Tick to enable autorange.')
+
+        # Layout for display controls widget
+        self.displayControlWidget = QtGui.QWidget()
+        subgridDisp_layout = QtGui.QGridLayout()
+        self.displayControlWidget.setLayout(subgridDisp_layout)
+        subgridDisp_layout.addWidget(self.enableAutoRangeTickBox, 0, 0)
+
         # widget for the data
         self.viewAutocorrWidget = pg.GraphicsLayoutWidget()
         self.autocorr_plot = self.viewAutocorrWidget.addPlot(row = 1, col = 1)
         self.autocorr_plot.setYRange(-1, 1)
-        self.autocorr_plot.enableAutoRange(x = False, y = True)
+        self.autocorr_plot.enableAutoRange(x = True, y = True)
         self.autocorr_plot.showGrid(x = True, y = True)
         self.autocorr_plot.setLabel('left', 'Autocorrelation normalized')
         self.autocorr_plot.setLabel('bottom', 'Lag time (s)')
 
         # Docks
         gridbox = QtGui.QGridLayout(self)
-        dockArea = DockArea()
-        viewAutocorrDock = Dock('Autocorrelation viewbox')
+        dockArea = DockArea()     
+        viewAutocorrDock = Dock('Autocorrelation viewbox', size=(10,10)) # width, height
         viewAutocorrDock.addWidget(self.viewAutocorrWidget)
         dockArea.addDock(viewAutocorrDock)
+        
+        displayCtrlDock = Dock('Display controls', size=(1,1))
+        displayCtrlDock.addWidget(self.displayControlWidget)
+        displayCtrlDock.hideTitleBar()
+        dockArea.addDock(displayCtrlDock, 'bottom', viewAutocorrDock)  
+
         gridbox.addWidget(dockArea, 0, 0) 
         self.setLayout(gridbox)
         return
-
-    def plot_autocorr(self, transmission_signal, lag, sampling_rate):
-        time_step = 1/sampling_rate
-        lag_time = lag*time_step
+        
+    def plot_autocorr(self, transmission_signal, lag, time_base):
+        lag_time = lag*time_base
         self.autocorr_plot.clear()
         self.autocorr_plot.plot(x = lag_time, y = transmission_signal, \
                                     pen = pg.mkPen('w', width = 1))
-        self.autocorr_plot.setXRange(lag_time[0], lag_time[-1])
-        #self.autocorr_plot.setLogMode(x=True)
+        return
+
+    def enable_autorange(self, enablebool):
+        if enablebool:
+            print('Autorange ON')
+            self.autocorr_plot.enableAutoRange(x = True, y = True)
+        else:
+            print('Autorange OFF')
+            self.autocorr_plot.enableAutoRange(x = False, y = False)
         return
 
     # re-define the closeEvent to execute an specific command
@@ -261,6 +292,7 @@ class DataProcessor(QProcess):
                                  pg.QtGui.QGraphicsPathItem, pg.QtGui.QGraphicsPathItem, \
                                  pg.QtGui.QGraphicsPathItem, pg.QtGui.QGraphicsPathItem)
     updateLabelsSignal = pyqtSignal(float, float, float, float)
+    autocorrSignal = pyqtSignal(np.ndarray, np.ndarray, float)
 
     def __init__(self):
         super().__init__()
@@ -272,6 +304,8 @@ class DataProcessor(QProcess):
         self.sd_value_apd = 0
         self.mean_value_monitor = 0
         self.sd_value_monitor = 0
+        self.autocorrelation_on = False
+        self.autocorr_window = initial_autocorr_time_window
         self.running = False
         self.displayDataTimer = QtCore.QTimer()
         # configure the connection to allow queued executions to avoid interruption of previous calls
@@ -353,6 +387,10 @@ class DataProcessor(QProcess):
                 start = read_samples_list[0]
                 end = read_samples_list[0] + n_retrieved_samples
                 time_array = np.arange(start, end)*self.time_base
+                # send data for autocorrelation
+                # keep data raw for autocorrelation
+                if self.autocorrelation_on:
+                    self.accum_data_for_autocorr(data_apd_array, n_retrieved_samples)
                 # for visualizing purposes
                 if self.downsampling_period != 1:
                     if self.downsampling_by_average:
@@ -425,6 +463,41 @@ class DataProcessor(QProcess):
                                         item_std_monitor_plus_data_curve, item_std_monitor_minus_data_curve)
         return
 
+    def accum_data_for_autocorr(self, transmission_signal, n_retrieved_samples):
+        self.stored_signal = np.concatenate((transmission_signal, self.stored_signal))
+        self.lenght_of_stored_signal += n_retrieved_samples
+        # if accumulated data is longer than 1 s, calculate the autocorrelation
+        if self.lenght_of_stored_signal*self.time_base > self.autocorr_window:
+            self.calculate_autorrelation(self.stored_signal)
+            self.stored_signal = np.array([])
+            self.lenght_of_stored_signal = 0
+        return
+
+    def calculate_autorrelation(self, transmission_signal):
+        z, lag = autocorr(transmission_signal)
+        self.autocorrSignal.emit(z, lag, self.time_base)
+        return
+
+    @pyqtSlot()
+    def start_autocorr(self):
+        # start calculating the autocorrelation of the transmission signal
+        self.autocorrelation_on = True
+        self.stored_signal = np.array([])
+        self.lenght_of_stored_signal = 0
+        return
+
+    @pyqtSlot()
+    def stop_autocorr(self):
+        # stop calculating the autocorrelation
+        self.autocorrelation_on = False
+        return
+
+    @pyqtSlot(float)
+    def autocorr_window_changed(self, new_window):
+        print('Autocorrelation window has been changed to:', new_window, 's')
+        self.autocorr_window = new_window
+        return
+
     @pyqtSlot(bool)
     def start_stop(self, run):
         if run:
@@ -440,6 +513,9 @@ class DataProcessor(QProcess):
     def make_connections(self, frontend):
         frontend.parametersSignal.connect(self.get_displaying_parameters)
         frontend.retrieveDataSignal.connect(self.start_stop)
+        frontend.startAutocorrSignal.connect(self.start_autocorr)
+        frontend.stopAutocorrSignal.connect(self.stop_autocorr)
+        frontend.autocorrWindowChangedSignal.connect(self.autocorr_window_changed)
         return
 
 #=====================================
@@ -466,6 +542,9 @@ class Frontend(QtGui.QFrame):
     retrieveDataSignal = pyqtSignal(bool)
     trappingShutterSignal = pyqtSignal(bool)
     flagButtonSignal = pyqtSignal()
+    startAutocorrSignal = pyqtSignal()
+    stopAutocorrSignal = pyqtSignal()
+    autocorrWindowChangedSignal = pyqtSignal(float)
 
     def __init__(self, enable_connection_to_laser_module = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -492,6 +571,7 @@ class Frontend(QtGui.QFrame):
         self.power_calibration_child_window = PowerCalibrationChildWindow()
         self.power_calibration_factor = power_calibration_factor
         self.power_calibration_offset = power_calibration_offset
+        self.autocorr_time_window = initial_autocorr_time_window
         return
     
     def setUpGUI(self):
@@ -692,19 +772,27 @@ class Frontend(QtGui.QFrame):
         self.centerOnMeanButton.setToolTip('For displaying purposes. Center Y axis over the mean of the signal ±5 std dev.')
         
         # enable auto range tick button
-        self.enableAutoRageTickBox = QtGui.QCheckBox('Autorange')
-        self.enableAutoRageTickBox.setChecked(True)
-        self.enableAutoRageTickBox.stateChanged.connect(self.enable_autorange)
-        self.enableAutoRageTickBox.setToolTip('Set/Tick to enable autorange.')
+        self.enableAutoRangeTickBox = QtGui.QCheckBox('Autorange')
+        self.enableAutoRangeTickBox.setChecked(True)
+        self.enableAutoRangeTickBox.stateChanged.connect(self.enable_autorange)
+        self.enableAutoRangeTickBox.setToolTip('Set/Tick to enable autorange.')
 
         # Create a button to open the autocorrelation child window
-        self.open_autocorrelation_child_button = QtGui.QPushButton("Open live autocorrelation window", self)
+        self.open_autocorrelation_child_button = QtGui.QPushButton("Live autocorrelation window", self)
         self.open_autocorrelation_child_button.setCheckable(True)
         self.open_autocorrelation_child_button.clicked.connect(self.open_autocorrelation_child_window)
         self.open_autocorrelation_child_button.setToolTip('Calculate the autocorrelation of the transmission signal in live mode.')
         self.open_autocorrelation_child_button.setStyleSheet(
             "QPushButton:pressed { background-color: green; }"
             "QPushButton::checked { background-color: lightgreen; }")
+
+        # Autocorrelation time window length
+        self.autocorr_time_window_label = QtGui.QLabel('Autocorrelation time window (s): ')
+        self.autocorr_time_window_value = QtGui.QLineEdit(str(initial_autocorr_time_window))
+        self.autocorr_time_window_value.setFixedWidth(100)
+        self.autocorr_time_window_value.setValidator(QtGui.QDoubleValidator(0.01, 100.00, 2))
+        self.autocorr_time_window_value.setToolTip('Set the autocorrelation time length.')
+        self.autocorr_time_window_value.editingFinished.connect(self.autocorr_window_changed)
 
         # Layout for the acquisition widget
         self.paramAcqWidget = QtGui.QWidget()
@@ -759,14 +847,16 @@ class Frontend(QtGui.QFrame):
         subgridDisp_layout.addWidget(self.minYRangeValue_monitor, 5, 1)
         subgridDisp_layout.addWidget(self.maxYRangeValue_monitor, 5, 2)
         subgridDisp_layout.addWidget(self.centerOnMeanButton, 6, 0, 1, 2)
-        subgridDisp_layout.addWidget(self.enableAutoRageTickBox, 6, 2)
+        subgridDisp_layout.addWidget(self.enableAutoRangeTickBox, 6, 2)
         subgridDisp_layout.addWidget(self.downsamplingLabel, 7, 0)
         subgridDisp_layout.addWidget(self.downsamplingValue, 7, 1)
         subgridDisp_layout.addWidget(self.enableAveragingTickBox, 7, 2)
         subgridDisp_layout.addWidget(self.timeViewboxLength_label, 8, 0)
         subgridDisp_layout.addWidget(self.timeViewboxLength_value, 8, 1)
         subgridDisp_layout.addWidget(self.effSamplingRateLabel, 9, 0, 1, 3)
-        subgridDisp_layout.addWidget(self.open_autocorrelation_child_button, 10, 0, 1, 3)
+        subgridDisp_layout.addWidget(self.autocorr_time_window_label, 10, 0)
+        subgridDisp_layout.addWidget(self.autocorr_time_window_value, 10, 1)
+        subgridDisp_layout.addWidget(self.open_autocorrelation_child_button, 10, 2, 1, 2)
 
         if self.enable_connection_to_laser_module:
             # enable connection to laser module tick button
@@ -821,6 +911,7 @@ class Frontend(QtGui.QFrame):
     def open_autocorrelation_child_window(self):
         # show the autocorrelation child window
         self.autocorrelation_child_window.show()
+        self.startAutocorrSignal.emit()
         return
 
     def set_working_dir(self):
@@ -1059,6 +1150,7 @@ class Frontend(QtGui.QFrame):
     @pyqtSlot()
     def autocorrelation_child_window_close(self):
         # uncheck Autocorrelation button
+        self.stopAutocorrSignal.emit()
         self.open_autocorrelation_child_button.setChecked(False)
         return
 
@@ -1066,8 +1158,6 @@ class Frontend(QtGui.QFrame):
     def set_power_calibration_params(self, factor, offset):
         self.power_calibration_factor = factor
         self.power_calibration_offset = offset
-        print('\nPower calibration factor: {:.3f} mW/V'.format(self.power_calibration_factor))
-        print('Power calibration offset: {:.3f} mW'.format(self.power_calibration_offset))
         return
 
     @pyqtSlot(str)
@@ -1082,6 +1172,13 @@ class Frontend(QtGui.QFrame):
     def update_autocorr(self, transmission_signal, lag, sampling_rate):
         if self.open_autocorrelation_child_button.isChecked():
             self.autocorrelation_child_window.plot_autocorr(transmission_signal, lag, sampling_rate)
+        return
+
+    def autocorr_window_changed(self):
+        autocorr_time_window = float(self.autocorr_time_window_value.text())
+        if autocorr_time_window != self.autocorr_time_window:
+           self.autocorr_time_window = autocorr_time_window
+           self.autocorrWindowChangedSignal.emit(autocorr_time_window)
         return
 
     def connect_to_laser_module(self, enablebool):
@@ -1117,8 +1214,8 @@ class Frontend(QtGui.QFrame):
         backend.filepathSignal.connect(self.get_filepath)
         backend.acqStoppedSignal.connect(self.acquisition_stopped)
         backend.saving_data_error_signal.connect(self.pop_up_window_error)
-        backend.autocorrSignal.connect(self.update_autocorr)
         backend.fileSavedSignal.connect(self.clear_comments)
+        processing_thread.autocorrSignal.connect(self.update_autocorr)
         processing_thread.updateLabelsSignal.connect(self.update_label_values)
         processing_thread.dataReadySignal.connect(self.displayTrace)
         self.autocorrelation_child_window.closeChildSignal.connect(self.autocorrelation_child_window_close)
@@ -1134,7 +1231,6 @@ class Frontend(QtGui.QFrame):
 class Backend(QtCore.QObject):
 
     dataSignal = pyqtSignal(np.ndarray, int, int)
-    autocorrSignal = pyqtSignal(np.ndarray, np.ndarray, float)
     filepathSignal = pyqtSignal(str)
     acqStoppedSignal = pyqtSignal()
     acqStoppedInnerSignal = pyqtSignal()
@@ -1295,8 +1391,6 @@ class Backend(QtCore.QObject):
                     self.data_array.flush()
                     self.monitor_array.flush()
                     self.save_trace(message_box = False)
-            # send data for autocorrelation
-            # self.calculate_autorrelation(self.data_array)
         return
 
     def arm_for_confocal(self, pixel_time_confocal):
@@ -1323,11 +1417,6 @@ class Backend(QtCore.QObject):
         self.APD_task_confocal.stop()
         print('\nClosing task...')
         self.APD_task_confocal.close()
-        return
-
-    def calculate_autorrelation(self, transmission_signal):
-        z, lag = autocorr(transmission_signal)
-        self.autocorrSignal.emit(z, lag, self.sampling_rate)
         return
     
     @pyqtSlot()
@@ -1476,6 +1565,7 @@ class Backend(QtCore.QObject):
         self.power_calibration_offset = offset
         print('\nPower calibration factor: {:.3f} mW/V'.format(self.power_calibration_factor))
         print('Power calibration offset: {:.3f} mW'.format(self.power_calibration_offset))
+        update_power_calibration_params_file(param_power_calib_filename, factor = factor, offset = offset)
         return
 
     @pyqtSlot(str)

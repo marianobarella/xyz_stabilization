@@ -1,0 +1,12 @@
+# Power calibration parameters to estimate 
+# the power at the sample plane using a monitor photodiode
+# Units ---------
+# The power calibration Factor is in mW/V
+# The power calibration Offset is in mW
+# Order ---------
+# First number is the Factor, second number is the Offset
+### INPUT MODIFY BELOW THIS LINE ###
+
+factor = 95.2
+
+offset = 0.0
