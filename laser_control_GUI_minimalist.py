@@ -84,7 +84,7 @@ class Frontend(QtGui.QFrame):
         
         # Spectrometer/APD path selector
         self.flipperSpectrometerButton = QtGui.QCheckBox('Spectrometer path')
-        self.flipperSpectrometerButton.setChecked(False)
+        self.flipperSpectrometerButton.setChecked(True)
         self.flipperSpectrometerButton.clicked.connect(self.flipperSpectrometerButton_check)
         self.flipperSpectrometerButton.setToolTip('Up/Down flipper to select the spectromter collection path')
 
