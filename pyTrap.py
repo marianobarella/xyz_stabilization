@@ -752,10 +752,11 @@ class Backend(QtCore.QObject):
 
     def prepare_z_scan(self):
         print('\nPreparing for z scan...')
-        # allocate profile and counter
-        self.z_profile = np.zeros((self.scan_range_pixels_z))
-        self.sd_z_profile = np.zeros((self.scan_range_pixels_z))
-        self.counter_z_steps = 0   
+        # move to scan's origin
+        self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z0])
+        # prepare APD for signal acquisition during the scan
+        scan_step_time_seconds = self.scan_step_time/1000 # to s
+        self.number_of_points_z_scan = self.apdTraceWorker.arm_for_confocal(scan_step_time_seconds)
         # create z array
         # update piezostage position
         self.update_position()
@@ -764,11 +765,11 @@ class Backend(QtCore.QObject):
         self.z_scan_array = self.z_scan_array[0:self.scan_range_pixels_z] # limit to the right size
         # print('\nArray of scanning positions:')
         # print('z:', self.z_scan_array)
-        # move to scan's origin
-        self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z0])
-        # prepare APD for signal acquisition during the scan
-        scan_step_time_seconds = self.scan_step_time/1000 # to s
-        self.apdTraceWorker.arm_for_confocal(scan_step_time_seconds)
+        # allocate profile and counter
+        self.z_traces = np.zeros((self.number_of_points_z_scan, self.scan_range_pixels_z))
+        self.z_profile = np.zeros((self.scan_range_pixels_z))
+        self.sd_z_profile = np.zeros((self.scan_range_pixels_z))
+        self.counter_z_steps = 0   
         return
 
     @pyqtSlot()
@@ -810,7 +811,9 @@ class Backend(QtCore.QObject):
                 self.piezoWorker.move_absolute([self.x_pos, self.y_pos, current_z_pos])
                 # acquire first
                 point_trace_data = self.apdTraceWorker.acquire_confocal_trace()
-                # assign the mean value to a point in the profile
+                # assign the trace to the array
+                self.z_traces[:, self.counter_z_steps] = point_trace_data
+                # assign the mean and std dev values to a point in the profiles
                 self.z_profile[self.counter_z_steps] = np.mean(point_trace_data)
                 self.sd_z_profile[self.counter_z_steps] = np.std(point_trace_data, ddof=1)
                 # move step in z
@@ -1052,9 +1055,11 @@ class Backend(QtCore.QObject):
         # define paths
         full_z_scan_filepath = os.path.join(self.confocal_filepath, self.confocal_filename)
         full_filepath_z_scan_data = full_z_scan_filepath + '_z_scan_%04d.npy' % self.save_counter
+        full_filepath_z_scan_traces_data = full_z_scan_filepath + '_z_scan_traces_%04d.npy' % self.save_counter
         # save data
         z_scan_data_to_save = np.transpose([self.z_scan_array, self.z_profile, self.sd_z_profile])
         np.save(full_filepath_z_scan_data, z_scan_data_to_save, allow_pickle = False)
+        np.save(full_filepath_z_scan_traces_data, self.z_traces, allow_pickle = False)
         print('Z scan data has been saved.')
         self.save_counter += 1
         return
