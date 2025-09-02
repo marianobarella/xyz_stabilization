@@ -7,6 +7,6 @@
 # First number is the Factor, second number is the Offset
 ### INPUT MODIFY BELOW THIS LINE ###
 
-factor = 95.2
+factor = 156.5
 
 offset = 0.0
