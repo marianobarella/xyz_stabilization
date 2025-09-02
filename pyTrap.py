@@ -754,6 +754,7 @@ class Backend(QtCore.QObject):
         print('\nPreparing for z scan...')
         # move to scan's origin
         self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z0])
+        tm.sleep(0.1) # wait to settle (in seconds)
         # prepare APD for signal acquisition during the scan
         scan_step_time_seconds = self.scan_step_time/1000 # to s
         self.number_of_points_z_scan = self.apdTraceWorker.arm_for_confocal(scan_step_time_seconds)
@@ -809,6 +810,7 @@ class Backend(QtCore.QObject):
                 current_z_pos = self.z_scan_array[self.counter_z_steps]
                 # print(self.counter_z_steps, current_z_pos)
                 self.piezoWorker.move_absolute([self.x_pos, self.y_pos, current_z_pos])
+                tm.sleep(0.005) # wait to settle (in seconds)
                 # acquire first
                 point_trace_data = self.apdTraceWorker.acquire_confocal_trace()
                 point_trace_data_apd = point_trace_data[0]
