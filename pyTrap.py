@@ -811,11 +811,13 @@ class Backend(QtCore.QObject):
                 self.piezoWorker.move_absolute([self.x_pos, self.y_pos, current_z_pos])
                 # acquire first
                 point_trace_data = self.apdTraceWorker.acquire_confocal_trace()
+                point_trace_data_apd = point_trace_data[0]
+                point_trace_data_monitor = point_trace_data[1]
                 # assign the trace to the array
-                self.z_traces[:, self.counter_z_steps] = point_trace_data
+                self.z_traces[:, self.counter_z_steps] = point_trace_data_apd
                 # assign the mean and std dev values to a point in the profiles
-                self.z_profile[self.counter_z_steps] = np.mean(point_trace_data)
-                self.sd_z_profile[self.counter_z_steps] = np.std(point_trace_data, ddof=1)
+                self.z_profile[self.counter_z_steps] = np.mean(point_trace_data_apd)
+                self.sd_z_profile[self.counter_z_steps] = np.std(point_trace_data_apd, ddof=1)
                 # move step in z
                 self.counter_z_steps += 1
             else:
