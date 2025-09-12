@@ -24,6 +24,7 @@ pylablib.par["devices/dlls/andor_sdk2"] = "C:\\Program Files\\Andor SOLIS"
 from pylablib.devices import Andor
 import viewbox_tools
 from PIL import Image
+from scipy.signal import savgol_filter as sav_gol_filter
 
 # Spectrometer Kymera 328i
 DEVICE = 0
@@ -36,19 +37,22 @@ CLOSE_SHUTTER = 0
 # Camera Andor Newton DU920P-BEX2-DD
 NumberofPixel = 1024
 PixelWidth = 26 # um
-acqModeList = ['Full Vertical Binning', 'Image', 'Single-Track']
-initial_exp_time = 100 # in ms
-initial_cam_temp_tickbox_state = False
-initial_focus_mirror_steps = 228 # found to be the best on 15/July/2025
-tempTimer_update = 30000 # in ms
+acqModeList = ['Single acquisition', 'Accumulation', 'Continuous']
+readModeList = ['Full Vertical Binning', 'Image', 'Single-Track']
 preampList = ['1', '2', '4']
 hsspeedList = ['3.0', '1.0', '0.05']
 # DO NOT MODIFIED THE FOLLOWING DICTS
 HSSPEED = {'3.0': 0, '1.0': 1, '0.05': 2}
 PREAMP = {'1': 0, '2': 1, '4': 2}
-ACQMODE = {'Full Vertical Binning': 'fvb', 'Image': 'image', 'Single-Track': 'single_track'}
+READMODE = {'Full Vertical Binning': 'fvb', 'Image': 'image', 'Single-Track': 'single_track'}
+# initial camera parameters
 initial_center_row = 128
 initial_track_width = 71
+initial_camera_temperature = -70 # in celcius
+initial_exp_time = 100 # in ms
+initial_cam_temp_tickbox_state = False
+initial_focus_mirror_steps = 228 # found to be the best on 15/July/2025
+tempTimer_update = 30000 # in ms
 
 # other inputs
 # initial filepath and filename
@@ -58,6 +62,7 @@ initial_wavelength_array = np.arange(NumberofPixel)
 initial_image = 128*np.ones((256, 1024))
 initial_spectrum = np.ones(1024) # 1D array of size 1024
 initial_autolevel_state = False
+initial_cosmic_ray_removal_bool = False
 
 ######################################################################################
 ######################################################################################
@@ -73,14 +78,21 @@ class Frontend(QtGui.QFrame):
     cameraModeFrontendSignal = pyqtSignal(str, str, str, int, int)
     exposureChangedSignal = pyqtSignal(bool, float)
     liveSpecViewSignal = pyqtSignal(bool, float)
-    takeSpectrumSignal = pyqtSignal(bool, float)
+    takeSpectrumSignal = pyqtSignal(bool, bool, bool, float)
     numAcqSignal = pyqtSignal(int)
+    tempSetPointChangedSignal = pyqtSignal(int)
     filenameSignal = pyqtSignal(str)
     setWorkDirSignal = pyqtSignal()
     saveSpecContSignal = pyqtSignal(bool)
     saveSignal = pyqtSignal()
     createTodayFolderSignal = pyqtSignal(str, str)
+    takeBiasSignal = pyqtSignal(bool, float)
     takeBaselineSignal = pyqtSignal(bool, float)
+    cosmicRayRemovalSignal = pyqtSignal(bool)
+    stopAcquisitionSignal = pyqtSignal()
+    accumulationModeSignal = pyqtSignal(bool)
+    removeBiasSignal = pyqtSignal(bool)
+    removeBaselineSignal = pyqtSignal(bool)
     closeSignal = pyqtSignal()
 
     def __init__(self, *args, **kwargs):
@@ -88,7 +100,7 @@ class Frontend(QtGui.QFrame):
         # set the title of the window
         title = "Spectrometer module"
         self.setWindowTitle(title)
-        self.setGeometry(5, 30, 1000, 700) # x pos, y pos, width, height
+        self.setGeometry(5, 30, 1000, 900) # x pos, y pos, width, height
         self.setUpGUI()
         self.camera_temp = 0.00
         self.spectrum_array = np.array([])
@@ -99,6 +111,7 @@ class Frontend(QtGui.QFrame):
         self.get_image(initial_image)
         self.hist._updateView
         self.file_path = initial_filepath
+        self.temp_set_point_value = initial_camera_temperature
         return
 
     def setUpGUI(self):
@@ -152,11 +165,11 @@ class Frontend(QtGui.QFrame):
         ################################### CAMERA
 
         # Camera widget parameters
-        acq_mode_label = QtGui.QLabel('Acquisition mode:')
-        self.acq_mode = QtGui.QComboBox()
-        self.acq_mode.addItems(acqModeList)
-        self.acq_mode.setCurrentIndex(0)
-        self.acq_mode.setFixedWidth(150)
+        read_mode_label = QtGui.QLabel('Read mode:')
+        self.read_mode = QtGui.QComboBox()
+        self.read_mode.addItems(readModeList)
+        self.read_mode.setCurrentIndex(0)
+        self.read_mode.setFixedWidth(150)
 
         preamp_label = QtGui.QLabel('Pre-amp. gain:')
         self.preamp = QtGui.QComboBox()
@@ -191,6 +204,12 @@ class Frontend(QtGui.QFrame):
         self.sensor_temp_label = QtGui.QLabel('Sensor temperature:')
         self.sensor_temp_value = QtGui.QLabel('----- °C')
 
+        self.temp_set_point_label = QtGui.QLabel('Set point (°C):')
+        self.temp_set_point_edit = QtGui.QLineEdit(str(initial_camera_temperature))
+        self.temp_set_point_edit.setValidator(QtGui.QIntValidator(-80, 20))
+        self.temp_set_point_edit.editingFinished.connect(self.temp_set_point_changed)
+        self.temp_set_point_edit.setToolTip('Minimum is -80 °C if air cooled. CHhnge to water cooling to reach lower tempratures.')
+
         # Exposure time
         exp_time_label = QtGui.QLabel('Exposure time (ms):')
         self.exp_time_edit = QtGui.QLineEdit(str(initial_exp_time))
@@ -198,30 +217,64 @@ class Frontend(QtGui.QFrame):
         self.exp_time_edit.setValidator(QtGui.QDoubleValidator(0.001, 600000.000, 3))
         self.exp_time_edit.setToolTip('Minimum is 1 ms. Maximum is 600 s = 10 min.')
 
-        number_of_acq_label = QtGui.QLabel('Number of acquisitions:')
+        self.accumulation_mode_tickbox = QtGui.QCheckBox('Accumulation mode?')
+        self.accumulation_mode = False
+        self.accumulation_mode_tickbox.setChecked(self.accumulation_mode)
+        self.accumulation_mode_tickbox.stateChanged.connect(self.accumulation_mode_setting)
+
+        number_of_acq_label = QtGui.QLabel('Number of acq. (avg/accum):')
         self.number_of_acq_edit = QtGui.QLineEdit(str(1))
         self.number_of_acq_edit.editingFinished.connect(self.number_of_acq_change)
-        self.number_of_acq_edit.setValidator(QtGui.QIntValidator(0, 1000))
+        self.number_of_acq_edit.setValidator(QtGui.QIntValidator(0, 100000))
+        self.number_of_acq_edit.setToolTip('Number of acquisitions to be averaged or accumulated (in accumulation mode).')
+
+        self.cosmic_ray_removal_tickbox = QtGui.QCheckBox('Cosmic ray removal filter?')
+        self.cosmic_ray_removal_tickbox.setChecked(initial_cosmic_ray_removal_bool)
+        # self.cosmic_ray_removal_tickbox.setText('Autolevel')
+        self.cosmic_ray_removal_tickbox.stateChanged.connect(self.cosmic_ray_removal_option)
+        self.cosmic_ray_removal_bool = initial_cosmic_ray_removal_bool
 
         self.live_spec_button = QtGui.QPushButton('Live spectra view')
         self.live_spec_button.setCheckable(True)
         self.live_spec_button.clicked.connect(self.live_spec_view_button_check)
         self.live_spec_button.setStyleSheet(
-            "QPushButton:pressed { background-color: light-red; }"
-            "QPushButton:checked { background-color: red; }")
+            "QPushButton:checked { background-color: springgreen; }")
 
         # Buttons and labels
         self.take_spectrum_button = QtGui.QPushButton('Take a spectrum')
         self.take_spectrum_button.setCheckable(False)
         self.take_spectrum_button.clicked.connect(self.take_spectrum_button_check)
         self.take_spectrum_button.setStyleSheet(
-            "QPushButton:pressed { background-color: red; }")
+            "QPushButton:pressed { background-color: springgreen; }")
+        
+        self.stop_acquisition_button = QtGui.QPushButton('STOP')
+        self.stop_acquisition_button.setCheckable(False)
+        self.stop_acquisition_button.clicked.connect(self.stop_acquisition_button_clicked)
+        self.stop_acquisition_button.setStyleSheet("background-color: darksalmon")
 
-        self.take_baseline_button = QtGui.QPushButton('Take baseline')
+        # Dealing with the baseline signal
+        self.take_baseline_button = QtGui.QPushButton('Take baseline (2)')
         self.take_baseline_button.setCheckable(False)
         self.take_baseline_button.clicked.connect(self.take_baseline_button_check)
-        self.take_baseline_button.setStyleSheet("background-color: cornflowerblue")
-        self.take_baseline_button.setToolTip('It will close the shutter, acquire the background signal at the current temperature and the given exposure time. Data will be saved automatically with the background suffix.')
+        self.take_baseline_button.setStyleSheet("background-color: lightskyblue")
+        self.take_baseline_button.setToolTip('Acquire the baseline at the current temperature and the given exposure time. Data will be saved automatically with the baseline suffix.')
+
+        self.removeBaselineBox = QtGui.QCheckBox('Remove baseline')
+        self.removeBaselineBox.setChecked(False)
+        self.removeBaselineBox.stateChanged.connect(self.remove_baseline_check)
+        self.removeBaselineBox.setToolTip('Set/Tick to remove the baseline from the spectra.')
+
+        # Dealing with the CCD bias: acquisition and removal
+        self.take_bias_button = QtGui.QPushButton('Take bias (1)')
+        self.take_bias_button.setCheckable(False)
+        self.take_bias_button.clicked.connect(self.take_bias_button_check)
+        self.take_bias_button.setStyleSheet("background-color: lightskyblue")
+        self.take_bias_button.setToolTip('It will close the shutter, acquire the background signal at the current temperature and the given exposure time. Data will be saved automatically with the bias suffix.')
+
+        self.removeBiasBox = QtGui.QCheckBox('Remove bias')
+        self.removeBiasBox.setChecked(False)
+        self.removeBiasBox.stateChanged.connect(self.remove_bias_check)
+        self.removeBiasBox.setToolTip('Set/Tick to remove the bias from the spectra.')
 
         # Working folder
         self.working_dir_button = QtGui.QPushButton('Select directory')
@@ -315,13 +368,13 @@ class Frontend(QtGui.QFrame):
         self.camWidget = QtGui.QWidget()
         camera_parameters_layout = QtGui.QGridLayout()
         self.camWidget.setLayout(camera_parameters_layout)
-        camera_parameters_layout.addWidget(acq_mode_label,                      0, 0)
-        camera_parameters_layout.addWidget(self.acq_mode,                       0, 1)
+        camera_parameters_layout.addWidget(read_mode_label,                     0, 0)
+        camera_parameters_layout.addWidget(self.read_mode,                      0, 1)
         camera_parameters_layout.addWidget(preamp_label,                        1, 0)
         camera_parameters_layout.addWidget(self.preamp,                         1, 1)
         camera_parameters_layout.addWidget(hsspeed_label,                       2, 0)
         camera_parameters_layout.addWidget(self.hsspeed,                        2, 1)
-        camera_parameters_layout.addWidget(define_roi,                          0, 2)
+        camera_parameters_layout.addWidget(define_roi,                          0, 2, 1, 2)
         camera_parameters_layout.addWidget(center_row_label,                    1, 2)
         camera_parameters_layout.addWidget(self.center_row_edit,                1, 3)
         camera_parameters_layout.addWidget(track_width_label,                   2, 2)
@@ -330,14 +383,21 @@ class Frontend(QtGui.QFrame):
         camera_parameters_layout.addWidget(self.set_configuration_camera_button,3, 0, 1, 2)
         camera_parameters_layout.addWidget(self.sensor_temp_label,              5, 0)
         camera_parameters_layout.addWidget(self.sensor_temp_value,              5, 1)
+        camera_parameters_layout.addWidget(self.temp_set_point_label,           5, 2)
+        camera_parameters_layout.addWidget(self.temp_set_point_edit,            5, 3)
         camera_parameters_layout.addWidget(exp_time_label,                      6, 0)
         camera_parameters_layout.addWidget(self.exp_time_edit,                  6, 1)
-        camera_parameters_layout.addWidget(number_of_acq_label,                 7, 0)
-        camera_parameters_layout.addWidget(self.number_of_acq_edit,             7, 1)
+        camera_parameters_layout.addWidget(self.accumulation_mode_tickbox,      7, 0)
+        camera_parameters_layout.addWidget(number_of_acq_label,                 7, 1)
+        camera_parameters_layout.addWidget(self.number_of_acq_edit,             7, 2)
+        camera_parameters_layout.addWidget(self.cosmic_ray_removal_tickbox,     7, 3)
         camera_parameters_layout.addWidget(self.take_spectrum_button,           8, 0, 1, 2)
-        camera_parameters_layout.addWidget(self.take_baseline_button,           8, 2, 1, 2)
+        camera_parameters_layout.addWidget(self.take_baseline_button,           8, 2)
+        camera_parameters_layout.addWidget(self.removeBaselineBox,              8, 3)
         camera_parameters_layout.addWidget(self.saveButton,                     9, 0)
         camera_parameters_layout.addWidget(self.saveAutomaticallyBox,           9, 1)
+        camera_parameters_layout.addWidget(self.take_bias_button,               9, 2)
+        camera_parameters_layout.addWidget(self.removeBiasBox,                  9, 3)
         camera_parameters_layout.addWidget(self.working_dir_label,              10, 0)
         camera_parameters_layout.addWidget(self.working_dir_path,               10, 1, 1, 2)
         camera_parameters_layout.addWidget(self.working_dir_button,             10, 3)
@@ -346,14 +406,15 @@ class Frontend(QtGui.QFrame):
         camera_parameters_layout.addWidget(self.create_today_folder_button,     11, 3)
         camera_parameters_layout.addWidget(self.filename_label,                 12, 0)
         camera_parameters_layout.addWidget(self.filename_name,                  12, 1, 1, 2)
-        camera_parameters_layout.addWidget(self.live_spec_button,               13, 0, 1, 3)
+        camera_parameters_layout.addWidget(self.live_spec_button,               13, 0, 1, 2)
+        camera_parameters_layout.addWidget(self.stop_acquisition_button,        13, 2)
         camera_parameters_layout.addWidget(self.autolevel_tickbox,              13, 3)
 
         # Place layouts and boxes
         dockArea = DockArea()
         hbox = QtGui.QHBoxLayout(self)
 
-        spectrometerParamDock = Dock('Spectrometer parameters', size = (10, 10))
+        spectrometerParamDock = Dock('Spectrometer parameters', size = (1, 10))
         spectrometerParamDock.addWidget(self.spectrumWidget)
         dockArea.addDock(spectrometerParamDock)
 
@@ -361,11 +422,11 @@ class Frontend(QtGui.QFrame):
         camParamDock.addWidget(self.camWidget)
         dockArea.addDock(camParamDock, 'right', spectrometerParamDock)
 
-        camSensorDock = Dock('Camera sensor', size = (10, 50))
+        camSensorDock = Dock('Camera sensor', size = (1, 100))
         camSensorDock.addWidget(self.cameraSensorWidget)
         dockArea.addDock(camSensorDock, 'bottom')
 
-        plotSpectrumDock = Dock('Spectrum', size = (10, 50))
+        plotSpectrumDock = Dock('Spectrum', size = (1, 100))
         plotSpectrumDock.addWidget(self.plotSpectrumWidget)
         dockArea.addDock(plotSpectrumDock, 'above', camSensorDock)
 
@@ -409,18 +470,27 @@ class Frontend(QtGui.QFrame):
             self.autolevel_bool = False
         return
 
+    def cosmic_ray_removal_option(self):
+        if self.cosmic_ray_removal_tickbox.isChecked():
+            self.cosmic_ray_removal_bool = True
+            self.cosmicRayRemovalSignal.emit(True)
+        else:
+            self.cosmic_ray_removal_bool = False
+            self.cosmicRayRemovalSignal.emit(False)
+        return
+
     @pyqtSlot(np.ndarray)
     def get_image(self, image):
         self.cam_image.setImage(image, autoLevels = self.autolevel_bool)
         return
 
     def camera_configuration(self):
-        acq_mode = str(self.acq_mode.currentText())
+        read_mode = str(self.read_mode.currentText())
         preamp_mode = str(self.preamp.currentText())
         hsspeed_mode = str(self.hsspeed.currentText())
         center_row = int(self.center_row_edit.text())
         track_width = int(self.track_width_edit.text())
-        self.cameraModeFrontendSignal.emit(acq_mode, preamp_mode, hsspeed_mode, center_row, track_width) 
+        self.cameraModeFrontendSignal.emit(read_mode, preamp_mode, hsspeed_mode, center_row, track_width) 
         return
 
     def exposure_changed_check(self):
@@ -446,10 +516,27 @@ class Frontend(QtGui.QFrame):
 
     def take_spectrum_button_check(self):
         exposure_time_ms = float(self.exp_time_edit.text()) # in ms
+        bias_acq = False
+        baseline_acq = False
         if self.live_spec_button.isChecked():
-            self.takeSpectrumSignal.emit(True, exposure_time_ms)
+            self.takeSpectrumSignal.emit(True, bias_acq, baseline_acq, exposure_time_ms)
+            self.live_spec_button.setChecked(False)
         else:
-            self.takeSpectrumSignal.emit(False, exposure_time_ms)
+            self.takeSpectrumSignal.emit(False, bias_acq, baseline_acq, exposure_time_ms)
+        return
+
+    def stop_acquisition_button_clicked(self):
+        self.stopAcquisitionSignal.emit()
+        if self.live_spec_button.isChecked():
+            self.live_spec_button.setChecked(False)
+        return
+
+    def take_bias_button_check(self):
+        exposure_time_ms = float(self.exp_time_edit.text()) # in ms
+        if self.live_spec_button.isChecked():
+            self.takeBiasSignal.emit(True, exposure_time_ms)
+        else:
+            self.takeBiasSignal.emit(False, exposure_time_ms)
         return
 
     def take_baseline_button_check(self):
@@ -458,6 +545,21 @@ class Frontend(QtGui.QFrame):
             self.takeBaselineSignal.emit(True, exposure_time_ms)
         else:
             self.takeBaselineSignal.emit(False, exposure_time_ms)
+        return
+
+    def temp_set_point_changed(self):
+        temp_set_point_value = int(self.temp_set_point_edit.text()) # in celcius degree
+        if self.temp_set_point_value != temp_set_point_value:
+            self.temp_set_point_value = temp_set_point_value
+            self.tempSetPointChangedSignal.emit(self.temp_set_point_value)
+        return
+
+    def accumulation_mode_setting(self):
+        if self.accumulation_mode_tickbox.isChecked():
+            self.accumulation_mode = True
+        else:
+            self.accumulation_mode = False
+        self.accumulationModeSignal.emit(self.accumulation_mode)
         return
 
     @pyqtSlot(np.ndarray)
@@ -531,6 +633,20 @@ class Frontend(QtGui.QFrame):
             self.saveSpecContSignal.emit(False) 
         return
 
+    def remove_bias_check(self):
+        if self.removeBiasBox.isChecked():
+            self.removeBiasSignal.emit(True)
+        else:
+            self.removeBiasSignal.emit(False) 
+        return
+
+    def remove_baseline_check(self):
+        if self.removeBaselineBox.isChecked():
+            self.removeBaselineSignal.emit(True)
+        else:
+            self.removeBaselineSignal.emit(False) 
+        return
+
     def save_spectrum(self):
         if self.saveButton.isChecked:
             self.saveSignal.emit()
@@ -540,6 +656,15 @@ class Frontend(QtGui.QFrame):
     def get_file_path(self, file_path):
         self.file_path = file_path
         self.working_dir_path.setText(self.file_path)
+        return
+
+    @pyqtSlot(str)
+    def warning_bias_baseline_not_taken(self, text):
+        QtGui.QMessageBox.warning(self, 'Warning', '%s not aquired.' % text)
+        if text == 'bias':
+            self.removeBiasBox.setChecked(False)
+        if text == 'baseline':
+            self.removeBaselineBox.setChecked(False)
         return
 
     # re-define the closeEvent to execute an specific command
@@ -568,6 +693,7 @@ class Frontend(QtGui.QFrame):
         backend.filepathSignal.connect(self.get_file_path)
         backend.wavelengthCalibrationSignal.connect(self.get_wavelength_calibration)
         backend.sensorTempSignal.connect(self.get_temperature)
+        backend.warningBiasBaselineSignal.connect(self.warning_bias_baseline_not_taken)
         return
 
 ######################################################################################
@@ -582,6 +708,7 @@ class Backend(QtCore.QObject):
     sensorTempSignal = pyqtSignal(float)
     filepathSignal = pyqtSignal(str)
     wavelengthCalibrationSignal = pyqtSignal(np.ndarray)
+    warningBiasBaselineSignal = pyqtSignal(str)
     fileSavedSignal = pyqtSignal(str)
 
     def __init__(self, mySpectrometer, myCamera, *args, **kwargs):
@@ -591,7 +718,7 @@ class Backend(QtCore.QObject):
         self.viewSpecTimer = QtCore.QTimer()
         self.tempTimer = QtCore.QTimer()
         self.spectrum = initial_spectrum
-        self.temperature = -70 # in celcius
+        self.temperature = initial_camera_temperature
         self.save_automatically_bool = False
         self.filepath = initial_filepath
         self.filename = initial_filename
@@ -602,6 +729,15 @@ class Backend(QtCore.QObject):
         self.start_spectrometer()
         self.live_flag = False
         self.sensor_temp = 99
+        self.accumulation_mode = False
+        self.cosmic_ray_removal_bool = False
+        self.current_focus_mirror_steps = initial_focus_mirror_steps
+        self.bias_spectrum = None
+        self.bias_image = None
+        self.baseline_spectrum = None
+        self.baseline_image = None
+        self.remove_bias_bool = False
+        self.remove_baseline_bool = False
         return
         
     def start_camera(self):
@@ -611,12 +747,12 @@ class Backend(QtCore.QObject):
         self.shutter_state = CLOSE_SHUTTER
         self.set_shutter_state(self.shutter_state)
         print('Is camera opened?', self.myCamera.is_opened())
-        self.acq = 'Full Vertical Binning'
+        self.read_mode = 'Full Vertical Binning'
         self.preamp = '1'
         self.hsspeed = '3.0'
         self.center_row = initial_center_row
         self.track_width = initial_track_width
-        self.set_camera_configuration(self.acq, self.preamp, self.hsspeed, self.center_row, self.track_width)
+        self.set_camera_configuration(self.read_mode, self.preamp, self.hsspeed, self.center_row, self.track_width)
         fan_mode = 'full' # Options are 'full', 'low' or 'off'
         self.myCamera.set_fan_mode(fan_mode)
         self.myCamera.set_cooler(on = True)
@@ -624,6 +760,8 @@ class Backend(QtCore.QObject):
         self.myCamera.set_temperature(self.temperature, enable_cooler = True)
         print('Camera cooler is ON?',self.myCamera.is_cooler_on())
         self.camera_temp_timer()
+        self.myCamera.set_trigger_mode('int') # internal trigger mode
+        print('...setting trigger mode to:', self.myCamera.get_trigger_mode())
         print('Camera status:', self.myCamera.get_status())
         return
 
@@ -660,7 +798,15 @@ class Backend(QtCore.QObject):
         ret = self.mySpectrometer.ShamrockSetFocusMirror(DEVICE, relative_focus_mirror_steps)
         tm.sleep(0.2)
         (ret, current_focus_mirror_steps) = self.mySpectrometer.ShamrockGetFocusMirror(DEVICE)
+        self.current_focus_mirror_steps = current_focus_mirror_steps
         print('Current focus mirror steps:', current_focus_mirror_steps)
+        return
+
+    @pyqtSlot(int)
+    def set_temp_set_point(self, new_set_point):
+        self.temperature = new_set_point
+        self.myCamera.set_temperature(self.temperature, enable_cooler = True)
+        print('Camera temperautre set point changed to: %d °C' % self.temperature)
         return
 
     @pyqtSlot()
@@ -683,7 +829,8 @@ class Backend(QtCore.QObject):
             '[Kymera] Calibration wavelength window range = [ %.1f, %.1f ]' % (self.wavelength_array [0], \
                                                                                self.wavelength_array [-1]))
         ret, wavelength_retrieved = self.mySpectrometer.ShamrockGetWavelength(DEVICE)
-        print(datetime.now(), '[Kymera] Central wavelength = ', wavelength_retrieved)
+        self.wavelength = wavelength_retrieved
+        print(datetime.now(), '[Kymera] Central wavelength = ', self.wavelength)
         return
 
     @pyqtSlot(int)
@@ -700,12 +847,12 @@ class Backend(QtCore.QObject):
         return  
 
     @pyqtSlot(str, str, str, int, int)
-    def set_camera_configuration(self, acq_mode, preamp_mode, hsspeed_mode, center_row, track_width):
+    def set_camera_configuration(self, read_mode, preamp_mode, hsspeed_mode, center_row, track_width):
         print('Setting camera configuration...')
-        self.acq_mode = ACQMODE[acq_mode]
-        self.myCamera.set_read_mode(self.acq_mode)
+        self.read_mode = READMODE[read_mode]
+        self.myCamera.set_read_mode(self.read_mode)
         print('Read mode:', self.myCamera.get_read_mode())
-        if self.acq_mode == 'single_track':
+        if self.read_mode == 'single_track':
             self.myCamera.setup_single_track_mode(center = center_row, width = track_width)
             ret = self.myCamera.get_single_track_mode_parameters()
             print('Single-track parameters:', ret)
@@ -720,14 +867,15 @@ class Backend(QtCore.QObject):
     def set_exposure_time(self, live_spec_bool, exposure_time_ms):
         if live_spec_bool:
             self.stop_live_spec_view()
-        self.exposure_time = exposure_time_ms/1000 # in ms, is float
+        self.exposure_time_ms = exposure_time_ms # in ms, is float
+        self.exposure_time = exposure_time_ms/1000 # in s, is float
         print('Setting exposure time to %.6f s' % self.exposure_time)
         self.myCamera.set_exposure(self.exposure_time)
         exp_time, self.frame_time = self.myCamera.get_frame_timings() # output in seconds
         self.frame_time_ms = self.frame_time*1000
-        print('Exposure time set to %.3f ms. Frame time: %.3f ms' % (exp_time*1000, self.frame_time*1000))
+        print('Exposure time set to %.3f ms. Frame time: %.3f ms' % (exp_time*1000, self.frame_time_ms))
         # set frame timeout to +50% of the frame time
-        self.frame_timeout = self.frame_time*1.5 
+        self.frame_timeout = self.frame_time*1.5
         return
 
     @pyqtSlot(bool, float)
@@ -741,20 +889,194 @@ class Backend(QtCore.QObject):
     def start_live_spec_view(self, exposure_time_ms):
         self.live_flag = True
         self.spectrum_number = 0
-        print('\nLive spec view started at', datetime.now())
+        print('\n--- Liveview started at', datetime.now())
         self.set_shutter_state(OPEN_SHUTTER) # opens shutter
         self.set_exposure_time(False, exposure_time_ms)
-        self.myCamera.setup_acquisition(mode = 'cont', nframes = self.number_of_acquisitions)
+        self.myCamera.setup_acquisition(mode = 'cont')
         self.myCamera.start_acquisition()
         self.viewSpecTimer.start(round(self.frame_time_ms)) # ms
         return
 
     def stop_live_spec_view(self):
         self.live_flag = False
-        print('\nLive spec view stopped at', datetime.now())
         self.myCamera.stop_acquisition()
         self.set_shutter_state(CLOSE_SHUTTER) # closes shutter
+        print('\nLiveview stopped at', datetime.now())
         self.viewSpecTimer.stop()
+        return
+
+    def update_liveview(self):
+        # update spectrum while in live spectrum view mode
+        self.myCamera.wait_for_frame(timeout = self.frame_timeout)
+        spectrum = self.myCamera.read_newest_image() # numpy array of size (1, 1024) that is a 2D array
+        ret_ok, return_object = self.determine_signal(spectrum)
+        if ret_ok:
+            if self.save_automatically_bool:
+                self.save_spectrum(suffix_str = '{:04d}'.format(self.spectrum_number))
+                self.spectrum_number += 1
+            return
+        else:
+            self.stop_live_spec_view()
+            return
+
+    @pyqtSlot()
+    def stop_acquisition(self):
+        if self.live_flag:
+            self.stop_live_spec_view()
+        else:
+            self.myCamera.stop_acquisition()
+            print('\nAcquisition stopped at', datetime.now())
+        return
+
+    @pyqtSlot(bool, bool, bool, float)
+    def take_single_spectrum(self, live_spec_bool, bias_acq, baseline_acq, exposure_time_ms):
+        if live_spec_bool:
+            self.stop_live_spec_view()
+        print('\n--- Spectrum acquisition ---')
+        self.set_exposure_time(live_spec_bool, exposure_time_ms)        
+        print('Setting single mode...')
+        self.myCamera.setup_acquisition(mode = 'single')
+        # acquire a single spectrum
+        if bias_acq:
+            self.set_shutter_state(CLOSE_SHUTTER)
+        else:
+            self.set_shutter_state(OPEN_SHUTTER)
+        if self.number_of_acquisitions == 1:
+            # numpy array of size (1, 1024) that is a 2D array
+            spectrum = self.myCamera.snap(timeout = self.frame_timeout)
+            self.set_shutter_state(CLOSE_SHUTTER)
+            print('Acquisition stopped. A single frame was acquired.')
+        elif self.number_of_acquisitions > 1:
+            # numpy array of size (1, 1024) that is a 2D array
+            spectra_list = self.myCamera.grab(nframes = self.number_of_acquisitions, \
+                                              frame_timeout = self.frame_timeout) 
+            self.set_shutter_state(CLOSE_SHUTTER)
+            print('Acquisition stopped. %d frames were acquired and averaged.' % self.number_of_acquisitions)
+            spectra_array = np.array(spectra_list)
+            # signal pre-processing and cosmic ray removal
+            if self.cosmic_ray_removal_bool:
+                spectra_array = self.filter_spectra(spectra_array)
+            if self.accumulation_mode:
+                # sum all spectra
+                spectrum = np.sum(spectra_array, axis = 0) # single total spectrum
+                print('Accumulation mode ON: spectra were summed up.')
+            else:
+                # average all spectra
+                spectrum = np.mean(spectra_array, axis = 0) # single averaged spectrum
+                print('Accumulation mode OFF: spectra were averaged.')
+        else:
+            print('ERROR. No acquisition performed. Number of acquisitions: %i' % self.number_of_acquisitions)
+        #### send/emit spectrum or image to the frontend
+        if spectrum is None:
+            print('Warning! No spectrum was acquired.')
+        else:
+            # handle the acquired signal (image or line spectrum)
+            ret_ok, return_object = self.determine_signal(spectrum, bias_acq, baseline_acq)
+            if ret_ok:
+                print('Spectrum taken at', datetime.now())
+                if self.save_automatically_bool:
+                    self.save_spectrum()
+        return
+
+    def filter_spectra(self, data_array):
+        # Take the median along the axis of the individual exposures (axis=0)
+        filtered_array = np.median(data_array, axis = 0)
+        # get the mean and std for comparison
+        # filtered_array = np.ma.mean(sigma_clip(data_array, axis = 0, sigma = 4, maxiters = 3), axis = 0)
+        print('Spectra were filtered.')
+        return filtered_array
+
+    @pyqtSlot(bool, float)
+    def take_bias_spectrum(self, live_spec_bool, exposure_time_ms):
+        print('\nTaking bias...')
+        bias_acq = True
+        baseline_acq = False
+        self.take_single_spectrum(live_spec_bool, bias_acq, baseline_acq, exposure_time_ms)
+        self.save_spectrum(suffix_str = 'bias')
+        if self.read_mode == 'fvb' or self.read_mode == 'single_track':
+            self.bias_spectrum = self.spectrum
+        elif self.read_mode == 'image':
+            self.bias_image = self.image
+        else:
+            print('No bias spectrum was stored.')
+        return
+
+    @pyqtSlot(bool, float)
+    def take_baseline_spectrum(self, live_spec_bool, exposure_time_ms):
+        print('\nTaking baseline...')
+        bias_acq = False
+        baseline_acq = True
+        self.take_single_spectrum(live_spec_bool, bias_acq, baseline_acq, exposure_time_ms)
+        self.save_spectrum(suffix_str = 'baseline')
+        if self.read_mode == 'fvb' or self.read_mode == 'single_track':
+            self.baseline_spectrum = self.spectrum
+        elif self.read_mode == 'image':
+            self.baseline_image = self.image
+        else:
+            print('No baseline spectrum was stored.')
+        return
+
+    def determine_signal(self, spectrum, bias_acq = False, baseline_acq = False):
+        # which read mode was used? send signal according to the read mode
+        if self.read_mode == 'fvb' or self.read_mode == 'single_track':
+            self.spectrum = spectrum.ravel() # numpy array of size (1024,) that is a 1D array
+            # remove bias if option has been chosen but do not if a bias is being acquired
+            if self.remove_bias_bool and not bias_acq:
+                self.spectrum = self.spectrum - self.bias_spectrum
+                print('Bias subtracted.')
+            if self.remove_baseline_bool and not baseline_acq:
+                self.spectrum = self.spectrum - self.baseline_spectrum
+                print('Baseline subtracted.')
+            self.spectrumSignal.emit(self.spectrum)
+            # objects to return
+            return_object = self.spectrum
+            ret_ok = True
+        elif self.read_mode == 'image':
+            self.image = spectrum
+            # remove bias if option has been chosen
+            if self.remove_bias_bool and not bias_acq:
+                self.image = self.image - self.bias_image
+                print('Bias subtracted.')
+            if self.remove_baseline_bool and not baseline_acq:
+                self.image = self.image - self.baseline_image
+                print('Baseline subtracted.')
+            self.imageSignal.emit(self.image)
+            # objects to return
+            return_object = self.image
+            ret_ok = True
+        else:
+            print('Error! Cannot determine read mode.')
+            return_object = None
+            ret_ok = False
+        return ret_ok, return_object
+
+    @pyqtSlot(bool)
+    def set_accumulation_mode(self, accumulation_mode_bool):
+        self.accumulation_mode = accumulation_mode_bool
+        print('\nAccumulation set to:', self.accumulation_mode)
+        return
+
+    @pyqtSlot(int)
+    def set_number_of_acquisitions(self, number_of_acquisitions):
+        self.number_of_acquisitions = number_of_acquisitions
+        print('Number of acquisitions to be averaged/accumulated: %i' % self.number_of_acquisitions)
+        return
+
+    @pyqtSlot(bool)
+    def set_cosmic_ray_removal_filter(self, cosmic_ray_removal_bool):
+        print('Cosmic ray removal filter set to:', cosmic_ray_removal_bool)
+        self.cosmic_ray_removal_bool = cosmic_ray_removal_bool
+        ######
+        # COMMENT: the lines below only work when "accum" acquisition mode is 
+        # set that I couldn't make it work. Then, the hardware filter is always OFF.
+        # Instead a custom-made routine was coded. See take_single_spectrum() function.
+        ######
+        # if cosmic_ray_removal_bool:
+        #     self.cosmic_ray_removal_filter_value = 2 # set ON
+        # else:
+        #     self.cosmic_ray_removal_filter_value = 0 # set OFF
+        # self.myCamera.set_filter_mode(int(self.cosmic_ray_removal_filter_value))
+        # print('Filter mode:', self.myCamera.get_filter_mode())
         return
 
     def camera_temp_timer(self):
@@ -768,71 +1090,6 @@ class Backend(QtCore.QObject):
         # print('\nNewton camera temperature retrieved at', datetime.now())
         # print('Sensor temp: %.1f °C' % sensor_temp)
         self.sensorTempSignal.emit(self.sensor_temp)
-        return
-
-    def update_view(self):
-        # update spectrum while in live spectrum view mode
-        self.myCamera.wait_for_frame(timeout = (self.frame_timeout*self.number_of_acquisitions, self.frame_timeout))
-        spectrum = self.myCamera.read_newest_image() # numpy array of size (1, 1024) that is a 2D array
-        if self.acq_mode == 'fvb' or self.acq_mode == 'single_track':
-            self.spectrum = spectrum.ravel() # numpy array of size (1024,) that is a 1D array
-            self.spectrumSignal.emit(self.spectrum)
-        elif self.acq_mode == 'image':
-            self.image = spectrum
-            self.imageSignal.emit(self.image)
-        else:
-            print('ERROR in determining the acquisition mode. Acquisition stopped.')
-            self.stop_live_spec_view()
-        if self.save_automatically_bool:
-            self.save_spectrum()
-            self.spectrum_number += 1
-        return
-
-    @pyqtSlot(bool, float)
-    def take_single_spectrum(self, live_spec_bool, exposure_time_ms):
-        print('\nSpectrum taken at', datetime.now())
-        if live_spec_bool:
-            self.stop_live_spec_view()
-        # acquire a single spectrum
-        self.set_exposure_time(False, exposure_time_ms)
-        self.myCamera.setup_acquisition(mode = 'single', nframes = self.number_of_acquisitions)
-        self.set_shutter_state(OPEN_SHUTTER) # opens shutter
-        if self.number_of_acquisitions == 1:
-            # numpy array of size (1, 1024) that is a 2D array
-            spectrum = self.myCamera.snap(timeout = self.frame_timeout)
-        elif self.number_of_acquisitions > 1:
-            # numpy array of size (1, 1024) that is a 2D array
-            spectra_list = self.myCamera.grab(nframes = self.number_of_acquisitions, \
-                                              frame_timeout = self.frame_timeout) 
-            spectra_array = np.array(spectra_list)
-            spectrum = np.mean(spectra_array, axis = 0) # single, averaged spectrum
-        else:
-            print('Error while taking a single spectrum! Number of acquisitions %i' % self.number_of_acquisitions)
-        # emit
-        if self.acq_mode == 'fvb' or self.acq_mode == 'single_track':
-            self.spectrum = spectrum.ravel() # numpy array of size (1024,) that is a 1D array
-            self.spectrumSignal.emit(self.spectrum)
-        elif self.acq_mode == 'image':
-            self.image = spectrum
-            self.imageSignal.emit(self.image)
-        else:
-            print('ERROR in determining the acquisition mode. Acquisition stopped.')
-        if self.save_automatically_bool:
-            self.save_spectrum()
-        self.set_shutter_state(CLOSE_SHUTTER) # close shutter
-        return
-
-    @pyqtSlot(bool, float)
-    def take_baseline_spectrum(self, live_spec_bool, exposure_time_ms):
-        self.set_shutter_state(CLOSE_SHUTTER) # closes shutter
-        self.take_single_spectrum(live_spec_bool, exposure_time_ms)
-        self.save_spectrum(baseline = True)
-        return
-
-    @pyqtSlot(int)
-    def set_number_of_acquisitions(self, number_of_acquisitions):
-        self.number_of_acquisitions = number_of_acquisitions
-        print('Number of acquisitions to be averaged: %i' % self.number_of_acquisitions)
         return
 
     @pyqtSlot()
@@ -876,14 +1133,42 @@ class Backend(QtCore.QObject):
             self.save_automatically_bool = False
         return
 
+    @pyqtSlot(bool)
+    def remove_bias_option(self, remove_bool):
+        if remove_bool:
+            if self.bias_spectrum is None:
+                self.warningBiasBaselineSignal.emit('bias')
+                print('Please, acquire the bias spectrum first.')
+                self.remove_bias_bool = False
+            else:
+                self.remove_bias_bool = True
+                print('Spectra will be shown with the bias subtracted.')
+        else:
+            print('Spectra will be shown as acquired.')
+            self.remove_bias_bool = False
+        return
+
+    @pyqtSlot(bool)
+    def remove_baseline_option(self, remove_bool):
+        if remove_bool:
+            if self.baseline_spectrum is None:
+                self.warningBiasBaselineSignal.emit('baseline')
+                print('Please, acquire the baseline spectrum first.')
+                self.remove_baseline_bool = False
+            else:
+                self.remove_baseline_bool = True
+                print('Spectra will be shown with the baseline subtracted.')
+        else:
+            print('Spectra will be shown as acquired.')
+            self.remove_baseline_bool = False
+        return
+
     @pyqtSlot()
-    def save_spectrum(self, message_box = False, baseline = False):
+    def save_spectrum(self, message_box = False, suffix_str = None):
         # prepare full filepath
         filepath = self.filepath
-        if self.live_flag:
-            self.suffix = '_{:04d}'.format(self.spectrum_number)
-        elif baseline:
-            self.suffix = '_baseline'
+        if suffix_str is not None:
+            self.suffix = '_%s' % suffix_str
         else:
             self.suffix = ''
         filename = self.filename + self.suffix
@@ -894,7 +1179,7 @@ class Backend(QtCore.QObject):
         filename_params = filename_timestamped + '_params.txt'
         # save data
         full_filepath_data = os.path.join(filepath, filename_data)
-        if self.acq_mode == 'image':
+        if self.read_mode == 'image':
             image_full_filepath = full_filepath_data + '.jpg'
             image_to_save = Image.fromarray(self.spectrum)
             image_to_save.save(image_full_filepath) 
@@ -917,13 +1202,19 @@ class Backend(QtCore.QObject):
 
     def get_params_to_be_saved(self):
         dict_to_be_saved = {}
-        dict_to_be_saved["Acquisition mode"] = self.acq_mode
+        dict_to_be_saved["Read mode"] = self.read_mode
         dict_to_be_saved["Grating"] = self.grating
+        dict_to_be_saved["Focus mirror steps"] = self.current_focus_mirror_steps
+        dict_to_be_saved["Center wavelength (nm)"] = self.wavelength
         dict_to_be_saved["Pre-amp"] = self.preamp_value
         dict_to_be_saved["HSSpeed"] = self.hsspeed_value
         dict_to_be_saved["Exposure time (s)"] = self.exposure_time
         dict_to_be_saved["Sensor temperature (°C)"] = self.sensor_temp
         dict_to_be_saved["Number of acquisitions"] = self.number_of_acquisitions
+        dict_to_be_saved["Accumulation mode"] = self.accumulation_mode
+        dict_to_be_saved["Cosmic ray filter"] = self.cosmic_ray_removal_bool
+        dict_to_be_saved["Bias removed"] = self.remove_bias_bool
+        dict_to_be_saved["Baseline removed"] = self.remove_baseline_bool
         return dict_to_be_saved
 
     @pyqtSlot()    
@@ -951,12 +1242,19 @@ class Backend(QtCore.QObject):
         frontend.exposureChangedSignal.connect(self.set_exposure_time)
         frontend.liveSpecViewSignal.connect(self.live_spec_view) 
         frontend.takeSpectrumSignal.connect(self.take_single_spectrum)
+        frontend.stopAcquisitionSignal.connect(self.stop_acquisition)
+        frontend.takeBiasSignal.connect(self.take_bias_spectrum)
         frontend.takeBaselineSignal.connect(self.take_baseline_spectrum)
+        frontend.accumulationModeSignal.connect(self.set_accumulation_mode)
         frontend.numAcqSignal.connect(self.set_number_of_acquisitions)
+        frontend.tempSetPointChangedSignal.connect(self.set_temp_set_point)
+        frontend.cosmicRayRemovalSignal.connect(self.set_cosmic_ray_removal_filter)
         frontend.saveSignal.connect(self.save_spectrum)
         frontend.setWorkDirSignal.connect(self.set_working_folder)
         frontend.createTodayFolderSignal.connect(self.create_folder)
         frontend.saveSpecContSignal.connect(self.save_automatically_check)
+        frontend.removeBiasSignal.connect(self.remove_bias_option)
+        frontend.removeBaselineSignal.connect(self.remove_baseline_option)
         frontend.filenameSignal.connect(self.set_filename)
         return
 
@@ -968,9 +1266,9 @@ if __name__ == '__main__':
 
     app = QtGui.QApplication([])
 
-    print('\nSpectrometer initialization...')
-
+    print('\nCamera initialization...')
     camera = Andor.AndorSDK2Camera()
+    print('\nSpectrometer initialization...')
     mySpectrometer = Shamrock()
     inipath = 'C:\\Program Files\\Andor SOLIS\\SPECTROG.ini'
     mySpectrometer.ShamrockInitialize(inipath)
@@ -991,8 +1289,9 @@ if __name__ == '__main__':
     worker.tempTimer.moveToThread(spectrumThread)
     
     # configure the connection to allow queued executions to avoid interruption of previous calls
-    worker.viewSpecTimer.timeout.connect(worker.update_view, QtCore.Qt.QueuedConnection) 
+    worker.viewSpecTimer.timeout.connect(worker.update_liveview, QtCore.Qt.QueuedConnection) 
     worker.tempTimer.timeout.connect(worker.update_temp)
+    worker.update_temp()
 
     spectrumThread.start()
 
