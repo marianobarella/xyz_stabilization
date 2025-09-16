@@ -951,7 +951,7 @@ class Backend(QtCore.QObject):
             spectra_list = self.myCamera.grab(nframes = self.number_of_acquisitions, \
                                               frame_timeout = self.frame_timeout) 
             self.set_shutter_state(CLOSE_SHUTTER)
-            print('Acquisition stopped. %d frames were acquired and averaged.' % self.number_of_acquisitions)
+            print('Acquisition stopped. %d frames were acquired.' % self.number_of_acquisitions)
             spectra_array = np.array(spectra_list)
             # signal pre-processing and cosmic ray removal
             if self.cosmic_ray_removal_bool:

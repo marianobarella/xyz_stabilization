@@ -752,20 +752,21 @@ class Backend(QtCore.QObject):
 
     def prepare_z_scan(self):
         print('\nPreparing for z scan...')
-        # move to scan's origin
-        self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z0])
-        tm.sleep(0.1) # wait to settle (in seconds)
         # prepare APD for signal acquisition during the scan
         scan_step_time_seconds = self.scan_step_time/1000 # to s
         self.number_of_points_z_scan = self.apdTraceWorker.arm_for_confocal(scan_step_time_seconds)
         # create z array
         # update piezostage position
         self.update_position()
+        # first and only definition of z0
         self.z0 = round(self.z_pos - self.scan_range_z/2 + self.pixel_size_z/2, 3)
         self.z_scan_array = np.arange(self.z0, self.z0 + self.scan_range_z, self.pixel_size_z)
         self.z_scan_array = self.z_scan_array[0:self.scan_range_pixels_z] # limit to the right size
         # print('\nArray of scanning positions:')
         # print('z:', self.z_scan_array)
+        # move to scan's origin
+        self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z0])
+        tm.sleep(0.1) # wait to settle (in seconds)
         # allocate profile and counter
         self.z_traces = np.zeros((self.number_of_points_z_scan, self.scan_range_pixels_z))
         self.z_profile = np.zeros((self.scan_range_pixels_z))
