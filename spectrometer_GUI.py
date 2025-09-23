@@ -41,10 +41,12 @@ acqModeList = ['Single acquisition', 'Accumulation', 'Continuous']
 readModeList = ['Full Vertical Binning', 'Image', 'Single-Track']
 preampList = ['1', '2', '4']
 hsspeedList = ['3.0', '1.0', '0.05']
+filterList = ['Median filter', 'Sigma clip filter']
 # DO NOT MODIFIED THE FOLLOWING DICTS
 HSSPEED = {'3.0': 0, '1.0': 1, '0.05': 2}
 PREAMP = {'1': 0, '2': 1, '4': 2}
 READMODE = {'Full Vertical Binning': 'fvb', 'Image': 'image', 'Single-Track': 'single_track'}
+FILTERMODE = {'Median filter': 1, 'Sigma clip filter': 2}
 # initial camera parameters
 initial_center_row = 128
 initial_track_width = 71
@@ -88,7 +90,7 @@ class Frontend(QtGui.QFrame):
     createTodayFolderSignal = pyqtSignal(str, str)
     takeBiasSignal = pyqtSignal(bool, float)
     takeBaselineSignal = pyqtSignal(bool, float)
-    cosmicRayRemovalSignal = pyqtSignal(bool)
+    cosmicRayRemovalSignal = pyqtSignal(bool, str)
     stopAcquisitionSignal = pyqtSignal()
     accumulationModeSignal = pyqtSignal(bool)
     removeBiasSignal = pyqtSignal(bool)
@@ -169,20 +171,20 @@ class Frontend(QtGui.QFrame):
         self.read_mode = QtGui.QComboBox()
         self.read_mode.addItems(readModeList)
         self.read_mode.setCurrentIndex(0)
-        self.read_mode.setFixedWidth(150)
+        self.read_mode.setFixedWidth(120)
 
         preamp_label = QtGui.QLabel('Pre-amp. gain:')
         self.preamp = QtGui.QComboBox()
         self.preamp.addItems(preampList)
         self.preamp.setCurrentIndex(0)
-        self.preamp.setFixedWidth(150)
+        self.preamp.setFixedWidth(120)
         self.preamp.setToolTip('Pre-amplifier gain of the readout register.')
 
         hsspeed_label = QtGui.QLabel('HS speed (MHz):')
         self.hsspeed = QtGui.QComboBox()
         self.hsspeed.addItems(hsspeedList)
         self.hsspeed.setCurrentIndex(0)
-        self.hsspeed.setFixedWidth(150)
+        self.hsspeed.setFixedWidth(120)
         self.hsspeed.setToolTip('Horizontal shift speed of the readout register.')
 
         # Sensor ROI entry for Single-Track mode
@@ -233,6 +235,11 @@ class Frontend(QtGui.QFrame):
         # self.cosmic_ray_removal_tickbox.setText('Autolevel')
         self.cosmic_ray_removal_tickbox.stateChanged.connect(self.cosmic_ray_removal_option)
         self.cosmic_ray_removal_bool = initial_cosmic_ray_removal_bool
+
+        self.filter = QtGui.QComboBox()
+        self.filter.addItems(filterList)
+        self.filter.setCurrentIndex(0)
+        self.filter.setToolTip('Filter type to be applied if Cosmic ray removal option is selected.')
 
         self.live_spec_button = QtGui.QPushButton('Live spectra view')
         self.live_spec_button.setCheckable(True)
@@ -390,7 +397,8 @@ class Frontend(QtGui.QFrame):
         camera_parameters_layout.addWidget(self.accumulation_mode_tickbox,      7, 0)
         camera_parameters_layout.addWidget(number_of_acq_label,                 7, 1)
         camera_parameters_layout.addWidget(self.number_of_acq_edit,             7, 2)
-        camera_parameters_layout.addWidget(self.cosmic_ray_removal_tickbox,     7, 3)
+        camera_parameters_layout.addWidget(self.cosmic_ray_removal_tickbox,     6, 3)
+        camera_parameters_layout.addWidget(self.filter,                         7, 3)
         camera_parameters_layout.addWidget(self.take_spectrum_button,           8, 0, 1, 2)
         camera_parameters_layout.addWidget(self.take_baseline_button,           8, 2)
         camera_parameters_layout.addWidget(self.removeBaselineBox,              8, 3)
@@ -471,12 +479,13 @@ class Frontend(QtGui.QFrame):
         return
 
     def cosmic_ray_removal_option(self):
+        filter_type = str(self.filter.currentText())
         if self.cosmic_ray_removal_tickbox.isChecked():
             self.cosmic_ray_removal_bool = True
-            self.cosmicRayRemovalSignal.emit(True)
+            self.cosmicRayRemovalSignal.emit(True, filter_type)
         else:
             self.cosmic_ray_removal_bool = False
-            self.cosmicRayRemovalSignal.emit(False)
+            self.cosmicRayRemovalSignal.emit(False, filter_type)
         return
 
     @pyqtSlot(np.ndarray)
@@ -738,6 +747,7 @@ class Backend(QtCore.QObject):
         self.baseline_image = None
         self.remove_bias_bool = False
         self.remove_baseline_bool = False
+        self.filter_level = 1
         return
         
     def start_camera(self):
@@ -876,6 +886,8 @@ class Backend(QtCore.QObject):
         print('Exposure time set to %.3f ms. Frame time: %.3f ms' % (exp_time*1000, self.frame_time_ms))
         # set frame timeout to +50% of the frame time
         self.frame_timeout = self.frame_time*1.5
+        if live_spec_bool:
+            self.start_live_spec_view(self.exposure_time_ms)
         return
 
     @pyqtSlot(bool, float)
@@ -933,7 +945,7 @@ class Backend(QtCore.QObject):
         if live_spec_bool:
             self.stop_live_spec_view()
         print('\n--- Spectrum acquisition ---')
-        self.set_exposure_time(live_spec_bool, exposure_time_ms)        
+        self.set_exposure_time(False, exposure_time_ms)        
         print('Setting single mode...')
         self.myCamera.setup_acquisition(mode = 'single')
         # acquire a single spectrum
@@ -979,11 +991,17 @@ class Backend(QtCore.QObject):
         return
 
     def filter_spectra(self, data_array):
-        # Take the median along the axis of the individual exposures (axis=0)
-        filtered_array = np.median(data_array, axis = 0)
-        # get the mean and std for comparison
-        # filtered_array = np.ma.mean(sigma_clip(data_array, axis = 0, sigma = 4, maxiters = 3), axis = 0)
-        print('Spectra were filtered.')
+        if self.filter_level == 1:
+            # Take the median along the axis of the individual exposures (axis=0)
+            filtered_array = np.median(data_array, axis = 0)
+            print('Spectra were filtered.')
+        elif self.filter_level == 2:
+            # get the mean and std for comparison
+            filtered_array = np.ma.mean(sigma_clip(data_array, axis = 0, sigma = 4, maxiters = 3), axis = 0)
+            print('Spectra were filtered.')
+        else: 
+            print('Spectra were NOT filtered. Filter level could not be determined. The measured array was returned.')
+            filtered_array = data_array
         return filtered_array
 
     @pyqtSlot(bool, float)
@@ -1062,10 +1080,12 @@ class Backend(QtCore.QObject):
         print('Number of acquisitions to be averaged/accumulated: %i' % self.number_of_acquisitions)
         return
 
-    @pyqtSlot(bool)
-    def set_cosmic_ray_removal_filter(self, cosmic_ray_removal_bool):
+    @pyqtSlot(bool, str)
+    def set_cosmic_ray_removal_filter(self, cosmic_ray_removal_bool, filer_type):
         print('Cosmic ray removal filter set to:', cosmic_ray_removal_bool)
         self.cosmic_ray_removal_bool = cosmic_ray_removal_bool
+        print('Filter type:', filter_type)
+        self.filter_level = FILTERMODE[filter_type]
         ######
         # COMMENT: the lines below only work when "accum" acquisition mode is 
         # set that I couldn't make it work. Then, the hardware filter is always OFF.

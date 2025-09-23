@@ -51,7 +51,7 @@ xv, yv = np.meshgrid(x_array, y_array)
 xy_tuple = (xv, yv)
 gaussian_example_spot = drift.gaussian_2D(xy_tuple, 1, 0.8, 1.5, 1, 1, 0)
 initial_confocal_image_np = gaussian_example_spot.reshape((initial_scan_range_pixels_xy, initial_scan_range_pixels_xy))
-initial_scan_step_time = 50 # in ms
+initial_scan_step_time = 35 # in ms
 initial_threshold = 0.8 # to filter the confocal image and find the CM
 initial_confocal_filepath = 'D:\\daily_data\\confocal_data' # save in SSD for fast and daily use
 initial_confocal_filename = 'confocal_scan'
@@ -152,7 +152,7 @@ class Frontend(QtGui.QMainWindow):
         self.cwidget = QtGui.QWidget()
         self.setCentralWidget(self.cwidget)
         self.setWindowTitle('pyTrap')
-        self.setGeometry(5, 30, 1900, 880) # x pos, y pos, width, height
+        self.setGeometry(5, 30, 1900, 850) # x pos, y pos, width, height
         self.main_app = main_app
         # import frontend modules
         # piezo widget (frontend) must be imported in the main
@@ -766,7 +766,7 @@ class Backend(QtCore.QObject):
         # print('z:', self.z_scan_array)
         # move to scan's origin
         self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z0])
-        tm.sleep(0.1) # wait to settle (in seconds)
+        tm.sleep(0.25) # wait to settle (in seconds)
         # allocate profile and counter
         self.z_traces = np.zeros((self.number_of_points_z_scan, self.scan_range_pixels_z))
         self.z_profile = np.zeros((self.scan_range_pixels_z))
@@ -841,7 +841,7 @@ class Backend(QtCore.QObject):
         self.sd_z_profile_interp_fun = interp.interp1d(self.z_scan_array, self.sd_z_profile_smooth)
         self.z_profile_interp = self.z_profile_interp_fun(new_z_array)
         self.sd_z_profile_interp = self.sd_z_profile_interp_fun(new_z_array)
-        self.max_z_pos = new_z_array[np.argmax(self.z_profile_interp)]
+        self.max_z_pos = self.get_max_peak(self.z_profile_interp, new_z_array)
         # send data to Frontend and plot
         self.sendZProfileSignal.emit(new_z_array, self.z_profile_interp, False, 'm', 2)
         self.sendSDZProfileSignal.emit(new_z_array, self.sd_z_profile_interp, False, 'm', 2)
@@ -854,6 +854,15 @@ class Backend(QtCore.QObject):
                                             self.max_z_pos])
             print('\nz position is now {:.3f} um'.format(self.max_z_pos))
         return
+
+    def get_max_peak(self, intensity_profile_interpolated, z_array):
+        # first old method that goes to the absolute maximum
+        max_z_pos_to_go = z_array[np.argmax(intensity_profile_interpolated)]
+        # second and new method that goes to the maximum closest to the interface, that is,
+        # the one tha lies on the right
+        # peak_series, _ = sig.find_peaks(intensity_profile_interpolated)
+        # max_z_pos_to_go = z_array[peak_series[-1]]
+        return max_z_pos_to_go
 
     @pyqtSlot(bool)
     def set_go_to_max_z_auto(self, go_to_z_max_auto_flag):
@@ -895,6 +904,7 @@ class Backend(QtCore.QObject):
         self.create_position_grid()        
         # move to scan's origin
         self.piezoWorker.move_absolute([self.x0, self.y0, self.z_pos])
+        tm.sleep(0.25) # wait to settle (in seconds)
         # prepare APD for signal acquisition during the scan
         scan_step_time_seconds = self.scan_step_time/1000 # to s
         self.number_of_points_confocal = self.apdTraceWorker.arm_for_confocal(scan_step_time_seconds)
