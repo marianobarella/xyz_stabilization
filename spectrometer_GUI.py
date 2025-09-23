@@ -1081,7 +1081,7 @@ class Backend(QtCore.QObject):
         return
 
     @pyqtSlot(bool, str)
-    def set_cosmic_ray_removal_filter(self, cosmic_ray_removal_bool, filer_type):
+    def set_cosmic_ray_removal_filter(self, cosmic_ray_removal_bool, filter_type):
         print('Cosmic ray removal filter set to:', cosmic_ray_removal_bool)
         self.cosmic_ray_removal_bool = cosmic_ray_removal_bool
         print('Filter type:', filter_type)
