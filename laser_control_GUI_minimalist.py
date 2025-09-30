@@ -60,7 +60,7 @@ class Frontend(QtGui.QFrame):
 
         self.shutterSafetyLaserButton = QtGui.QCheckBox('Safety shutter')
         self.shutterSafetyLaserButton.clicked.connect(self.control_safety_shutter_button_check)
-        self.shutterSafetyLaserButton.setChecked(True)
+        self.shutterSafetyLaserButton.setChecked(False)
         self.shutterSafetyLaserButton.setStyleSheet("color: darkGreen; ")
         self.shutterSafetyLaserButton.setToolTip('Open/close NIR laser second shutter')
 
