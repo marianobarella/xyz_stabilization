@@ -25,6 +25,7 @@ from pylablib.devices import Andor
 import viewbox_tools
 from PIL import Image
 from scipy.signal import savgol_filter as sav_gol_filter
+from astropy.stats import sigma_clip
 
 # Spectrometer Kymera 328i
 DEVICE = 0
@@ -948,6 +949,7 @@ class Backend(QtCore.QObject):
         self.set_exposure_time(False, exposure_time_ms)        
         print('Setting single mode...')
         self.myCamera.setup_acquisition(mode = 'single')
+        print('Taking %i exposures...' % self.number_of_acquisitions)
         # acquire a single spectrum
         if bias_acq:
             self.set_shutter_state(CLOSE_SHUTTER)
@@ -994,11 +996,11 @@ class Backend(QtCore.QObject):
         if self.filter_level == 1:
             # Take the median along the axis of the individual exposures (axis=0)
             filtered_array = np.median(data_array, axis = 0)
-            print('Spectra were filtered.')
+            print('Spectra were filtered by median.')
         elif self.filter_level == 2:
             # get the mean and std for comparison
             filtered_array = np.ma.mean(sigma_clip(data_array, axis = 0, sigma = 4, maxiters = 3), axis = 0)
-            print('Spectra were filtered.')
+            print('Spectra were filtered with sigma clipped mean.')
         else: 
             print('Spectra were NOT filtered. Filter level could not be determined. The measured array was returned.')
             filtered_array = data_array
@@ -1083,9 +1085,11 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool, str)
     def set_cosmic_ray_removal_filter(self, cosmic_ray_removal_bool, filter_type):
         print('Cosmic ray removal filter set to:', cosmic_ray_removal_bool)
+        print('Important: cosmic ray removal filter overrides the accumulation and average option.')
         self.cosmic_ray_removal_bool = cosmic_ray_removal_bool
-        print('Filter type:', filter_type)
-        self.filter_level = FILTERMODE[filter_type]
+        if cosmic_ray_removal_bool:
+            print('Filter type:', filter_type)
+            self.filter_level = FILTERMODE[filter_type]
         ######
         # COMMENT: the lines below only work when "accum" acquisition mode is 
         # set that I couldn't make it work. Then, the hardware filter is always OFF.

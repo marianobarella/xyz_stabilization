@@ -276,7 +276,7 @@ class Frontend(QtGui.QFrame):
         self.savedrift_tickbox = QtGui.QCheckBox('Save drift curve')
         self.initial_state_savedrift = False
         self.savedrift_tickbox.setChecked(self.initial_state_savedrift)
-        self.savedrift_tickbox.setText('Save drift data when unlocking')
+        self.savedrift_tickbox.setText('Save drift data\nwhen unlocking')
         self.savedrift_tickbox.stateChanged.connect(self.save_drift_trace)
         self.savedrift_bool = self.initial_state_savedrift
         
@@ -359,7 +359,7 @@ class Frontend(QtGui.QFrame):
         layout_fiducials.addWidget(self.kd_label,         10, 0)
         layout_fiducials.addWidget(self.kd_value,         10, 1)
         # save drift
-        layout_fiducials.addWidget(self.savedrift_tickbox,      11, 0)
+        layout_fiducials.addWidget(self.savedrift_tickbox,      11, 0, 2, 2)
         
         # Place layouts and boxes
         dockArea = DockArea()

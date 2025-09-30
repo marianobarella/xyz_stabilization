@@ -16,7 +16,7 @@ import time as tm
 import daq_board_toolbox as daq_toolbox # for shutters control
 
 # set initial paramters
-initial_blue_power = 5 # in mW
+initial_blue_power = 30 # in mW
 
 #=====================================
 

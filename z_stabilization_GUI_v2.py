@@ -50,12 +50,12 @@ initial_image_np = 128*np.ones((1080, 1440, 3))
 dummy_image_np = initial_image_np
 # timing parameterss
 initial_tracking_period = 500 # in ms
-initial_exp_time = 30 # in ms
+initial_exp_time = 150 # in ms
 driftbox_length = 10.0 # in s
-initial_gain = 0 # int
+initial_gain = 140 # int
 
 # inital ROI definition
-initial_vertical_pos = 400
+initial_vertical_pos = 300
 initial_horizontal_pos = 100
 initial_vertical_size = 300
 initial_horizontal_size = 1200
@@ -232,7 +232,7 @@ class Frontend(QtGui.QFrame):
         self.savedrift_tickbox = QtGui.QCheckBox('Save drift curve')
         self.initial_state_savedrift = False
         self.savedrift_tickbox.setChecked(self.initial_state_savedrift)
-        self.savedrift_tickbox.setText('Save drift data when unlocking')
+        self.savedrift_tickbox.setText('Save drift data\nwhen unlocking')
         self.savedrift_tickbox.stateChanged.connect(self.save_drift_trace)
         self.savedrift_bool = self.initial_state_savedrift
         # set ROI for tracking position and size
@@ -368,7 +368,7 @@ class Frontend(QtGui.QFrame):
         layout_zLock.addWidget(self.kd_value,         15, 1)
         
         # save drift
-        layout_zLock.addWidget(self.savedrift_tickbox,      16, 0)
+        layout_zLock.addWidget(self.savedrift_tickbox,      16, 0, 2, 2)
         
         # Place layouts and boxes
         dockArea = DockArea()
