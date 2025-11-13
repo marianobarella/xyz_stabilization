@@ -46,9 +46,10 @@ base_folder = 'C:\\datos_mariano\\posdoc\\unifr\\plasmonic_optical_trapping'
 
 # filtering parameters
 # average filter window
-window_avg = 5
+# window_avg = 5
 # gaussian filter parameters
 sample_rate = 100000  # 100 kHz
+cutoff_freq = 10e3  # 10 kHz
 
 figure_name = 'test1'
 
@@ -59,6 +60,8 @@ plt.close('all')
 
 ##############################################################################+
 # CONCATENATE FILES if the trace was long
+
+print('\nProcessing data files and glueing them...')
 
 # Prompt window to select any file (it will use the selected folder actually)
 root = tk.Tk()
@@ -124,12 +127,18 @@ single_trace_tra = np.reshape(single_trace_tra, (number_of_points, -1))
 single_trace_mon = np.reshape(single_trace_mon, (number_of_points, -1))
 
 # save data
+save_glued_folder = os.path.join(working_folder, 'glued_data')
+if not os.path.exists(save_glued_folder):
+    os.makedirs(save_glued_folder)
 new_filename_tra = 'single_transmission_file.npy'
 new_filename_mon = 'single_monitor_file.npy'
-full_new_file_path_tra = os.path.join(working_folder, new_filename_tra)
-full_new_file_path_mon = os.path.join(working_folder, new_filename_mon)
+full_new_file_path_tra = os.path.join(save_glued_folder, new_filename_tra)
+full_new_file_path_mon = os.path.join(save_glued_folder, new_filename_mon)
 np.save(full_new_file_path_tra, single_trace_tra)
-# np.save(full_new_file_path_mon, single_trace_mon)   
+# np.save(full_new_file_path_mon, single_trace_mon)  
+new_filename_tra_dat = 'single_transmission_file.dat'
+path_to_dat_file = os.path.join(save_glued_folder, new_filename_tra_dat)
+np.savetxt(path_to_dat_file, single_trace_tra, fmt='%.6f')
 
 ##############################################################################
 # FILTERING
@@ -139,7 +148,6 @@ np.save(full_new_file_path_tra, single_trace_tra)
 
 # apply gaussian filtering
 # Process the signal
-cutoff_freq = 10e3  # 10 kHz
 original, filtered = gf.process_signal_file(full_new_file_path_tra, \
                                             sample_rate, cutoff_freq, plot=False)
 # Save filtered signal if needed
