@@ -17,6 +17,7 @@ import daq_board_toolbox as daq_toolbox # for shutters control
 
 # set initial paramters
 initial_blue_power = 30 # in mW
+initial_state_green = False # green laser OFF
 
 #=====================================
 
@@ -30,6 +31,8 @@ class Frontend(QtGui.QFrame):
     shutterSafetySignal = pyqtSignal(bool) 
     shutterWhiteSignal = pyqtSignal(bool) 
     shutter488_signal = pyqtSignal(bool)
+    shutter532_signal = pyqtSignal(bool)
+    emission532_signal = pyqtSignal(bool)
     flipper_apd_signal = pyqtSignal(bool)
     flipper_spectrometer_path_signal = pyqtSignal(bool)
     flipper_trapping_laser_signal = pyqtSignal(bool)
@@ -68,6 +71,17 @@ class Frontend(QtGui.QFrame):
         self.shutter488button.clicked.connect(self.control_488_button_check)
         self.shutter488button.setStyleSheet("color: blue; ")
         self.shutter488button.setToolTip('Open/close 488 laser shutter')
+
+        self.shutter532button = QtGui.QCheckBox('532 nm shutter')
+        self.shutter532button.clicked.connect(self.control_532_button_check)
+        self.shutter532button.setStyleSheet("color: green; ")
+        self.shutter532button.setToolTip('Open/close 532 laser shutter')
+
+        self.emission532button = QtGui.QCheckBox('532 emission ON/OFF')
+        self.emission532button.setStyleSheet("color: black; ")
+        self.emission532button.setChecked(True)
+        self.emission532button.clicked.connect(self.control_emission_532_toggle_check)   
+        self.emission532button.setToolTip('Turns ON/OFF 532 laser emission')     
         
         # Flippers      
         # apd attenuation
@@ -108,9 +122,11 @@ class Frontend(QtGui.QFrame):
         minimalist_box_layout.addWidget(self.shutter488button, 2, 0)
         minimalist_box_layout.addWidget(power488_label, 2, 1)
         minimalist_box_layout.addWidget(self.power488_edit, 2, 2)
-        minimalist_box_layout.addWidget(self.flipperAPDButton, 3, 0)
-        minimalist_box_layout.addWidget(self.flipperSpectrometerButton, 3, 1)
-        minimalist_box_layout.addWidget(self.shutterWhiteLaserButton, 4, 1)
+        minimalist_box_layout.addWidget(self.shutter532button, 3, 0)
+        minimalist_box_layout.addWidget(self.emission532button, 3, 1)
+        minimalist_box_layout.addWidget(self.flipperAPDButton, 4, 0)
+        minimalist_box_layout.addWidget(self.flipperSpectrometerButton, 4, 1)
+        minimalist_box_layout.addWidget(self.shutterWhiteLaserButton, 5, 1)
 
         # Place layouts and boxes
         dockArea = DockArea()
@@ -166,6 +182,13 @@ class Frontend(QtGui.QFrame):
         else:
             self.shutter488_signal.emit(False)
         return
+
+    def control_532_button_check(self):
+        if self.shutter532button.isChecked():
+           self.shutter532_signal.emit(True)
+        else:
+           self.shutter532_signal.emit(False)
+        return
     
     def flipperAPDButton_check(self):
         if self.flipperAPDButton.isChecked():
@@ -210,6 +233,13 @@ class Frontend(QtGui.QFrame):
             self.power488_edit_previous = power488_mW
             self.powerChangedSignal.emit(power488_mW)
         return
+
+    def control_emission_532_toggle_check(self):
+        if self.emission532button.isChecked():
+            self.emission532_signal.emit(True)
+        else:
+            self.emission532_signal.emit(False)
+        return
     
     # re-define the closeEvent to execute an specific command
     def closeEvent(self, event, *args, **kwargs):
@@ -248,6 +278,7 @@ class Backend(QtCore.QObject):
         print('Ports available:', list_of_serial_ports)   
         # build laser objects 
         self.laser488 = laserToolbox.toptica_laser(debug_mode = False)
+        self.laser532 = laserToolbox.oxxius_laser(debug_mode = False)
         self.shuttersObject = laserToolbox.shutters(daq_board) # initialize shutter and closes them all
         self.flippersObject = laserToolbox.flippers(daq_board) # initialize flippers and closes them all
         # build flippers objects
@@ -262,6 +293,7 @@ class Backend(QtCore.QObject):
         self.change_power(initial_blue_power)
         # close shutters at the beggining
         self.shutter488(False) # close shutter
+        self.shutter532(False) # close shutter
         self.flipper_trapping_laser_attenuation(True) # set filters IN
         # self.flipper_apd_attenuation(True) # set filters IN
         # self.flipper_select_spectrometer(False) # set filters OUT
@@ -299,6 +331,22 @@ class Backend(QtCore.QObject):
             self.laser488.shutter('close')
         return
     
+    @pyqtSlot(bool)
+    def shutter532(self, shutterbool):
+        if shutterbool:
+            self.laser532.shutter('open')
+        else:
+            self.laser532.shutter('close')
+        return
+            
+    @pyqtSlot(bool)
+    def emission532(self, emissionbool):
+        if emissionbool:
+            self.laser532.emission('on')
+        else:
+            self.laser532.emission('off')
+        return
+
     @pyqtSlot(bool)
     def flipper_apd_attenuation(self, flipperbool):
         if flipperbool:
@@ -347,6 +395,8 @@ class Backend(QtCore.QObject):
         frontend.shutterSafetySignal.connect(self.shutterSafetyLaser)
         frontend.shutterWhiteSignal.connect(self.shutterWhiteLaser)
         frontend.shutter488_signal.connect(self.shutter488)
+        frontend.shutter532_signal.connect(self.shutter532)
+        frontend.emission532_signal.connect(self.emission532)
         frontend.flipper_apd_signal.connect(self.flipper_apd_attenuation)
         frontend.flipper_spectrometer_path_signal.connect(self.flipper_select_spectrometer)
         frontend.flipper_trapping_laser_signal.connect(self.flipper_trapping_laser_attenuation)

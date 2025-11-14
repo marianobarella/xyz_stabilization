@@ -499,11 +499,12 @@ class Frontend(QtGui.QMainWindow):
                     # stop xy stablization
                     self.xyWidget.stop_stabilization_for_confocal_scan()                    
                     # stop z stablization
-                    self.zWidget.stop_stabilization_for_confocal_scan()                    
+                    self.zWidget.stop_stabilization_for_confocal_scan()
+                    self.laserControlWidget.shutterTrappingLaserButton.setChecked(True)                 
                 else:
                     self.rasterScanButton.setChecked(False)
                     return
-            # set the paramters for the scan
+            # set the parameters for the scan
             self.set_parameters()
             # clear image and send signal to perform the scan
             self.confocal_img_item.clear()
@@ -527,11 +528,12 @@ class Frontend(QtGui.QMainWindow):
                     # stop xy stablization
                     self.xyWidget.stop_stabilization_for_confocal_scan()                    
                     # stop z stablization
-                    self.zWidget.stop_stabilization_for_confocal_scan()                    
+                    self.zWidget.stop_stabilization_for_confocal_scan()
+                    self.laserControlWidget.shutterTrappingLaserButton.setChecked(True)
                 else:
                     self.zScanButton.setChecked(False)
                     return
-            # set the paramters for the scan
+            # set the parameters for the scan
             self.set_parameters()
             self.zScanSignal.emit(True)
         else:
@@ -543,14 +545,14 @@ class Frontend(QtGui.QMainWindow):
     def confocal_scan_stopped(self):
         # uncheck scan button
         self.rasterScanButton.setChecked(False)
-        self.laserControlWidget.shutterTrappingLaserButton.setCheckState(False)
+        self.laserControlWidget.shutterTrappingLaserButton.setChecked(False)
         return
 
     @pyqtSlot()
     def z_scan_stopped(self):
         # uncheck scan button
         self.zScanButton.setChecked(False)
-        self.laserControlWidget.shutterTrappingLaserButton.setCheckState(False)
+        self.laserControlWidget.shutterTrappingLaserButton.setChecked(False)
         return
 
     @pyqtSlot(np.ndarray, np.ndarray, bool, str, int)
@@ -953,6 +955,8 @@ class Backend(QtCore.QObject):
         # either to the last (initial) position or the CM
         # emit signal scan has ended
         self.confocalScanStopped.emit()
+        # calculate center of mass and update the GUI
+        cm_position_list = self.calculate_cm()
         if self.go_to_cm_auto_flag:
             try:
                 self.move_to_cm()
