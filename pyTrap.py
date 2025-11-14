@@ -500,12 +500,12 @@ class Frontend(QtGui.QMainWindow):
                     self.xyWidget.stop_stabilization_for_confocal_scan()                    
                     # stop z stablization
                     self.zWidget.stop_stabilization_for_confocal_scan()
-                    self.laserControlWidget.shutterTrappingLaserButton.setChecked(True)                 
                 else:
                     self.rasterScanButton.setChecked(False)
                     return
             # set the parameters for the scan
             self.set_parameters()
+            self.laserControlWidget.shutterTrappingLaserButton.setChecked(True)
             # clear image and send signal to perform the scan
             self.confocal_img_item.clear()
             self.point_graph_CM.clear()
@@ -529,12 +529,12 @@ class Frontend(QtGui.QMainWindow):
                     self.xyWidget.stop_stabilization_for_confocal_scan()                    
                     # stop z stablization
                     self.zWidget.stop_stabilization_for_confocal_scan()
-                    self.laserControlWidget.shutterTrappingLaserButton.setChecked(True)
                 else:
                     self.zScanButton.setChecked(False)
                     return
             # set the parameters for the scan
             self.set_parameters()
+            self.laserControlWidget.shutterTrappingLaserButton.setChecked(True)
             self.zScanSignal.emit(True)
         else:
             # send signal to stop the scan

@@ -28,7 +28,8 @@ import daq_board_toolbox as daq_toolbox # for shutters control
 # modify if it's not enough
 bytesToRead = 250
 # COM ports
-COM_port_oxxius = 'COMX' # 532 Oxxius Laser com port # NOT INSTALLED
+COM_port_oxxius = 'COM6' # 532 Oxxius Laser Com Port 
+# NOTE: for first time installation set CDC=1 using the Oxxius GUI before trying to connect remotely. See Section 4-1 of the Manual
 # COM_port_flipper_spectrometer = 'COM6' # APT USB Serial number: 37004922
 # COM_port_flipper_apd_Thorlabs = 'COM8' # APT USB Serial number: 37005240
 # COM_port_flipper_trapping_laser_Thorlabs = 'COM7' # APT USB Serial number: 37005241

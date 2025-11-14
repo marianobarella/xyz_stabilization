@@ -17,7 +17,6 @@ import daq_board_toolbox as daq_toolbox # for shutters control
 
 # set initial paramters
 initial_blue_power = 30 # in mW
-initial_state_green = False # green laser OFF
 
 #=====================================
 
@@ -37,6 +36,7 @@ class Frontend(QtGui.QFrame):
     flipper_spectrometer_path_signal = pyqtSignal(bool)
     flipper_trapping_laser_signal = pyqtSignal(bool)
     powerChangedSignal = pyqtSignal(float)
+    updateParams_signal = pyqtSignal()
     closeSignal = pyqtSignal()
 
     def __init__(self, *args, **kwargs):
@@ -64,7 +64,7 @@ class Frontend(QtGui.QFrame):
         self.shutterSafetyLaserButton = QtGui.QCheckBox('Safety shutter')
         self.shutterSafetyLaserButton.clicked.connect(self.control_safety_shutter_button_check)
         self.shutterSafetyLaserButton.setChecked(False)
-        self.shutterSafetyLaserButton.setStyleSheet("color: darkGreen; ")
+        self.shutterSafetyLaserButton.setStyleSheet("color: darkred; ")
         self.shutterSafetyLaserButton.setToolTip('Open/close NIR laser second shutter')
 
         self.shutter488button = QtGui.QCheckBox('488 nm')
@@ -72,7 +72,7 @@ class Frontend(QtGui.QFrame):
         self.shutter488button.setStyleSheet("color: blue; ")
         self.shutter488button.setToolTip('Open/close 488 laser shutter')
 
-        self.shutter532button = QtGui.QCheckBox('532 nm shutter')
+        self.shutter532button = QtGui.QCheckBox('532 nm')
         self.shutter532button.clicked.connect(self.control_532_button_check)
         self.shutter532button.setStyleSheet("color: green; ")
         self.shutter532button.setToolTip('Open/close 532 laser shutter')
@@ -82,6 +82,12 @@ class Frontend(QtGui.QFrame):
         self.emission532button.setChecked(True)
         self.emission532button.clicked.connect(self.control_emission_532_toggle_check)   
         self.emission532button.setToolTip('Turns ON/OFF 532 laser emission')     
+
+        self.updateParamsButton = QtGui.QPushButton('Update lasers\' parameters')
+        self.updateParamsButton.setCheckable(False)
+        self.updateParamsButton.clicked.connect(self.update_params_button)
+        self.updateParamsButton.setStyleSheet(
+                "QPushButton::pressed { background-color: lightcyan; }")
         
         # Flippers      
         # apd attenuation
@@ -127,6 +133,7 @@ class Frontend(QtGui.QFrame):
         minimalist_box_layout.addWidget(self.flipperAPDButton, 4, 0)
         minimalist_box_layout.addWidget(self.flipperSpectrometerButton, 4, 1)
         minimalist_box_layout.addWidget(self.shutterWhiteLaserButton, 5, 1)
+        minimalist_box_layout.addWidget(self.updateParamsButton, 6, 0, 1, 2)
 
         # Place layouts and boxes
         dockArea = DockArea()
@@ -239,6 +246,10 @@ class Frontend(QtGui.QFrame):
             self.emission532_signal.emit(True)
         else:
             self.emission532_signal.emit(False)
+        return
+
+    def update_params_button(self):
+        self.updateParams_signal.emit()
         return
     
     # re-define the closeEvent to execute an specific command
@@ -378,9 +389,38 @@ class Backend(QtCore.QObject):
         return
 
     @pyqtSlot()
+    def update_params(self):
+        # Parameters of 488 nm laser
+        status488 = self.laser488.status()
+        temp488 = self.laser488.base_temp()
+        hours488 = self.laser488.hours()
+        temp_alarm488 = self.laser488.temp_status()
+        
+        # Parameters of 532 nm laser
+        status532 = self.laser532.status()
+        temp532 = self.laser532.base_temp()
+        hours532 = self.laser532.hours()
+        alarm532 = self.laser532.alarm()
+    
+        # 488 Parameteres
+        print('\n488 laser', \
+              '\nStatus:', status488, \
+              '\nTemp.:', temp488, \
+              '\nHours:', hours488, \
+              '\nTemp. alarm:', temp_alarm488)
+        # 532 parameters
+        print('\n532 laser', \
+              '\nStatus:', status532, \
+              '\nTemp.:', temp532, \
+              '\nHours:', hours532, \
+              '\nAlarm:', alarm532)
+        return
+
+    @pyqtSlot()
     def close_backend(self):
         print('Disconnecting lasers...')
         self.laser488.close()
+        self.laser532.close()
         print('\nClosing all shutters...')
         # self.shutterTrappingLaser(False)
         self.shuttersObject.shutdown()
@@ -401,6 +441,7 @@ class Backend(QtCore.QObject):
         frontend.flipper_spectrometer_path_signal.connect(self.flipper_select_spectrometer)
         frontend.flipper_trapping_laser_signal.connect(self.flipper_trapping_laser_attenuation)
         frontend.powerChangedSignal.connect(self.change_power)
+        frontend.updateParams_signal.connect(self.update_params)
         frontend.closeSignal.connect(self.close_backend)
         return
     
