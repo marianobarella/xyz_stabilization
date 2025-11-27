@@ -184,7 +184,7 @@ class Frontend(QtGui.QFrame):
         hsspeed_label = QtGui.QLabel('HS speed (MHz):')
         self.hsspeed = QtGui.QComboBox()
         self.hsspeed.addItems(hsspeedList)
-        self.hsspeed.setCurrentIndex(0)
+        self.hsspeed.setCurrentIndex(2)
         self.hsspeed.setFixedWidth(120)
         self.hsspeed.setToolTip('Horizontal shift speed of the readout register.')
 
@@ -217,8 +217,8 @@ class Frontend(QtGui.QFrame):
         exp_time_label = QtGui.QLabel('Exposure time (ms):')
         self.exp_time_edit = QtGui.QLineEdit(str(initial_exp_time))
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
-        self.exp_time_edit.setValidator(QtGui.QDoubleValidator(0.001, 600000.000, 3))
-        self.exp_time_edit.setToolTip('Minimum is 1 ms. Maximum is 600 s = 10 min.')
+        self.exp_time_edit.setValidator(QtGui.QDoubleValidator(30.000, 600000.000, 3))
+        self.exp_time_edit.setToolTip('Minimum is 30 ms. Maximum is 600 s = 10 min.')
 
         self.accumulation_mode_tickbox = QtGui.QCheckBox('Accumulation mode?')
         self.accumulation_mode = False
@@ -228,7 +228,7 @@ class Frontend(QtGui.QFrame):
         number_of_acq_label = QtGui.QLabel('Number of acq. (avg/accum):')
         self.number_of_acq_edit = QtGui.QLineEdit(str(1))
         self.number_of_acq_edit.editingFinished.connect(self.number_of_acq_change)
-        self.number_of_acq_edit.setValidator(QtGui.QIntValidator(0, 100000))
+        self.number_of_acq_edit.setValidator(QtGui.QIntValidator(1, 100000))
         self.number_of_acq_edit.setToolTip('Number of acquisitions to be averaged or accumulated (in accumulation mode).')
 
         self.cosmic_ray_removal_tickbox = QtGui.QCheckBox('Cosmic ray removal filter?')
@@ -760,7 +760,7 @@ class Backend(QtCore.QObject):
         print('Is camera opened?', self.myCamera.is_opened())
         self.read_mode = 'Full Vertical Binning'
         self.preamp = '1'
-        self.hsspeed = '3.0'
+        self.hsspeed = '0.05'
         self.center_row = initial_center_row
         self.track_width = initial_track_width
         self.set_camera_configuration(self.read_mode, self.preamp, self.hsspeed, self.center_row, self.track_width)
