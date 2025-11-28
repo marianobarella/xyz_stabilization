@@ -494,8 +494,8 @@ class Frontend(QtGui.QFrame):
         for i in range(self.number_of_fiducials):
             # draw center of fiducials, convert um to pixels
             pixel_size_um = self.pixel_size/1000
-            array_of_x_pos_pixels.append(xy_pos_pixel_relative[i][1]/pixel_size_um)
-            array_of_y_pos_pixels.append(xy_pos_pixel_relative[i][0]/pixel_size_um)
+            array_of_x_pos_pixels.append(xy_pos_pixel_relative[i][1]/pixel_size_um + pixel_size_um/2)
+            array_of_y_pos_pixels.append(xy_pos_pixel_relative[i][0]/pixel_size_um + pixel_size_um/2)
         self.xy_fiducials.setData(x = array_of_x_pos_pixels, y = array_of_y_pos_pixels)
         return
 

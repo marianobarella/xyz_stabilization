@@ -171,7 +171,7 @@ class Frontend(QtGui.QFrame):
         read_mode_label = QtGui.QLabel('Read mode:')
         self.read_mode = QtGui.QComboBox()
         self.read_mode.addItems(readModeList)
-        self.read_mode.setCurrentIndex(0)
+        self.read_mode.setCurrentIndex(2)
         self.read_mode.setFixedWidth(120)
 
         preamp_label = QtGui.QLabel('Pre-amp. gain:')
@@ -220,7 +220,7 @@ class Frontend(QtGui.QFrame):
         self.exp_time_edit.setValidator(QtGui.QDoubleValidator(30.000, 600000.000, 3))
         self.exp_time_edit.setToolTip('Minimum is 30 ms. Maximum is 600 s = 10 min.')
 
-        self.accumulation_mode_tickbox = QtGui.QCheckBox('Accumulation mode?')
+        self.accumulation_mode_tickbox = QtGui.QCheckBox('Accumulate (sum)?')
         self.accumulation_mode = False
         self.accumulation_mode_tickbox.setChecked(self.accumulation_mode)
         self.accumulation_mode_tickbox.stateChanged.connect(self.accumulation_mode_setting)
@@ -231,7 +231,7 @@ class Frontend(QtGui.QFrame):
         self.number_of_acq_edit.setValidator(QtGui.QIntValidator(1, 100000))
         self.number_of_acq_edit.setToolTip('Number of acquisitions to be averaged or accumulated (in accumulation mode).')
 
-        self.cosmic_ray_removal_tickbox = QtGui.QCheckBox('Cosmic ray removal filter?')
+        self.cosmic_ray_removal_tickbox = QtGui.QCheckBox('Cosmic ray removal filter? (Overrides accum/avg.)')
         self.cosmic_ray_removal_tickbox.setChecked(initial_cosmic_ray_removal_bool)
         # self.cosmic_ray_removal_tickbox.setText('Autolevel')
         self.cosmic_ray_removal_tickbox.stateChanged.connect(self.cosmic_ray_removal_option)
@@ -398,7 +398,7 @@ class Frontend(QtGui.QFrame):
         camera_parameters_layout.addWidget(self.accumulation_mode_tickbox,      7, 0)
         camera_parameters_layout.addWidget(number_of_acq_label,                 7, 1)
         camera_parameters_layout.addWidget(self.number_of_acq_edit,             7, 2)
-        camera_parameters_layout.addWidget(self.cosmic_ray_removal_tickbox,     6, 3)
+        camera_parameters_layout.addWidget(self.cosmic_ray_removal_tickbox,     6, 2, 1, 2)
         camera_parameters_layout.addWidget(self.filter,                         7, 3)
         camera_parameters_layout.addWidget(self.take_spectrum_button,           8, 0, 1, 2)
         camera_parameters_layout.addWidget(self.take_baseline_button,           8, 2)
@@ -758,7 +758,7 @@ class Backend(QtCore.QObject):
         self.shutter_state = CLOSE_SHUTTER
         self.set_shutter_state(self.shutter_state)
         print('Is camera opened?', self.myCamera.is_opened())
-        self.read_mode = 'Full Vertical Binning'
+        self.read_mode = 'Single-Track'
         self.preamp = '1'
         self.hsspeed = '0.05'
         self.center_row = initial_center_row
@@ -920,7 +920,9 @@ class Backend(QtCore.QObject):
 
     def update_liveview(self):
         # update spectrum while in live spectrum view mode
-        self.myCamera.wait_for_frame(timeout = self.frame_timeout)
+        # Observation: timeout prop returned error. Do not set it manually.
+        # self.myCamera.wait_for_frame(timeout = self.frame_timeout) 
+        self.myCamera.wait_for_frame()
         spectrum = self.myCamera.read_newest_image() # numpy array of size (1, 1024) that is a 2D array
         ret_ok, return_object = self.determine_signal(spectrum)
         if ret_ok:
@@ -957,13 +959,17 @@ class Backend(QtCore.QObject):
             self.set_shutter_state(OPEN_SHUTTER)
         if self.number_of_acquisitions == 1:
             # numpy array of size (1, 1024) that is a 2D array
-            spectrum = self.myCamera.snap(timeout = self.frame_timeout)
+            # Observation: timeout prop returned error. Do not set it manually.
+            # spectrum = self.myCamera.snap(timeout = self.frame_timeout)
+            spectrum = self.myCamera.snap()
             self.set_shutter_state(CLOSE_SHUTTER)
             print('Acquisition stopped. A single frame was acquired.')
         elif self.number_of_acquisitions > 1:
             # numpy array of size (1, 1024) that is a 2D array
-            spectra_list = self.myCamera.grab(nframes = self.number_of_acquisitions, \
-                                              frame_timeout = self.frame_timeout) 
+            # Observation: timeout prop returned error. Do not set it manually.
+            # spectra_list = self.myCamera.grab(nframes = self.number_of_acquisitions, \
+            #                                   frame_timeout = self.frame_timeout) 
+            spectra_list = self.myCamera.grab(nframes = self.number_of_acquisitions) 
             self.set_shutter_state(CLOSE_SHUTTER)
             print('Acquisition stopped. %d frames were acquired.' % self.number_of_acquisitions)
             spectra_array = np.array(spectra_list)
@@ -993,11 +999,11 @@ class Backend(QtCore.QObject):
         return
 
     def filter_spectra(self, data_array):
-        if self.filter_level == 1:
+        if self.filter_level == 1: # MEDIAN
             # Take the median along the axis of the individual exposures (axis=0)
             filtered_array = np.median(data_array, axis = 0)
             print('Spectra were filtered by median.')
-        elif self.filter_level == 2:
+        elif self.filter_level == 2: # SIGMA CLIP
             # get the mean and std for comparison
             filtered_array = np.ma.mean(sigma_clip(data_array, axis = 0, sigma = 4, maxiters = 3), axis = 0)
             print('Spectra were filtered with sigma clipped mean.')
