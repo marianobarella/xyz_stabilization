@@ -130,7 +130,7 @@ class Frontend(QtGui.QFrame):
         self.exp_time_edit = QtGui.QLineEdit('100')
         self.exp_time_edit_previous = float(self.exp_time_edit.text())
         self.exp_time_edit.editingFinished.connect(self.exposure_changed_check)
-        self.exp_time_edit.setValidator(QtGui.QIntValidator(1, 26843))
+        self.exp_time_edit.setValidator(QtGui.QIntValidator(30, 26843))
         
         # Gain
         gain_label = QtGui.QLabel('Gain:')
