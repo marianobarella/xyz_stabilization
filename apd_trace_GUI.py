@@ -868,7 +868,7 @@ class Frontend(QtGui.QFrame):
 
         # widget for the data
         self.viewTraceWidget = pg.GraphicsLayoutWidget()
-        self.signal_plot = self.viewTraceWidget.addPlot(row = 1, col = 1, title = 'APD signal')
+        self.signal_plot = self.viewTraceWidget.addPlot(row = 1, col = 1, title = 'Transmission APD signal')
         self.signal_plot.enableAutoRange(False, False)
         self.signal_plot.showGrid(x = True, y = True)
         self.signal_plot.setLabel('left', 'Voltage (V)')
@@ -876,7 +876,7 @@ class Frontend(QtGui.QFrame):
         
         # widget for the laser power monitor
         self.monitorTraceWidget = pg.GraphicsLayoutWidget()
-        self.monitor_plot = self.monitorTraceWidget.addPlot(row = 1, col = 1, title = 'Monitor power signal')
+        self.monitor_plot = self.monitorTraceWidget.addPlot(row = 1, col = 1, title = 'Power monitor PD signal')
         self.monitor_plot.enableAutoRange(False, False)
         self.monitor_plot.showGrid(x = True, y = True)
         self.monitor_plot.setLabel('left', 'Voltage (V)')
@@ -898,10 +898,12 @@ class Frontend(QtGui.QFrame):
         viewTraceDock = Dock('Trace viewbox', size=(1,1000))
         viewTraceDock.addWidget(self.viewTraceWidget)
         dockArea2.addDock(viewTraceDock)
+        viewTraceDock.hideTitleBar()
 
         monitorTraceDock = Dock('Trace viewbox', size=(1,1000))
         monitorTraceDock.addWidget(self.monitorTraceWidget)
         dockArea2.addDock(monitorTraceDock, 'bottom', viewTraceDock)
+        monitorTraceDock.hideTitleBar()
 
         gridbox.addWidget(dockArea1, 0, 0) 
         gridbox.addWidget(dockArea2, 1, 0) 

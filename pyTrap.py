@@ -389,6 +389,7 @@ class Frontend(QtGui.QMainWindow):
 
         # Add xy stabilization module
         xyDock = Dock('xy stabilization', size = (1, 1))
+        xyDock.setOrientation('horizontal')
         xyDock.addWidget(self.xyWidget)
         self.dockArea.addDock(xyDock, 'right', piezoDock)
 
@@ -401,12 +402,14 @@ class Frontend(QtGui.QMainWindow):
 
         # Add lasers and shutters module
         laserControlDock = Dock('Lasers and shutters', size = (1, 1))
+        laserControlDock.setOrientation('horizontal')
         laserControlDock.addWidget(self.laserControlWidget)
-        laserControlDock.hideTitleBar()
+        # laserControlDock.hideTitleBar()
         self.dockArea.addDock(laserControlDock, 'bottom', confocalImageDock)
 
         # Add z stabilization module
         zDock = Dock('z stabilization', size = (1, 1))
+        zDock.setOrientation('horizontal')
         zDock.addWidget(self.zWidget)
         self.dockArea.addDock(zDock, 'bottom', xyDock)
         return
