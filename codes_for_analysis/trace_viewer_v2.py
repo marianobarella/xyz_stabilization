@@ -12,6 +12,7 @@ from matplotlib.widgets import RectangleSelector
 from matplotlib.patches import Rectangle
 from scipy.stats import pearsonr
 import re
+from datetime import datetime
 
 
 class MainWindow(QMainWindow):
@@ -135,6 +136,8 @@ class MainWindow(QMainWindow):
         if file_path:
             self.folder_path = os.path.dirname(file_path)
             self.update_file_list()
+            # Clear the plot before loading new data
+            self.clear_trace_plot(trace_number)
             self.load_data(file_path, trace_number)
 
     def update_file_list(self):
@@ -148,25 +151,44 @@ class MainWindow(QMainWindow):
         """Load a file selected from the list."""
         file_path = os.path.join(self.folder_path, item.text())
         if "transmission" in item.text().lower():
-            self.clear_trace_plot(1)  # Clear the Transmission plot
+            # Clear the plot completely before loading new data
+            self.clear_trace_plot(1)
             self.load_data(file_path, 1)
 
     def clear_trace_plot(self, trace_number):
         """Clear the plot for the specified trace."""
         if trace_number == 1:
+            # Clear the figure
             self.figure1.clear()
-            self.ax1 = self.figure1.add_subplot(111)
-            self.canvas1.draw()
+            self.ax1 = None
+            # Clear the selector
+            if self.selector1:
+                self.selector1.set_active(False)
+                self.selector1 = None
+            # Clear the ROI rectangle
+            if self.roi_rect1:
+                self.roi_rect1 = None
+            # Clear the data
             self.data1 = None
             self.time_axis1 = None
-            self.selector1 = None
+            # Redraw the canvas
+            self.canvas1.draw()
         elif trace_number == 2:
+            # Clear the figure
             self.figure2.clear()
-            self.ax2 = self.figure2.add_subplot(111)
-            self.canvas2.draw()
+            self.ax2 = None
+            # Clear the selector
+            if self.selector2:
+                self.selector2.set_active(False)
+                self.selector2 = None
+            # Clear the ROI rectangle
+            if self.roi_rect2:
+                self.roi_rect2 = None
+            # Clear the data
             self.data2 = None
             self.time_axis2 = None
-            self.selector2 = None
+            # Redraw the canvas
+            self.canvas2.draw()
 
     def load_data(self, file_path, trace_number):
         """Load data from a file into the specified trace."""
@@ -188,8 +210,10 @@ class MainWindow(QMainWindow):
                 self.label.setText("Error: Invalid sampling rate. Please enter a positive number.")
                 return
 
-            # Extract the filenumber from the filename
-            filenumber = self.extract_filenumber(file_path)
+            # Extract the filenumber and date/time from the filename
+            filename = os.path.basename(file_path)
+            filenumber = self.extract_filenumber(filename)
+            datetime_str = self.extract_datetime_string(filename)
 
             # Assign data to the appropriate trace
             if trace_number == 1:
@@ -197,7 +221,7 @@ class MainWindow(QMainWindow):
                 self.time_axis1 = np.arange(len(self.data1)) / self.sampling_rate
                 self.ax1 = self.figure1.add_subplot(111)
                 self.ax1.plot(self.time_axis1, self.data1, linewidth=0.5, color='blue')
-                self.ax1.set_title(f"Trace 1 (Transmission) - File {filenumber}")
+                self.ax1.set_title(f"Trace 1 (Transmission) - File {filenumber} - {datetime_str}")
                 self.ax1.set_xlabel("Time (seconds)")
                 self.ax1.set_ylabel("Intensity")
                 self.selector1 = RectangleSelector(
@@ -215,7 +239,7 @@ class MainWindow(QMainWindow):
                 self.time_axis2 = np.arange(len(self.data2)) / self.sampling_rate
                 self.ax2 = self.figure2.add_subplot(111)
                 self.ax2.plot(self.time_axis2, self.data2, linewidth=0.5, color='orange')
-                self.ax2.set_title(f"Trace 2 (Monitor) - File {filenumber}")
+                self.ax2.set_title(f"Trace 2 (Monitor) - File {filenumber} - {datetime_str}")
                 self.ax2.set_xlabel("Time (seconds)")
                 self.ax2.set_ylabel("Intensity")
                 self.selector2 = RectangleSelector(
@@ -245,13 +269,34 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.label.setText(f"Error: {str(e)}")
 
-    def extract_filenumber(self, file_path):
+    def extract_filenumber(self, filename):
         """Extract the filenumber from the filename."""
-        filename = os.path.basename(file_path)
         match = re.search(r"(\d+)_(transmission|monitor)", filename)
         if match:
             return match.group(1)
         return "Unknown"
+
+    def extract_datetime_string(self, filename):
+        """Extract and format date/time from filename."""
+        # Try to match pattern: YYYYMMDD_HHMMSS
+        match = re.search(r"(\d{8})_(\d{6})", filename)
+        if match:
+            try:
+                date_str = match.group(1)
+                time_str = match.group(2)
+                
+                # Parse the date and time
+                date_obj = datetime.strptime(date_str, "%Y%m%d")
+                time_obj = datetime.strptime(time_str, "%H%M%S")
+                
+                # Format as "HH:MM:SS - DD.MM.YYYY"
+                formatted_time = time_obj.strftime("%H:%M:%S")
+                formatted_date = date_obj.strftime("%d.%m.%Y")
+                
+                return f"{formatted_time} - {formatted_date}"
+            except ValueError:
+                pass
+        return "Unknown time"
 
     def update_sampling_rate(self):
         """Update the x-axis of both trace plots when the sampling rate is changed."""
@@ -264,22 +309,18 @@ class MainWindow(QMainWindow):
             return
 
         # Update the time axes for both traces
-        if self.data1 is not None:
+        if self.data1 is not None and self.ax1 is not None:
             self.time_axis1 = np.arange(len(self.data1)) / self.sampling_rate
             self.ax1.clear()
             self.ax1.plot(self.time_axis1, self.data1, linewidth=0.5, color='blue')
-            self.ax1.set_title(f"Trace 1 (Transmission) - File {self.extract_filenumber(self.folder_path)}")
-            self.ax1.set_xlabel("Time (seconds)")
-            self.ax1.set_ylabel("Intensity")
+            # Keep the original title
             self.canvas1.draw()
 
-        if self.data2 is not None:
+        if self.data2 is not None and self.ax2 is not None:
             self.time_axis2 = np.arange(len(self.data2)) / self.sampling_rate
             self.ax2.clear()
             self.ax2.plot(self.time_axis2, self.data2, linewidth=0.5, color='orange')
-            self.ax2.set_title(f"Trace 2 (Monitor) - File {self.extract_filenumber(self.folder_path)}")
-            self.ax2.set_xlabel("Time (seconds)")
-            self.ax2.set_ylabel("Intensity")
+            # Keep the original title
             self.canvas2.draw()
 
     def on_select(self, eclick, erelease):
