@@ -216,7 +216,7 @@ class Frontend(QtGui.QFrame):
 
         # Read pos
         readPosDock = Dock('Position', size=(1, 2))
-        readPosDock.setOrientation('vertical')
+        readPosDock.setOrientation('horizontal')
         readPosDock.addWidget(self.read_pos_widget)
         dockArea.addDock(readPosDock)
         # Positioner
@@ -225,7 +225,7 @@ class Frontend(QtGui.QFrame):
         dockArea.addDock(posDock, 'top', readPosDock)
         # Go to  
         gotoDock = Dock('Go to', size=(1, 2))
-        gotoDock.setOrientation('vertical')
+        gotoDock.setOrientation('horizontal')
         gotoDock.addWidget(self.gotoWidget)
         dockArea.addDock(gotoDock, 'left', readPosDock)
         

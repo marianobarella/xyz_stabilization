@@ -2,6 +2,23 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fft import fft, fftfreq
 from scipy.signal import gaussian, convolve
+import pandas as pd
+import re
+
+def moving_average_conv(x, w):
+    # not so effective for large x size
+    return np.convolve(x, np.ones(w), 'valid') / w
+
+def moving_average_sum(x, w) :
+    # more effective than convolution for large x size
+    ret = np.cumsum(x)
+    ret[w:] = ret[w:] - ret[:-w]
+    return ret[w - 1:] / w
+
+def get_number_from_headerline(filepath, line_number):
+    header_line_string = pd.read_csv(filepath, header=line_number).columns.tolist()[0]
+    number = re.findall("[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", header_line_string)[0]
+    return float(number)
 
 def gaussian_filter_time_domain(signal, sample_rate, cutoff_freq):
     """
@@ -20,14 +37,14 @@ def gaussian_filter_time_domain(signal, sample_rate, cutoff_freq):
     # sigma = sample_rate / (2 * pi * cutoff_freq)
     sigma = sample_rate / (2 * np.pi * cutoff_freq)
     
-    # Create a Gaussian window
+    # Create a Gaussian window (outside the window the filter is zero)
     # The window size is chosen to be 6*sigma (covers >99% of the area)
     window_size = int(6 * sigma)
     if window_size % 2 == 0:
         window_size += 1  # make sure it's odd
     
     gaussian_window = gaussian(window_size, sigma)
-    gaussian_window /= np.sum(gaussian_window)  # normalize
+    gaussian_window /= np.sum(gaussian_window) # normalize
     
     # Apply convolution
     filtered_signal = convolve(signal, gaussian_window, mode='same')
