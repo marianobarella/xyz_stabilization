@@ -33,7 +33,7 @@ experiment_folder = "\\measurements_2025\\20250924_DNH_transmission_stability_wh
 data_folder = os.path.join(base_folder, experiment_folder)
 
 # Do downsampling?
-do_downsampling = True
+do_downsampling = False
 # Downsampling factor
 downsampling_factor = 100
 # Filtering parameters
@@ -193,25 +193,6 @@ if step1:
     new_sampling_rate = parameters_dict['New sampling rate (S/s)']
     time_since_epoch_data = parameters_dict['Time since epoch (s)']
 
-    # FILTERING
-    # Apply averaging filter
-    # single_trace_tra_avg = moving_average_sum(single_trace_tra, window_avg)
-    # single_trace_mon_avg = moving_average_sum(single_trace_mon, window_avg)
-
-    # Apply gaussian filtering
-    # Process the signal
-    original, filtered = gf.process_signal_file(single_transmission_filepath, \
-                                                new_sampling_rate, cutoff_freq, plot=False)
-    # Save filtered signal if needed
-    if save_filtered_signal:
-        filtered_filename = 'filtered_signal_{:.1f}kHz.npy'.format(cutoff_freq)
-        filtered_data_filepath = os.path.join(working_folder, filtered_filename)
-        np.save(filtered_data_filepath, filtered)
-    original, filtered1k = gf.process_signal_file(single_transmission_filepath, \
-                                                new_sampling_rate, 1e3, plot=False)
-    original, filtered01k = gf.process_signal_file(single_transmission_filepath, \
-                                                new_sampling_rate, 0.1e3, plot=False)
-
     ##############################################################################
     # GET XYZ TRACKING DATA
     # get files and load data
@@ -230,18 +211,24 @@ if step1:
 
     ##############################################################################
     # SYNCHRONIZE
-    # find the proces that started the last
-    time_since_epoch_array = np.array([time_since_epoch_data, time_since_epoch_xy, time_since_epoch_z])
+    ##############################################################################
+    # Find the proces that started the last
+    time_since_epoch_array = 1e-9*np.array([time_since_epoch_data, time_since_epoch_xy, time_since_epoch_z])
     index_max = np.argmax(time_since_epoch_array)
+    print('\nIndex = 0: transmission trace')
+    print('Index = 1: xy trace')
+    print('Index = 2: z trace')
+    print('The process that started last is index: %d' % index_max)
     t0 = time_since_epoch_array[index_max]
     diff_t0 = t0 - time_since_epoch_array
-    # crop all data to start after t0
+    print('Time differences to synchronize (s): %s' % diff_t0)
+    # Crop all data to start after t0
 
     index_ok = np.array(np.where(time_data >= diff_t0[0])[0], dtype='i4')
-    time_data = time_data/60 # to min
-    # time_data = time_data[index_ok]/60 # to min
-    # single_trace_tra = single_trace_tra[index_ok]
-    # single_trace_mon = single_trace_mon[index_ok]
+    # time_data = time_data/60 # to min
+    time_data = time_data[index_ok]/60 # to min
+    single_trace_tra = single_trace_tra[index_ok]
+    single_trace_mon = single_trace_mon[index_ok]
 
     # xy drift
     index_ok = np.array(np.where(time_xy >= diff_t0[1])[0], dtype='i4')
@@ -255,15 +242,76 @@ if step1:
     z_error = z_error[index_ok]
 
     ##############################################################################
+    # BASELINE CORRECTION
+    ##############################################################################
+    print('\nApplying baseline correction to transmission trace...')
+    # Baseline calculation
+    # For this example, the baseline lasts 0.1 min, then the laser is turned on
+    index_baseline = np.array(np.where(time_data <= 0.1)[0], dtype='i4') # first 6 seconds
+    # print(max(index_baseline), time_data[max(index_baseline)])
+    baseline = np.mean(single_trace_tra[index_baseline]) # mean of first minute
+    # Subtract baseline
+    single_trace_tra = single_trace_tra - baseline
+
+    ##############################################################################
+    # FILTERING
+    ##############################################################################
+    print('\nApplying filtering to transmission trace...')
+    # Ensure it's a 1D array
+    signal = single_trace_tra.flatten()  
+    if signal.ndim > 1:
+        raise ValueError("Signal must be a 1D array.")
+    
+    # Apply averaging filter
+    # single_trace_tra_avg = moving_average_sum(single_trace_tra, window_avg)
+    # single_trace_mon_avg = moving_average_sum(single_trace_mon, window_avg)
+    
+    # Apply gaussian filtering
+    # Process the signal
+    filtered = gf.gaussian_filter_time_domain(signal, \
+                                            new_sampling_rate, cutoff_freq)
+    # Save filtered signal if needed
+    if save_filtered_signal:
+        filtered_filename = 'filtered_signal_{:.1f}kHz.npy'.format(cutoff_freq)
+        filtered_data_filepath = os.path.join(working_folder, filtered_filename)
+        np.save(filtered_data_filepath, filtered)
+    # filtered1k = gf.gaussian_filter_time_domain(signal, \
+    #                                         new_sampling_rate, 1e3)
+    # filtered01k = gf.gaussian_filter_time_domain(signal, \
+    #                                         new_sampling_rate, 0.1e3)
+
+    ##############################################################################
     # STATISTICS
+    ##############################################################################
+    print('\nCalculating statistics...')
+    # SET TIME LIMITS FOR STATISTICS AND PLOTTING
+    # Set time limits
+    [t_min, t_max] = 0, 95 # in min
+
+    index_time_limits = np.array(np.where((time_data >= t_min) & (time_data <= t_max))[0], dtype='i4')
+    time_data = time_data[index_time_limits]
+    single_trace_tra = single_trace_tra[index_time_limits]
+    single_trace_mon = single_trace_mon[index_time_limits]
+    filtered = filtered[index_time_limits]
+    # Also crop drift data
+    index_time_limits = np.array(np.where((time_xy >= t_min) & (time_xy <= t_max))[0], dtype='i4')
+    time_xy = time_xy[index_time_limits]
+    x_error = x_error[index_time_limits]
+    y_error = y_error[index_time_limits]
+    index_time_limits = np.array(np.where((time_z >= t_min) & (time_z <= t_max))[0], dtype='i4')
+    time_z = time_z[index_time_limits]
+    z_error = z_error[index_time_limits]
+
+    # Transmission stats
     tra_mean = np.mean(single_trace_tra)
     tra_std = np.std(single_trace_tra)
     tra_cv = tra_std/tra_mean
     print('-------- Transmission -------')
+    print('Baseline transmission (first 6 s) %.6f V' % baseline)
     print('Trans mean %.6f V' % tra_mean)
     print('Trans std dev %.6f V' % tra_std)
     print('Trans Coef. of Variation %.3f %%' % (tra_cv*100))
-
+    print
     monitor_mean = np.mean(single_trace_mon)
     monitor_std = np.std(single_trace_mon)
     monitor_cv = monitor_std/monitor_mean
@@ -279,8 +327,8 @@ if step1:
     laser_power_trace = single_trace_mon*power_factor # in mW
     normalized_trans = single_trace_tra#/tra_mean
     filtered_norm = filtered#/tra_mean
-    filtered1k_norm = filtered1k#/tra_mean
-    filtered01k_norm = filtered01k#/tra_mean
+    # filtered1k_norm = filtered1k#/tra_mean
+    # filtered01k_norm = filtered01k#/tra_mean
     print('-------- Power -------')
     print('Power mean %.6f mW' % (monitor_mean*power_factor))
     print('Power std dev %.6f mW' % (monitor_std*power_factor))
@@ -288,6 +336,7 @@ if step1:
 
     ##############################################################################
     # PLOT
+    print('\nPlotting results...')
     figures_folder = os.path.join(save_folder, 'figures')
     if not os.path.exists(figures_folder):
         os.makedirs(figures_folder)
@@ -295,7 +344,7 @@ if step1:
     plt.rcParams.update({'font.size': 18})
     fig = plt.figure(figsize=(20, 11))
     gs = GridSpec(4, 2, figure=fig, width_ratios=[4, 1])
-    gs.update(hspace=0.3)
+    gs.update(hspace=0.3, wspace=0.01)  # Adjust space between subplots
 
     # Main plots
     ax1 = fig.add_subplot(gs[0, 0])
@@ -303,11 +352,10 @@ if step1:
     ax3 = fig.add_subplot(gs[2, 0])
     ax4 = fig.add_subplot(gs[3, 0])
     # Histogram plots
+    ax1hist = fig.add_subplot(gs[0, 1])
+    ax2hist = fig.add_subplot(gs[1, 1])
     ax3hist = fig.add_subplot(gs[2, 1])
     ax4hist = fig.add_subplot(gs[3, 1])
-
-    # Set time limits
-    [t_min, t_max] = 0, 90# total_duration_min # in min
 
     # Set axis below plots for all axes
     axes_list = [ax1, ax2, ax3, ax4, ax3hist, ax4hist]
@@ -316,19 +364,37 @@ if step1:
         ax.tick_params(axis='both', which='major', labelsize=18)
         
     # Plotting the data
+    yaxis_transmission = [0.26, 0.30]
     ax1.plot(time_data, normalized_trans, color='C0', alpha=0.5, label='Original')
-    ax1.plot(time_data, filtered, color='C3', alpha=1, label='%d Hz' % cutoff_freq)
+    ax1.plot(time_data, filtered, color='C3', alpha=1, label='$f_{c}$=%d Hz' % cutoff_freq)
     ax1.set_xlim([t_min, t_max])
-    ax1.set_ylim([0.26, 0.3])
+    ax1.set_ylim(yaxis_transmission)
     # ax1.set_ylabel('T/T$_{0}$', fontsize=18)
     ax1.set_ylabel('Transmission (V)', fontsize=18)
     ax1.grid(True, alpha=0.3)
-    ax1.legend(loc='upper right', fontsize=18)
+    ax1.legend(loc='upper right', fontsize=18, ncol=2)
+    # Add transmission histogram
+    ax1hist.hist(normalized_trans, bins=20, range = yaxis_transmission, rwidth = 1, histtype='step', \
+                 alpha = 0.5, orientation='horizontal', density = True, linewidth=2, color='C0')
+    ax1hist.hist(filtered, bins=20, range = yaxis_transmission, rwidth = 1, histtype='step', \
+                 alpha = 0.5, orientation='horizontal', density = True, linewidth=2, color='C3')
+    ax1hist.set_ylim(yaxis_transmission)
+    ax1hist.get_yaxis().set_visible(False)
+    ax1hist.grid(True, alpha=0.3)
 
+    yaxis_power = [21.25, 22.15]
     ax2.plot(time_data, laser_power_trace)
     ax2.set_xlim([t_min, t_max])
+    ax2.set_ylim(yaxis_power)
     ax2.set_ylabel('Power (mW)', fontsize=18)
     ax2.grid(True, alpha=0.3)
+    # Add power histogram
+    ax2hist.hist(laser_power_trace, bins=20, range = yaxis_power, rwidth = 1, histtype='step', \
+                 alpha = 1.0, orientation='horizontal', density = True, linewidth=2)
+    ax2hist.set_ylim(yaxis_power)
+    ax2hist.get_yaxis().set_visible(False)
+    ax2hist.grid(True, alpha=0.3)
+    # ax2hist.set_xscale('log')
 
     # Modified xy drift plot with histogram
     yaxis = [-0.02, 0.02]
@@ -338,14 +404,16 @@ if step1:
     ax3.set_ylim(yaxis)
     ax3.set_ylabel(r'Drift ($\mu$m)', fontsize=18)
     ax3.grid(True, alpha=0.3)
-    ax3.legend(loc='upper right', fontsize=18)
+    ax3.legend(loc='upper right', fontsize=18, ncol=2)
     # Add xy drift histogram
-    ax3hist.hist(x_error, bins=20, range = yaxis, rwidth = 0.9, \
-                 alpha = 0.5, orientation='horizontal', density = True)
-    ax3hist.hist(y_error, bins=20, range = yaxis, rwidth = 0.9, \
-                 alpha = 0.5, orientation='horizontal', density = True)
+    ax3hist.hist(x_error, bins=20, range = yaxis, rwidth = 1, histtype='step', \
+                 alpha = 0.5, orientation='horizontal', density = True, linewidth=2)
+    ax3hist.hist(y_error, bins=20, range = yaxis, rwidth = 1, histtype='step', \
+                 alpha = 0.5, orientation='horizontal', density = True, linewidth=2)
     # ax3hist.set_xlabel('Counts', fontsize=18)
+    # ax3hist.set_xlabel('Frequency', fontsize=18)
     ax3hist.set_ylim(yaxis)
+    ax3hist.get_yaxis().set_visible(False)
     ax3hist.grid(True, alpha=0.3)
 
     # Modified z drift plot with histogram
@@ -358,10 +426,11 @@ if step1:
     ax4.grid(True, alpha=0.3)
     ax4.legend(loc='upper right', fontsize=18)
     # Add z drift histogram
-    ax4hist.hist(z_error, bins=20, range = yaxis, rwidth=0.9, \
-                 color='C2', orientation='horizontal', density = True)
+    ax4hist.hist(z_error, bins=20, range = yaxis, rwidth=1, histtype='step', \
+                 color='C2', orientation='horizontal', density = True, linewidth=2)
     ax4hist.set_xlabel('Frequency', fontsize=18)
     ax4hist.set_ylim(yaxis)
+    ax4hist.get_yaxis().set_visible(False)
     ax4hist.grid(True, alpha=0.3)
 
     figure_path = os.path.join(figures_folder, 'processed_trace_vs_time.png')
