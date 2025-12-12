@@ -33,7 +33,7 @@ experiment_folder = "\\measurements_2025\\20250924_DNH_transmission_stability_wh
 data_folder = os.path.join(base_folder, experiment_folder)
 
 # Do downsampling?
-do_downsampling = True
+do_downsampling = False
 # Downsampling factor
 downsampling_factor = 100
 # Filtering parameters
@@ -282,13 +282,14 @@ if step1:
     # filtered01k = gf.gaussian_filter_time_domain(signal, \
     #                                         new_sampling_rate, 0.1e3)
 
-    ##############################################################################
-    # STATISTICS
-    ##############################################################################
+##############################################################################
+# STEP 3: STATISTICS
+##############################################################################
+if step3:
     print('\nCalculating statistics...')
     # SET TIME LIMITS FOR STATISTICS AND PLOTTING
     # Set time limits
-    [t_min, t_max] = 0, 95 # in min
+    [t_min, t_max] = 0, 2 # in min
 
     index_time_limits = np.array(np.where((time_data >= t_min) & (time_data <= t_max))[0], dtype='i4')
     time_data = time_data[index_time_limits]
@@ -361,101 +362,167 @@ if step1:
         if not os.path.exists(figures_folder):
             os.makedirs(figures_folder)
 
+        # plt.rcParams.update({'font.size': 18})
+        # fig = plt.figure(figsize=(20, 11))
+        # gs = GridSpec(4, 2, figure=fig, width_ratios=[4, 1])
+        # gs.update(hspace=0.3, wspace=0.01)  # Adjust space between subplots
+
+        # # Main plots
+        # ax1 = fig.add_subplot(gs[0, 0])
+        # ax2 = fig.add_subplot(gs[1, 0])
+        # ax3 = fig.add_subplot(gs[2, 0])
+        # ax4 = fig.add_subplot(gs[3, 0])
+        # # Histogram plots
+        # ax1hist = fig.add_subplot(gs[0, 1])
+        # ax2hist = fig.add_subplot(gs[1, 1])
+        # ax3hist = fig.add_subplot(gs[2, 1])
+        # ax4hist = fig.add_subplot(gs[3, 1])
+
+        # # Set axis below plots for all axes
+        # axes_list = [ax1, ax2, ax3, ax4, ax1hist, ax2hist, ax3hist, ax4hist]
+        # for ax in axes_list:
+        #     ax.set_axisbelow(True)
+        #     ax.tick_params(axis='both', which='major', labelsize=18)
+            
+        # # Plotting the data
+        # yaxis_transmission = [0.26, 0.30]
+        # ax1.plot(time_data, normalized_trans, color=color_array[0], alpha=1, label='Original (100 kHz)')
+        # ax1.plot(time_data, filtered, color='k', alpha=1, label='$f_{c}$=%d Hz' % cutoff_freq)
+        # ax1.set_xlim([t_min, t_max])
+        # ax1.set_ylim(yaxis_transmission)
+        # # ax1.set_ylabel('T/T$_{0}$', fontsize=18)
+        # ax1.set_ylabel('Transmission (V)', fontsize=18)
+        # ax1.grid(True, alpha=0.3)
+        # ax1.legend(loc='upper right', fontsize=18, ncol=2)
+        # # Add transmission histogram
+        # ax1hist.hist(normalized_trans, bins=20, range = yaxis_transmission, rwidth = 1, histtype='step', \
+        #             alpha = 1, orientation='horizontal', density = True, linewidth=2, color=color_array[0])
+        # ax1hist.hist(filtered, bins=20, range = yaxis_transmission, rwidth = 1, histtype='step', \
+        #             alpha = 1, orientation='horizontal', density = True, linewidth=2, color='k')
+        # ax1hist.set_ylim(yaxis_transmission)
+        # ax1hist.get_yaxis().set_visible(False)
+        # ax1hist.grid(True, alpha=0.3)
+
+        # yaxis_power = [21.25, 22.15]
+        # ax2.plot(time_data, laser_power_trace, color=color_array[0], label='Laser')
+        # ax2.axhline(median_power, color='k', linestyle='--', linewidth=2, label='Mean')
+        # ax2.set_xlim([t_min, t_max])
+        # ax2.set_ylim(yaxis_power)
+        # ax2.legend(loc='upper right', fontsize=18, ncol=2)
+        # ax2.set_ylabel('Power (mW)', fontsize=18)
+        # ax2.grid(True, alpha=0.3)
+        # # Add power histogram
+        # ax2hist.hist(laser_power_trace, bins=20, range = yaxis_power, rwidth = 1, histtype='step', \
+        #             alpha = 1.0, orientation='horizontal', density = True, linewidth=2, color=color_array[0])
+        # ax2hist.set_ylim(yaxis_power)
+        # ax2hist.get_yaxis().set_visible(False)
+        # ax2hist.grid(True, alpha=0.3)
+        # # ax2hist.set_xscale('log')
+
+        # # Modified xy drift plot with histogram
+        # yaxis = [-0.02, 0.02]
+        # ax3.plot(time_xy, x_error, label='x', color=color_array[3])
+        # ax3.plot(time_xy, y_error, label='y', color=color_array[2])
+        # ax3.set_xlim([t_min, t_max])
+        # ax3.set_ylim(yaxis)
+        # ax3.set_ylabel(r'Drift ($\mu$m)', fontsize=18)
+        # ax3.grid(True, alpha=0.3)
+        # ax3.legend(loc='upper right', fontsize=18, ncol=2)
+        # # Add xy drift histogram
+        # ax3hist.hist(x_error, bins=20, range = yaxis, rwidth = 1, histtype='step', \
+        #             alpha = 1, orientation='horizontal', density = True, linewidth=2, color=color_array[3])
+        # ax3hist.hist(y_error, bins=20, range = yaxis, rwidth = 1, histtype='step', \
+        #             alpha = 1, orientation='horizontal', density = True, linewidth=2, color=color_array[2])
+        # # ax3hist.set_xlabel('Counts', fontsize=18)
+        # # ax3hist.set_xlabel('Frequency', fontsize=18)
+        # ax3hist.set_ylim(yaxis)
+        # ax3hist.get_yaxis().set_visible(False)
+        # ax3hist.grid(True, alpha=0.3)
+
+        # # Modified z drift plot with histogram
+        # yaxis = [-0.1, 0.1]
+        # ax4.plot(time_z, z_error, label='z', color=color_array[4])
+        # ax4.set_xlim([t_min, t_max])
+        # ax4.set_ylim(yaxis)
+        # ax4.set_xlabel('Time (min)', fontsize=18)
+        # ax4.set_ylabel(r'Drift ($\mu$m)', fontsize=18)
+        # ax4.grid(True, alpha=0.3)
+        # ax4.legend(loc='upper right', fontsize=18)
+        # # Add z drift histogram
+        # ax4hist.hist(z_error, bins=20, range = yaxis, rwidth=1, histtype='step', \
+        #             color=color_array[4], orientation='horizontal', density = True, linewidth=2)
+        # ax4hist.set_xlabel('Frequency', fontsize=18)
+        # ax4hist.set_ylim(yaxis)
+        # ax4hist.get_yaxis().set_visible(False)
+        # ax4hist.grid(True, alpha=0.3)
+
+        # figure_path = os.path.join(figures_folder, 'processed_trace_vs_time.png')
+        # plt.savefig(figure_path, dpi = 300, bbox_inches='tight')
+        # # figure_path = os.path.join(save_folder, '%s_trace_vs_time.pdf' % figure_name)
+        # # plt.savefig(figure_path, dpi = 300, bbox_inches='tight', format = 'pdf')
+
+        ##########################################################################
+        ############################## PLOT DETAILS ##############################
+        ##########################################################################
+
         plt.rcParams.update({'font.size': 18})
-        fig = plt.figure(figsize=(20, 11))
-        gs = GridSpec(4, 2, figure=fig, width_ratios=[4, 1])
-        gs.update(hspace=0.3, wspace=0.01)  # Adjust space between subplots
+        fig = plt.figure(figsize=(15, 11))
+        gs = GridSpec(4, 1, figure=fig)
+        gs.update(hspace=0.3)  # Adjust space between subplots
 
         # Main plots
         ax1 = fig.add_subplot(gs[0, 0])
         ax2 = fig.add_subplot(gs[1, 0])
         ax3 = fig.add_subplot(gs[2, 0])
         ax4 = fig.add_subplot(gs[3, 0])
-        # Histogram plots
-        ax1hist = fig.add_subplot(gs[0, 1])
-        ax2hist = fig.add_subplot(gs[1, 1])
-        ax3hist = fig.add_subplot(gs[2, 1])
-        ax4hist = fig.add_subplot(gs[3, 1])
 
         # Set axis below plots for all axes
-        axes_list = [ax1, ax2, ax3, ax4, ax3hist, ax4hist]
+        axes_list = [ax1, ax2, ax3, ax4]
         for ax in axes_list:
             ax.set_axisbelow(True)
             ax.tick_params(axis='both', which='major', labelsize=18)
             
         # Plotting the data
-        yaxis_transmission = [0.26, 0.30]
-        ax1.plot(time_data, normalized_trans, color=color_array[0], alpha=1, label='Original')
-        ax1.plot(time_data, filtered, color='k', alpha=1, label='$f_{c}$=%d Hz' % cutoff_freq)
-        ax1.set_xlim([t_min, t_max])
+        yaxis_transmission = [-0.05, 0.35]
+        ax1.plot(time_data*60, normalized_trans, color=color_array[0], alpha=1, label='Original (100 kHz)')
+        ax1.plot(time_data*60, filtered, color='k', alpha=1, label='$f_{c}$=%d Hz' % cutoff_freq)
+        ax1.set_xlim([t_min*60, t_max*60])
         ax1.set_ylim(yaxis_transmission)
         # ax1.set_ylabel('T/T$_{0}$', fontsize=18)
         ax1.set_ylabel('Transmission (V)', fontsize=18)
         ax1.grid(True, alpha=0.3)
-        ax1.legend(loc='upper right', fontsize=18, ncol=2)
-        # Add transmission histogram
-        ax1hist.hist(normalized_trans, bins=20, range = yaxis_transmission, rwidth = 1, histtype='step', \
-                    alpha = 1, orientation='horizontal', density = True, linewidth=2, color=color_array[0])
-        ax1hist.hist(filtered, bins=20, range = yaxis_transmission, rwidth = 1, histtype='step', \
-                    alpha = 1, orientation='horizontal', density = True, linewidth=2, color='k')
-        ax1hist.set_ylim(yaxis_transmission)
-        ax1hist.get_yaxis().set_visible(False)
-        ax1hist.grid(True, alpha=0.3)
+        ax1.legend(loc='upper left', fontsize=18, ncol=1)
 
         yaxis_power = [21.25, 22.15]
-        ax2.plot(time_data, laser_power_trace, color=color_array[0], label='Laser')
+        ax2.plot(time_data*60, laser_power_trace, color=color_array[0], label='Laser')
         ax2.axhline(median_power, color='k', linestyle='--', linewidth=2, label='Mean')
-        ax2.set_xlim([t_min, t_max])
+        ax2.set_xlim([t_min*60, t_max*60])
         ax2.set_ylim(yaxis_power)
         ax2.legend(loc='upper right', fontsize=18, ncol=2)
         ax2.set_ylabel('Power (mW)', fontsize=18)
         ax2.grid(True, alpha=0.3)
-        # Add power histogram
-        ax2hist.hist(laser_power_trace, bins=20, range = yaxis_power, rwidth = 1, histtype='step', \
-                    alpha = 1.0, orientation='horizontal', density = True, linewidth=2, color=color_array[0])
-        ax2hist.set_ylim(yaxis_power)
-        ax2hist.get_yaxis().set_visible(False)
-        ax2hist.grid(True, alpha=0.3)
-        # ax2hist.set_xscale('log')
 
         # Modified xy drift plot with histogram
         yaxis = [-0.02, 0.02]
-        ax3.plot(time_xy, x_error, label='x', color=color_array[3])
-        ax3.plot(time_xy, y_error, label='y', color=color_array[2])
-        ax3.set_xlim([t_min, t_max])
+        ax3.plot(time_xy*60, x_error, label='x', color=color_array[3])
+        ax3.plot(time_xy*60, y_error, label='y', color=color_array[2])
+        ax3.set_xlim([t_min*60, t_max*60])
         ax3.set_ylim(yaxis)
         ax3.set_ylabel(r'Drift ($\mu$m)', fontsize=18)
         ax3.grid(True, alpha=0.3)
         ax3.legend(loc='upper right', fontsize=18, ncol=2)
-        # Add xy drift histogram
-        ax3hist.hist(x_error, bins=20, range = yaxis, rwidth = 1, histtype='step', \
-                    alpha = 1, orientation='horizontal', density = True, linewidth=2, color=color_array[3])
-        ax3hist.hist(y_error, bins=20, range = yaxis, rwidth = 1, histtype='step', \
-                    alpha = 1, orientation='horizontal', density = True, linewidth=2, color=color_array[2])
-        # ax3hist.set_xlabel('Counts', fontsize=18)
-        # ax3hist.set_xlabel('Frequency', fontsize=18)
-        ax3hist.set_ylim(yaxis)
-        ax3hist.get_yaxis().set_visible(False)
-        ax3hist.grid(True, alpha=0.3)
 
         # Modified z drift plot with histogram
         yaxis = [-0.1, 0.1]
-        ax4.plot(time_z, z_error, label='z', color=color_array[4])
-        ax4.set_xlim([t_min, t_max])
+        ax4.plot(time_z*60, z_error, label='z', color=color_array[4])
+        ax4.set_xlim([t_min*60, t_max*60])
         ax4.set_ylim(yaxis)
-        ax4.set_xlabel('Time (min)', fontsize=18)
+        ax4.set_xlabel('Time (s)', fontsize=18)
         ax4.set_ylabel(r'Drift ($\mu$m)', fontsize=18)
         ax4.grid(True, alpha=0.3)
         ax4.legend(loc='upper right', fontsize=18)
-        # Add z drift histogram
-        ax4hist.hist(z_error, bins=20, range = yaxis, rwidth=1, histtype='step', \
-                    color=color_array[4], orientation='horizontal', density = True, linewidth=2)
-        ax4hist.set_xlabel('Frequency', fontsize=18)
-        ax4hist.set_ylim(yaxis)
-        ax4hist.get_yaxis().set_visible(False)
-        ax4hist.grid(True, alpha=0.3)
 
-        figure_path = os.path.join(figures_folder, 'processed_trace_vs_time.png')
+        figure_path = os.path.join(figures_folder, 'processed_trace_vs_time_detail.png')
         plt.savefig(figure_path, dpi = 300, bbox_inches='tight')
         # figure_path = os.path.join(save_folder, '%s_trace_vs_time.pdf' % figure_name)
         # plt.savefig(figure_path, dpi = 300, bbox_inches='tight', format = 'pdf')

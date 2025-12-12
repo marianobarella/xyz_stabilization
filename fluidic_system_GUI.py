@@ -24,8 +24,11 @@ import MXII_valve # the MXII_valve.py file has to be in the same folder
 import serial
 
 # definition of COM ports
-COM_valve = 'COM5' # microfluidics valve 
-COM_pump = 'COM4' # microfluidics pump
+COM_valve = 'COM5' # valve 
+# COM_pump = 'COM4' # pump (the usual one) WORKING
+COM_pump = 'COM7' # pump (at TIRF lab, 50b)
+# COM_pump = 'COMX' # pump (first replacement POT lab, 50a)
+# COM_pump = 'COM11' # pump (second replacement POT lab, 50C) WORKING
 
 # Channel definitions according to the tube connections
 waste_channel = 0 # physically in position 1
@@ -50,11 +53,11 @@ infusedVolume='0ivolume'
 withrawdVolume='0wvolume'
 
 # Connect to the Rheodyne 7-port valve
-valve = MXII_valve.MX_valve(COM_valve, ports = 6, name = 'My_valve', verbose = True)
+valve = MXII_valve.MX_valve(COM_valve, ports = 6, name = '6-ch valve', verbose = True)
 
 # Connect to the Pump 11 Elite
 ser = serial.Serial(COM_pump, baudrate = 115200, bytesize = serial.EIGHTBITS, \
-                    stopbits = serial.STOPBITS_TWO, parity = serial.PARITY_NONE, \
+                    stopbits = serial.STOPBITS_ONE, parity = serial.PARITY_NONE, \
                     timeout=3)
 
 # Initialize the pump. Send the instructions
