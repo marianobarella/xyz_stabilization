@@ -14,220 +14,377 @@ import os
 import re
 import tkinter as tk
 import tkinter.filedialog as fd
-import json
-import pandas as pd
-import datetime
+# import pandas as pd
+# import datetime
 import ast
-import gaussian_filter as gf
+import signal_filtering_functions as gf
+from scipy.stats import norm
 from matplotlib.gridspec import GridSpec
 
 ##############################################################################
-
-def moving_average_conv(x, w):
-    # not so effective for large x size
-    return np.convolve(x, np.ones(w), 'valid') / w
-
-def moving_average_sum(x, w) :
-    # more effective than convolution for large x size
-    ret = np.cumsum(x)
-    ret[w:] = ret[w:] - ret[:-w]
-    return ret[w - 1:] / w
-
-def get_number_from_headerline(filepath, line_number):
-    header_line_string = pd.read_csv(filepath, header=line_number).columns.tolist()[0]
-    number = re.findall("[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", header_line_string)[0]
-    return float(number)
-
+# Clear all plots
+plt.ioff() # do not plot unless show is executed
+plt.close('all')
 ##############################################################################
 
 # INPUTS
-# base data's folder
+# Set data folder
 base_folder = 'C:\\datos_mariano\\posdoc\\unifr\\plasmonic_optical_trapping'
+experiment_folder = "\\measurements_2025\\20250924_DNH_transmission_stability_when_tracked_long"
+data_folder = os.path.join(base_folder, experiment_folder)
 
-# filtering parameters
-# average filter window
-# window_avg = 5
-# gaussian filter parameters
-sample_rate = 100000  # 100 kHz
-cutoff_freq = 10e3  # 10 kHz
+# Do downsampling?
+do_downsampling = False
+# Downsampling factor
+downsampling_factor = 100
+# Filtering parameters
+save_filtered_signal = True
+# Average filter window
+window_avg = 5
+# Gaussian filter parameters
+cutoff_freq = 10 # in Hz
+# Plot?
+plot_flag = True
 
-figure_name = 'test1'
+step0, step1, step2 = 1, 0, 0
+step0, step1, step2 = 0, 1, 0
+# step0, step1, step2 = 0, 0, 0
+# step0, step1, step2 = 1, 1, 0
 
 ##############################################################################
-# clear all plots
-plt.ioff() # do not plot unless show is executed
-plt.close('all')
-
-##############################################################################+
-# CONCATENATE FILES if the trace was long
-
-print('\nProcessing data files and glueing them...')
-
+# START
+##############################################################################
 # Prompt window to select any file (it will use the selected folder actually)
 root = tk.Tk()
-dat_files = fd.askopenfilenames(initialdir = base_folder, 
+dat_files = fd.askopenfilenames(initialdir = data_folder, title = "Select .npy files to process", \
                                 filetypes=(("", "*.npy"), ("", "*.")))
 root.withdraw()
+
+# Get working folder
 working_folder = os.path.dirname(dat_files[0])
-save_folder = os.path.join(working_folder, 'figures') 
+# Create list of files
+list_of_files = os.listdir(working_folder)
+list_of_files.sort()
+# Create folder to save figures
+save_folder = os.path.join(working_folder, 'processed_data') 
 if not os.path.exists(save_folder):
     os.makedirs(save_folder)
 
-# create list of files
-list_of_files = os.listdir(working_folder)
-list_of_files.sort()
-parameters_file = [f for f in list_of_files if re.search('_params.txt',f)][0]
-list_of_files_transmission = [f for f in list_of_files if re.search('_transmission.npy',f)]
-list_of_files_monitor = [f for f in list_of_files if re.search('_monitor.npy',f)]
-L_tra = len(list_of_files_transmission)
-L_mon = len(list_of_files_monitor)
+##############################################################################
+# STEP 0: PROCESS TRACE FILES
+##############################################################################
+if step0:
+    print('\n--------------------- STEP 0: PROCESS TRACE FILES ---------------------')
+    # Concatenate files if the experiment was longer than single trace duration
+    parameters_file = [f for f in list_of_files if re.search('_params.txt',f)][0]
+    list_of_files_transmission = [f for f in list_of_files if re.search('_transmission.npy',f)]
+    list_of_files_monitor = [f for f in list_of_files if re.search('_monitor.npy',f)]
+    L_tra = len(list_of_files_transmission)
+    L_mon = len(list_of_files_monitor)
 
-# check if there're missing files
-if not L_tra == L_mon:
-    print('Warning! Number of tranmission and monitor files differ')
-else:
-    number_of_files = L_tra
+    print('\nNumber of transmission files: %d' % L_tra)
 
-# get length of trace
-full_filepath_tra = os.path.join(working_folder, list_of_files_transmission[0])
-# load files
-temporary_data = np.load(full_filepath_tra)
-# length
-length_of_trace = len(temporary_data)
-print('Length of each trace: %d points' % length_of_trace)
-# sampling period
-sampling_period = 1/sample_rate
-trace_time = length_of_trace*sampling_period
-print('Length of each trace in time: %.1f ' % trace_time)
-# print number of files
-print('Number of files: %d' % number_of_files)
-total_time = L_tra*trace_time
-total_time_min = total_time/60  # in minutes   
-print('Total time of all traces: %d s' % total_time)
-print('Total time of all traces: %d min' % total_time_min)
-total_number_of_points = number_of_files*length_of_trace/1e6 # in millions
-print('Total number of points in (millions): %.1f ' % total_number_of_points)
+    # Check if there're missing files
+    if not L_tra == L_mon:
+        print('Warning! Number of tranmission and monitor files differ')
+    else:
+        number_of_files = L_tra
 
-# allocate
-single_trace_tra = np.zeros((number_of_files, length_of_trace), dtype='float32')
-single_trace_mon = np.zeros((number_of_files, length_of_trace), dtype='float32')
+    # Retrieve parameters
+    # Get length of trace
+    parameters_file_filepath = os.path.join(working_folder, parameters_file)
+    # Load parameters' file
+    with open(parameters_file_filepath, 'r') as file:
+        content = file.read()
+        parameters_dict = ast.literal_eval(content)
+    length_of_trace = parameters_dict['Number of points']
+    duration = parameters_dict['Duration (s)'] # in s
+    print('\nSingle trace duration (s): %.1f' % duration)
+    if do_downsampling: 
+        length_of_trace = length_of_trace//downsampling_factor
+    print('\nLength of trace: %d points' % length_of_trace)
+    number_of_points = number_of_files*length_of_trace
+    print('\nTotal number of points: %d points' % number_of_points)
+    total_duration_min = duration*number_of_files/60
+    total_duration_hours = duration*number_of_files/3600
+    print('\nTotal duration (min): %.1f' % total_duration_min)
+    print('\nTotal duration (hours): %.1f' % total_duration_hours)
+    # BUILD TIME AXIS
+    # Reading the data from the file
+    sampling_rate = parameters_dict['Sampling rate (S/s)']
+    if do_downsampling:
+        sampling_rate = sampling_rate/downsampling_factor
+    # Build time axis
+    delta_time = 1/sampling_rate
+    time_data = np.arange(0, number_of_points*delta_time, delta_time, dtype='float32')
+    # Get epoch time
+    time_since_epoch_data = parameters_dict['Time since epoch (s)']
 
-# create single trace in a loop
-for i in range(number_of_files):
-    # generate filepath
-    full_filepath_tra = os.path.join(working_folder, list_of_files_transmission[i])
-    full_filepath_mon = os.path.join(working_folder, list_of_files_monitor[i])
-    # load files
-    single_trace_tra[i,:] = np.load(full_filepath_tra)
-    single_trace_mon[i,:] = np.load(full_filepath_mon)
+    # Add to dictionary the new parameters
+    parameters_dict['Downsampling?'] = do_downsampling
+    parameters_dict['Downsampling factor'] = downsampling_factor
+    parameters_dict['New sampling rate (S/s)'] = sampling_rate
+    parameters_dict['Total number of points'] = number_of_points
+    parameters_dict['Total duration (min)'] = total_duration_min
+    parameters_dict['Total duration (hours)'] = total_duration_hours
+    parameters_dict['Cut-off frequency (Hz)'] = cutoff_freq
 
-# reshape into a Nx1 array
-number_of_points = number_of_files*length_of_trace
-single_trace_tra = np.reshape(single_trace_tra, (number_of_points, -1))
-single_trace_mon = np.reshape(single_trace_mon, (number_of_points, -1))
+    ##############################################################################
+    # TRANSMISSION TRACE 
+    ##############################################################################
+    # Allocate
+    single_trace_tra = np.zeros((number_of_files, length_of_trace), dtype='float32')
+    # Create single trace in a loop
+    for i in range(number_of_files):
+        # Generate filepath
+        full_filepath_tra = os.path.join(working_folder, list_of_files_transmission[i])
+        # Load files
+        data = np.load(full_filepath_tra)
+        if do_downsampling:
+            trace = data[::downsampling_factor]
+        else:
+            trace = data
+        single_trace_tra[i,:] = trace
+    # Reshape into a Nx1 array
+    single_trace_tra = np.reshape(single_trace_tra, (number_of_points, -1))
 
-# save data
-save_glued_folder = os.path.join(working_folder, 'glued_data')
-if not os.path.exists(save_glued_folder):
-    os.makedirs(save_glued_folder)
-new_filename_tra = 'single_transmission_file.npy'
-new_filename_mon = 'single_monitor_file.npy'
-full_new_file_path_tra = os.path.join(save_glued_folder, new_filename_tra)
-full_new_file_path_mon = os.path.join(save_glued_folder, new_filename_mon)
-np.save(full_new_file_path_tra, single_trace_tra)
-# np.save(full_new_file_path_mon, single_trace_mon)  
-new_filename_tra_dat = 'single_transmission_file.dat'
-path_to_dat_file = os.path.join(save_glued_folder, new_filename_tra_dat)
-np.savetxt(path_to_dat_file, single_trace_tra, fmt='%.6f')
+    ##############################################################################
+    # BASELINE CORRECTION
+    ##############################################################################
+    print('\nApplying baseline correction to transmission trace...')
+    # Baseline calculation
+    # For this example, the baseline lasts 0.1 min, then the laser is turned on
+    index_baseline = np.array(np.where(time_data <= 0.1)[0], dtype='i4') # first 6 seconds
+    # print(max(index_baseline), time_data[max(index_baseline)])
+    baseline = np.mean(single_trace_tra[index_baseline]) # mean of first minute
+    print('Baseline transmission (first 6 s) %.6f V' % baseline)
+    # Subtract baseline
+    single_trace_tra = single_trace_tra - baseline
+
+    ##############################################################################
+    # FILTERING
+    ##############################################################################
+    print('\nApplying filtering to transmission trace...')
+    # Ensure it's a 1D array
+    signal = single_trace_tra.flatten()  
+    if signal.ndim > 1:
+        raise ValueError("Signal must be a 1D array.")
+    
+    # Apply averaging filter
+    # single_trace_tra_avg = moving_average_sum(single_trace_tra, window_avg)
+    # single_trace_mon_avg = moving_average_sum(single_trace_mon, window_avg)
+    
+    # Apply gaussian filtering
+    # Process the signal
+    filtered = gf.gaussian_filter_time_domain(signal, sampling_rate, cutoff_freq)
+    # Save filtered signal if needed
+    print('\nSaving data...')
+    filtered_filename = 'filtered_signal.npy'
+    filtered_data_filepath = os.path.join(save_folder, filtered_filename)
+    np.save(filtered_data_filepath, filtered)
+    # filtered1k = gf.gaussian_filter_time_domain(signal, \
+    #                                         new_sampling_rate, 1e3)
+    # filtered01k = gf.gaussian_filter_time_domain(signal, \
+    #                                         new_sampling_rate, 0.1e3)
+    
+    ##############################################################################
+    # MONITOR TRACE 
+    ##############################################################################
+    # Allocate
+    single_trace_mon = np.zeros((number_of_files, length_of_trace), dtype='float32')
+    # Create single trace in a loop
+    for i in range(number_of_files):
+        # Generate filepath
+        full_filepath_mon = os.path.join(working_folder, list_of_files_monitor[i])
+        # Load files
+        data = np.load(full_filepath_mon)
+        if do_downsampling:
+            trace = data[::downsampling_factor]
+        else:
+            trace = data
+        single_trace_mon[i,:] = trace
+    # Reshape into a Nx1 array
+    single_trace_mon = np.reshape(single_trace_mon, (number_of_points, -1))
+
+    # Save data
+    new_filename_tra = 'single_transmission_file.npy'
+    new_filename_mon = 'single_monitor_file.npy'
+    full_new_file_path_tra = os.path.join(save_folder, new_filename_tra)
+    full_new_file_path_mon = os.path.join(save_folder, new_filename_mon)
+    full_new_file_path_time = os.path.join(save_folder, 'time_axis.npy')
+    np.save(full_new_file_path_tra, single_trace_tra)
+    np.save(full_new_file_path_mon, single_trace_mon)
+    np.save(full_new_file_path_time, time_data)
+    new_filename_parameteres = 'processed_parameters.txt'
+    full_new_file_path_parameters = os.path.join(save_folder, new_filename_parameteres)
+    with open(full_new_file_path_parameters, 'w') as file:
+        file.write(str(parameters_dict)) # Convert dict to string
 
 ##############################################################################
-# FILTERING
-# apply averaging filter
-# single_trace_tra_avg = moving_average_sum(single_trace_tra, window_avg)
-# single_trace_mon_avg = moving_average_sum(single_trace_mon, window_avg)
-
-# apply gaussian filtering
-# Process the signal
-original, filtered = gf.process_signal_file(full_new_file_path_tra, \
-                                            sample_rate, cutoff_freq, plot=False)
-# Save filtered signal if needed
-filtered_filename = 'filtered_signal_{:.1f}kHz.npy'.format(cutoff_freq)
-filtered_data_filepath = os.path.join(working_folder, filtered_filename)
-# np.save(filtered_data_filepath, filtered)
-original, filtered1k = gf.process_signal_file(full_new_file_path_tra, \
-                                            sample_rate, 1e3, plot=False)
-original, filtered01k = gf.process_signal_file(full_new_file_path_tra, \
-                                            sample_rate, 0.1e3, plot=False) 
-
+# STEP 1: LOAD PROCESSED DATA AND PLOT
 ##############################################################################
-# BUILD TIME AXIS
-# retrieve parameters
-# reading the data from the file
-parameters_filepath = os.path.join(working_folder, parameters_file)
-with open(parameters_filepath) as f:
-    data = f.read()
-parameters = ast.literal_eval(data)
-sampling_frequency = parameters['Sampling rate (S/s)']
-# build time axis
-delta_time = 1/sampling_frequency
-time_data = np.arange(0, number_of_points*delta_time, delta_time, dtype='float32')
-# get epoch time
-time_since_epoch_data = parameters['Time since epoch (s)']
+if step1:
+    print('\n--------------------- STEP 1: LOAD PROCESSED DATA AND PLOT ---------------------')
+    # Load processed data
+    single_transmission_filepath = os.path.join(save_folder, 'single_transmission_file.npy')
+    single_trace_tra = np.load(single_transmission_filepath)
+    single_monitor_filepath = os.path.join(save_folder, 'single_monitor_file.npy')
+    single_trace_mon = np.load(single_monitor_filepath)    
+    time_axis_filepath = os.path.join(save_folder, 'time_axis.npy')
+    time_data = np.load(time_axis_filepath) 
+    time_data = time_data/60 # convert to minutes
+    filtered_filepath = os.path.join(save_folder, 'filtered_signal.npy')
+    filtered = np.load(filtered_filepath)
+    new_filename_parameteres = 'processed_parameters.txt'
+    full_new_file_path_parameters = os.path.join(save_folder, new_filename_parameteres)
+    with open(full_new_file_path_parameters, 'r') as file:
+        content = file.read()
+        parameters_dict = ast.literal_eval(content)
+    new_sampling_rate = parameters_dict['New sampling rate (S/s)']
+    time_since_epoch_data = parameters_dict['Time since epoch (s)']
 
-time_data = time_data/60 # to min
+    ##############################################################################
+    # STATISTICS
+    ##############################################################################
 
-##############################################################################
-# STATISTICS
-tra_mean = np.mean(single_trace_tra)
-tra_std = np.std(single_trace_tra)
-tra_cv = tra_std/tra_mean
-print('Trans mean %.6f V' % tra_mean)
-print('Trans std dev %.6f V' % tra_std)
-print('Trans Coef. of Variation %.3f %%' % (tra_cv*100))
+    print('\nCalculating statistics...')
+    # Transmission stats
+    tra_mean = np.mean(single_trace_tra)
+    tra_std = np.std(single_trace_tra)
+    tra_cv = tra_std/tra_mean
+    print('-------- Transmission -------')
+    print('Trans mean %.6f V' % tra_mean)
+    print('Trans std dev %.6f V' % tra_std)
+    print('Trans Coef. of Variation %.3f %%' % (tra_cv*100))
+    print
+    monitor_mean = np.mean(single_trace_mon)
+    monitor_std = np.std(single_trace_mon)
+    monitor_cv = monitor_std/monitor_mean
+    print('-------- Monitor -------')
+    print('Monitor mean %.6f V' % monitor_mean)
+    print('Monitor std dev %.6f V' % monitor_std)
+    print('Monitor Coef. of Variation %.3f %%' % (monitor_cv*100))
 
-monitor_mean = np.mean(single_trace_mon)
-monitor_std = np.std(single_trace_mon)
-monitor_cv = monitor_std/monitor_mean
-print('Monitor mean %.6f V' % monitor_mean)
-print('Monitor std dev %.6f V' % monitor_std)
-print('Monitor Coef. of Variation %.3f %%' % (monitor_cv*100))
+    ##############################################################################
+    # PREPARE DATA FOR PLOTTING
+    # Load power calibration factor
+    try:
+        power_factor = parameters_dict['Power calibration factor (mW/V)']
+    except KeyError:
+        power_factor = 42.5 # in mW/V
+        print('\nWarning! Power calibration factor not found in parameters file. Assuming {} mW/V'.format(power_factor))
+    laser_power_trace = single_trace_mon*power_factor # in mW
+    mean_power = np.mean(laser_power_trace)
+    median_power = np.median(laser_power_trace)
+    normalized_trans = single_trace_tra#/tra_mean
+    filtered_norm = filtered#/tra_mean
 
-laser_power_trace = single_trace_mon*42.5 # in mW
-normalized_trans = single_trace_tra/tra_mean
-filtered1k_norm = filtered1k/tra_mean
+    print('-------- Power -------')
+    print('Power mean %.6f mW' % (mean_power))
+    print('Power median %.6f mW' % (median_power))
+    print('Power std dev %.6f mW' % (monitor_std*power_factor))
+    print('Power Coef. of Variation %.3f %%' % (monitor_cv*100))
 
-##############################################################################
-# PLOT
-plt.rcParams.update({'font.size': 18})
-[t_min, t_max] = [time_data[0], time_data[-1]]  # min and max time for x-axis
-# First figure - Transmission
-fig1 = plt.figure(figsize=(20, 5))
-ax1 = fig1.add_subplot(111)
-ax1.set_axisbelow(True)
-ax1.tick_params(axis='both', which='major', labelsize=18)
-ax1.plot(time_data, normalized_trans, color='C0', alpha=0.5, label='Original')
-ax1.plot(time_data, filtered1k_norm, color='C3', alpha=1, label='1 kHz')
-ax1.set_xlim([t_min, t_max])
-ax1.set_xlabel('Time (min)', fontsize=18)
-ax1.set_ylabel('T/T$_{0}$', fontsize=18)
-ax1.grid(True, alpha=0.3)
-ax1.legend(loc='upper right', fontsize=18)
-figure_path = os.path.join(save_folder, '%s_transmission_vs_time.png' % figure_name)
-plt.savefig(figure_path, dpi=300, bbox_inches='tight')
+    ##############################################################################
+    # PLOT
+    color_array = ["#9E9E9E", \
+                   '#EBBED3', \
+                   '#FFD4A8', \
+                   '#ADC1D8', \
+                   '#C1E672', \
+                   '#F2EF89']
 
-# Second figure - Laser Power
-fig2 = plt.figure(figsize=(20, 5))
-ax2 = fig2.add_subplot(111)
-ax2.set_axisbelow(True)
-ax2.tick_params(axis='both', which='major', labelsize=18)
-ax2.plot(time_data, laser_power_trace)
-ax2.set_xlim([t_min, t_max])
-ax2.set_xlabel('Time (min)', fontsize=18)
-ax2.set_ylabel('Laser power (mW)', fontsize=18)
-ax2.grid(True, alpha=0.3)
-figure_path = os.path.join(save_folder, '%s_laser_power_vs_time.png' % figure_name)
-plt.savefig(figure_path, dpi=300, bbox_inches='tight')
+    # for the PAPER
+    # color_array = ["#9E9E9E", \
+    #                "#E795BB", \
+    #                "#FFB973", \
+    #                "#6599D4", \
+    #                "#B3D669", \
+    #                "#FFF949"]
 
-plt.show()
-# plt.close()
+    # SET TIME LIMITS FOR PLOTTING
+    # Set time limits
+    # [t_min, t_max] = 0, 2.7 # in min Edona's data 20251002_Edonas_data_CS
+    [t_min, t_max] = 2.52, 3.39 # in min FERRITIN 20250516 A1_first_try
+    # font size
+    ff_size = 24
 
+    if plot_flag:
+        print('\nPlotting results...')
+        figures_folder = os.path.join(save_folder, 'figures')
+        if not os.path.exists(figures_folder):
+            os.makedirs(figures_folder)
+
+        plt.rcParams.update({'font.size': 18})
+        fig = plt.figure(figsize=(20, 11))
+        gs = GridSpec(2, 2, figure=fig, width_ratios=[4, 1])
+        gs.update(hspace=0.3, wspace=0.01)  # Adjust space between subplots
+
+        # Main plots
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax2 = fig.add_subplot(gs[1, 0])
+        # ax3 = fig.add_subplot(gs[2, 0])
+        # ax4 = fig.add_subplot(gs[3, 0])
+        # Histogram plots
+        ax1hist = fig.add_subplot(gs[0, 1])
+        ax2hist = fig.add_subplot(gs[1, 1])
+        # ax3hist = fig.add_subplot(gs[2, 1])
+        # ax4hist = fig.add_subplot(gs[3, 1])
+
+        # Set axis below plots for all axes
+        # axes_list = [ax1, ax2, ax3, ax4, ax1hist, ax2hist, ax3hist, ax4hist]
+        axes_list = [ax1, ax2, ax1hist, ax2hist]
+        for ax in axes_list:
+            ax.set_axisbelow(True)
+            ax.tick_params(axis='both', which='major', labelsize=ff_size)
+
+        # Plotting the data
+        # yaxis_transmission = [-0.035, 0.125] # Edona's data 20251002_Edonas_data_CS
+        yaxis_transmission = [-0.065, 0.095] # FERRITIN 20250516 A1_first_try
+        ax1.plot(time_data, normalized_trans, color=color_array[0], linewidth=2, alpha=1, label='Original (100 kHz)')
+        ax1.plot(time_data, filtered, color='#CB2424', linewidth=2, alpha=1, label='$f_{c}$=%d Hz' % cutoff_freq)
+        ax1.set_xlim([t_min, t_max])
+        ax1.set_ylim(yaxis_transmission)
+        ax1.set_ylabel('$\Delta$T/T$_{0}$', fontsize=ff_size)
+        # ax1.set_ylabel('Transmission (V)', fontsize=ff_size)
+        ax1.grid(True, alpha=0.3)
+        ax1.legend(loc='upper right', fontsize=ff_size, ncol=2)
+        # Add transmission histogram
+        ax1hist.hist(normalized_trans, bins=40, range = yaxis_transmission, rwidth = 0.8, histtype='bar', \
+                    alpha = 1, orientation='horizontal', density = True, linewidth=2, color=color_array[0])
+        ax1hist.hist(filtered, bins=40, range = yaxis_transmission, rwidth = 0.8, histtype='bar', \
+                    alpha = 1, orientation='horizontal', density = True, linewidth=2, color='#CB2424')
+        ax1hist.set_ylim(yaxis_transmission)
+        ax1hist.get_yaxis().set_visible(False)
+        ax1hist.grid(True, alpha=0.3)
+
+        yaxis_power = [22.5, 23.25]
+        # yaxis_power = [21.5, 23.25] # FERRITIN 20250516 A1_first_try
+        ax2.plot(time_data, laser_power_trace, color=color_array[0], label='Laser')
+        ax2.axhline(median_power, color='#CB2424', linestyle='--', linewidth=2, label='Mean')
+        ax2.set_xlim([t_min, t_max])
+        ax2.set_ylim(yaxis_power)
+        ax2.legend(loc='upper right', fontsize=ff_size, ncol=2)
+        ax2.set_ylabel('Power (mW)', fontsize=ff_size)
+        ax2.grid(True, alpha=0.3)
+        # Add power histogram
+        ax2hist.hist(laser_power_trace, bins=20, range = yaxis_power, rwidth = 0.8, histtype='bar', \
+                    alpha = 1.0, orientation='horizontal', density = True, linewidth=2, color=color_array[0])
+        ax2hist.set_ylim(yaxis_power)
+        ax2hist.get_yaxis().set_visible(False)
+        ax2hist.grid(True, alpha=0.3)
+        # ax2hist.set_xscale('log')
+
+        ax1.set_xlabel('Time (min)', fontsize=ff_size)
+
+        # Save figure
+        figure_path = os.path.join(figures_folder, 'processed_trace_vs_time.png')
+        plt.savefig(figure_path, dpi = 300, bbox_inches='tight')
+        # # figure_path = os.path.join(save_folder, '%s_trace_vs_time.pdf' % figure_name)
+        # # plt.savefig(figure_path, dpi = 300, bbox_inches='tight', format = 'pdf')
+
+
+        # plt.show()
+        plt.close()
+
+print('\n--------------------- END OF PROCESSING ---------------------\n')

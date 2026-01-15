@@ -34,7 +34,7 @@ experiment_folder = "\\measurements_2025\\20250924_DNH_transmission_stability_wh
 data_folder = os.path.join(base_folder, experiment_folder)
 
 # Do downsampling?
-do_downsampling = True
+do_downsampling = False
 # Downsampling factor
 downsampling_factor = 100
 # Filtering parameters
@@ -296,7 +296,7 @@ if step1:
     print('\nCalculating statistics...')
     # SET TIME LIMITS FOR STATISTICS AND PLOTTING
     # Set time limits
-    [t_min, t_max] = 0, 90 # in min
+    [t_min, t_max] = 0, 89.9 # in min
 
     index_time_limits = np.array(np.where((time_data >= t_min) & (time_data <= t_max))[0], dtype='i4')
     time_data = time_data[index_time_limits]
@@ -379,6 +379,9 @@ if step1:
                    "#B3D669", \
                    "#FFF949"]
 
+    # font size
+    ff_size = 22
+
     if plot_flag:
         print('\nPlotting results...')
         figures_folder = os.path.join(save_folder, 'figures')
@@ -386,7 +389,7 @@ if step1:
             os.makedirs(figures_folder)
 
         plt.rcParams.update({'font.size': 18})
-        fig = plt.figure(figsize=(20, 11))
+        fig = plt.figure(figsize=(20, 13))
         gs = GridSpec(4, 2, figure=fig, width_ratios=[4, 1])
         gs.update(hspace=0.3, wspace=0.01)  # Adjust space between subplots
 
@@ -405,7 +408,7 @@ if step1:
         axes_list = [ax1, ax2, ax3, ax4, ax1hist, ax2hist, ax3hist, ax4hist]
         for ax in axes_list:
             ax.set_axisbelow(True)
-            ax.tick_params(axis='both', which='major', labelsize=18)
+            ax.tick_params(axis='both', which='major', labelsize=ff_size)
             
         # Plotting the data
         yaxis_transmission = [0.26, 0.30]
@@ -414,9 +417,9 @@ if step1:
         ax1.set_xlim([t_min, t_max])
         ax1.set_ylim(yaxis_transmission)
         # ax1.set_ylabel('T/T$_{0}$', fontsize=18)
-        ax1.set_ylabel('Transmission (V)', fontsize=18)
+        ax1.set_ylabel('Transmission (V)', fontsize=ff_size)
         ax1.grid(True, alpha=0.3)
-        ax1.legend(loc='upper right', fontsize=18, ncol=2)
+        ax1.legend(loc='upper right', fontsize=ff_size, ncol=2)
         # Add transmission histogram
         ax1hist.hist(normalized_trans, bins=20, range = yaxis_transmission, rwidth = 0.8, histtype='bar', \
                     alpha = 1, orientation='horizontal', density = True, linewidth=2, color=color_array[0])
@@ -431,8 +434,8 @@ if step1:
         ax2.axhline(median_power, color='k', linestyle='--', linewidth=2, label='Mean')
         ax2.set_xlim([t_min, t_max])
         ax2.set_ylim(yaxis_power)
-        ax2.legend(loc='upper right', fontsize=18, ncol=2)
-        ax2.set_ylabel('Power (mW)', fontsize=18)
+        ax2.legend(loc='upper right', fontsize=ff_size, ncol=2)
+        ax2.set_ylabel('Power (mW)', fontsize=ff_size)
         ax2.grid(True, alpha=0.3)
         # Add power histogram
         ax2hist.hist(laser_power_trace, bins=20, range = yaxis_power, rwidth = 0.8, histtype='bar', \
@@ -448,9 +451,9 @@ if step1:
         ax3.plot(time_xy, y_error, label='y', color=color_array[2])
         ax3.set_xlim([t_min, t_max])
         ax3.set_ylim(yaxis)
-        ax3.set_ylabel(r'Drift ($\mu$m)', fontsize=18)
+        ax3.set_ylabel(r'Drift ($\mu$m)', fontsize=ff_size)
         ax3.grid(True, alpha=0.3)
-        ax3.legend(loc='upper right', fontsize=18, ncol=2)
+        ax3.legend(loc='upper right', fontsize=ff_size, ncol=2)
         # Add xy drift histogram
         ax3hist.hist(x_error, bins=20, range = yaxis, rwidth = 0.8, histtype='bar', \
                     alpha = 0.5, orientation='horizontal', density = True, linewidth=2, \
@@ -466,22 +469,22 @@ if step1:
                      linewidth=2, linestyle='--', label='x')
         ax3hist.plot(gauss_y.pdf(yaxis_fit), yaxis_fit, color=color_array[0], 
                      linewidth=2, linestyle='--', label='y')
-        # ax3hist.set_xlabel('Counts', fontsize=18)
-        # ax3hist.set_xlabel('Frequency', fontsize=18)
+        # ax3hist.set_xlabel('Counts', fontsize=ff_size)
+        # ax3hist.set_xlabel('Frequency', fontsize=ff_size)
         ax3hist.set_ylim(yaxis)
         ax3hist.get_yaxis().set_visible(False)
         ax3hist.grid(True, alpha=0.3)
-        ax3hist.legend(loc='upper right', fontsize=18, ncol=2)
+        ax3hist.legend(loc='upper right', fontsize=ff_size, ncol=2)
 
         # Modified z drift plot with histogram
         yaxis = [-0.1, 0.1]
         ax4.plot(time_z, z_error, label='z', color=color_array[4])
         ax4.set_xlim([t_min, t_max])
         ax4.set_ylim(yaxis)
-        ax4.set_xlabel('Time (min)', fontsize=18)
-        ax4.set_ylabel(r'Drift ($\mu$m)', fontsize=18)
+        ax4.set_xlabel('Time (min)', fontsize=ff_size)
+        ax4.set_ylabel(r'Drift ($\mu$m)', fontsize=ff_size)
         ax4.grid(True, alpha=0.3)
-        ax4.legend(loc='upper right', fontsize=18)
+        ax4.legend(loc='upper right', fontsize=ff_size)
         # Add z drift histogram
         ax4hist.hist(z_error, bins=20, range = yaxis, rwidth=0.8, histtype='bar', \
                     color=color_array[4], orientation='horizontal', density = True, \
@@ -491,7 +494,7 @@ if step1:
         gauss_z = norm(loc = z_error_mean, scale = z_error_std_dev)
         ax4hist.plot(gauss_z.pdf(yaxis_fit), yaxis_fit, color='k', \
                      linewidth=2, linestyle='--')
-        ax4hist.set_xlabel('Frequency', fontsize=18)
+        ax4hist.set_xlabel('Frequency', fontsize=ff_size)
         ax4hist.set_ylim(yaxis)
         ax4hist.get_yaxis().set_visible(False)
         ax4hist.grid(True, alpha=0.3)
