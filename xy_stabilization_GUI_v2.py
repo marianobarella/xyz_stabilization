@@ -50,7 +50,8 @@ initial_filename = 'image_pco'
 # timers
 tempTimer_update = 10000 # in ms
 initial_tracking_period = 500 # in ms
-initial_bix_size = 11 # always odd number pixels
+initial_box_size = 11 # always odd number pixels
+initial_box_size_to_record = 31 # always odd number pixels
 initial_number_of_boxes = 8
 driftbox_length = 10.0 # in seconds
 
@@ -91,6 +92,7 @@ class Frontend(QtGui.QFrame):
     dataFiducialsSignal = pyqtSignal(int, dict, bool)
     savedriftSignal = pyqtSignal()
     correctDriftSignal = pyqtSignal(bool)
+    lockAndRecordSignal = pyqtSignal(bool)
     pidParamChangedSignal = pyqtSignal(bool, list)
     correctionThresholdChangedSignal = pyqtSignal(float)
     
@@ -233,7 +235,7 @@ class Frontend(QtGui.QFrame):
         number_of_fiducials_label = QtGui.QLabel('Number of fiducials:')
         self.number_of_fiducials_value = QtGui.QLineEdit(str(initial_number_of_boxes))
         box_size_label = QtGui.QLabel('Box size (pixels):')
-        self.box_size_value = QtGui.QLineEdit(str(initial_bix_size))
+        self.box_size_value = QtGui.QLineEdit(str(initial_box_size))
         self.box_size_value.setValidator(QtGui.QIntValidator(1, 999))
         self.box_size_value.setToolTip('Restricted to odd numbers. Good starting point is box_size ~ 1 µm (use pixel size).')
         self.create_ROIs_button = QtGui.QPushButton('Create ROIs')
@@ -299,6 +301,32 @@ class Frontend(QtGui.QFrame):
         self.driftPlot.setLabel('left', 'Shift (μm)')
         self.driftPlot.setLabel('bottom', 'Time (s)')
 
+        # Record new ROI
+        self.create_ROI_to_record_button = QtGui.QPushButton('Create ROI to record')
+        self.create_ROI_to_record_button.setCheckable(True)
+        self.create_ROI_to_record_button.clicked.connect(self.create_ROI_to_record)
+        self.create_ROI_to_record_button.setStyleSheet(
+            "QPushButton:pressed { background-color: red; }"
+            "QPushButton::checked { background-color: steelblue; }")
+        roi_to_record_size_label = QtGui.QLabel('ROI size (pixels):')
+        self.roi_to_record_size_value = QtGui.QLineEdit(str(initial_box_size_to_record))
+        self.roi_to_record_size_value.setValidator(QtGui.QIntValidator(1, 999))
+        self.roi_to_record_size_value.setToolTip('Restricted to odd numbers. Good starting point is box_size ~ 1 µm (use pixel size).')
+        # Lock and record the ROI pixels
+        self.record_ROI_button = QtGui.QPushButton('Lock and Record')
+        self.record_ROI_button.setToolTip('Lock ROI position and start recording the ROI image.')
+        self.record_ROI_button.setCheckable(True)
+        self.record_ROI_button.clicked.connect(self.lock_and_record)
+        self.record_ROI_button.setStyleSheet(
+            "QPushButton:pressed { background-color: red; }"
+            "QPushButton::checked { background-color: limegreen; }")
+        # Intensity of recorded ROI vs time
+        intensityWidget = pg.GraphicsLayoutWidget()
+        self.intensityPlot = intensityWidget.addPlot(title = "Integrated ROI intensity")
+        self.intensityPlot.showGrid(x = True, y = True)
+        self.intensityPlot.setLabel('left', 'Intensity (arb. units)')
+        self.intensityPlot.setLabel('bottom', 'Time (s)')
+
         # Live view parameters dock
         self.liveviewWidget = QtGui.QWidget()
         layout_liveview = QtGui.QGridLayout()
@@ -360,7 +388,12 @@ class Frontend(QtGui.QFrame):
         layout_fiducials.addWidget(self.kd_value,         10, 1)
         # save drift
         layout_fiducials.addWidget(self.savedrift_tickbox,      11, 0, 2, 2)
-        
+        # Record a fragment of the sensor
+        layout_fiducials.addWidget(self.create_ROI_to_record_button,      12, 0, 1, 2)
+        layout_fiducials.addWidget(roi_to_record_size_label,              13, 0)
+        layout_fiducials.addWidget(self.roi_to_record_size_value,         13, 1)
+        layout_fiducials.addWidget(self.record_ROI_button,         14, 0, 1, 2)
+
         # Place layouts and boxes
         dockArea = DockArea()
         hbox = QtGui.QHBoxLayout(self)
@@ -372,6 +405,10 @@ class Frontend(QtGui.QFrame):
         driftDock = Dock('Drift vs time', size = (20, 20))
         driftDock.addWidget(driftWidget)
         dockArea.addDock(driftDock, 'below', viewDock)
+
+        intensityDock = Dock('Intensity vs time', size = (20, 20))
+        intensityDock.addWidget(intensityWidget)
+        dockArea.addDock(intensityDock, 'below', driftDock)
         
         liveview_paramDock = Dock('Live view parameters', size = (1, 20))
         liveview_paramDock.addWidget(self.liveviewWidget)
@@ -431,6 +468,43 @@ class Frontend(QtGui.QFrame):
                 self.vb.removeItem(self.roi[i])
                 self.roi[i].hide()
             self.roi = {}
+        return
+
+    def create_ROI_to_record(self):
+        # create ROI to extract a video from it
+        self.roi_size_to_record = int(self.roi_to_record_size_value.text())
+        if self.create_ROI_to_record_button.isChecked():
+            x_pos = round(self.roi_list_previous[2]/3)
+            y_pos = round(self.roi_list_previous[3]/3)
+            ROIpos = (x_pos, y_pos) # (0.5*numberofPixels - 0.5*box_size, 0.5*numberofPixels - 0.5*box_size)
+            self.roi_to_record = viewbox_tools.ROI_squared(self.roi_size_to_record, self.vb, ROIpos,
+                                             handlePos = (1, 1),
+                                             handleCenter = (0, 0),
+                                             scaleSnap = True,
+                                             translateSnap = True)
+        else:
+            self.vb.removeItem(self.roi_to_record)
+            self.roi_to_record.hide()
+            self.roi_to_record = {}
+        return
+
+    def lock_and_record(self):
+        if self.record_ROI_button.isChecked():
+            if self.create_ROI_to_record_button.isChecked():
+                self.intensityPlot.clear()
+                self.lockAndRecordSignal.emit(True)
+                self.data_ROI_to_record = {}
+                self.coord_ROI_to_record = {}
+                N = int(driftbox_length*1000/self.tracking_period)
+                self.intensity_to_plot = np.zeros(N)
+                self.time_for_ROI_to_plot = np.zeros(N)
+            else:
+                print('Warning! Lock and Record can only be used if the ROI to record has been created.')
+        else:
+            self.lockAndRecordSignal.emit(False)
+            # if self.savedrift_bool:
+            #     self.savedriftSignal.emit()
+            # self.xy_fiducials.clear()
         return
 
     def lock_and_track(self):
@@ -688,7 +762,9 @@ class Backend(QtCore.QObject):
         self.pixel_size = initial_pixel_size
         self.exposure_time_ms = initial_exp_time
         self.file_path = initial_filepath
+        self.recordingTimer = QtCore.QTimer()
         self.trackingTimer = QtCore.QTimer()
+        self.recording_period = initial_exp_time
         self.tracking_period = initial_tracking_period
         self.tracking_period_seconds = self.tracking_period/1000
         self.prop_correction = np.array([0, 0])
@@ -768,7 +844,7 @@ class Backend(QtCore.QObject):
     def start_stop_tracking(self, trackbool):
         if trackbool:
             print('\nLocking and tracking fiducials...')
-            # initiating variables
+            # initiating variables...
             self.centers = {}
             self.timeaxis = {}
             self.errors_to_save = []
@@ -788,6 +864,31 @@ class Backend(QtCore.QObject):
             print('\nUnlocking...')
         return
     
+    @pyqtSlot(bool)
+    def start_stop_recording(self, recordbool):
+        if recordbool:
+            print('\nLocking and recording ROI image...')
+            # initiating variables...
+            self.recorded_intensity = {}
+            self.recorded_timeaxis = {}
+            self.recorded_intensity_to_save = []
+            self.recorded_timeaxis_to_save = []
+            # t0 initial time
+            self.start_recording_time = timer()
+            # ask for ROI data and coordinates
+            self.get_recording_roi_data()
+            # start timer
+            self.recordingTimer.start(self.exposure_time_ms)
+            self.time_since_epoch = tm.time()
+        else:
+            self.recordingTimer.stop()
+            print('\nUnlocking...')
+        return
+
+    def get_recording_roi_data(self):
+        self.getRecordingROIDataSignal.emit()
+        return
+
     def get_fiducials_data(self):
         self.getFiducialsDataSignal.emit()
         return
@@ -814,6 +915,37 @@ class Backend(QtCore.QObject):
         print('Done.')
         return  
       
+    def take_roi_image_and_intensity(self):
+        # error = {}
+        # centers, timeaxis = self.fit_fiducials()
+        # timestamp = timeaxis[0]
+        # # print(self.centers_previous)
+        # # print(centers)
+        # error_x_sum = 0
+        # error_y_sum = 0
+        # for i in range(self.number_of_fiducials):
+        #     error_y = self.initial_centers[i][0] - centers[i][0]
+        #     error_x = self.initial_centers[i][1] - centers[i][1]
+        #     error[i] = [error_x, error_y]
+        #     # print(error_x, error_y)
+        #     error_x_sum += error_x
+        #     error_y_sum += error_y
+        # error_x_avg = error_x_sum/self.number_of_fiducials
+        # error_y_avg = error_y_sum/self.number_of_fiducials
+        # error_avg = np.array([error_x_avg, error_y_avg])
+        # # uncomment for debugging
+        # # print('\n err_x %.0f nm / err_y %.0f nm' % (error_x_avg*1000, error_y_avg*1000))
+        # # send position of all fiducials to Frontend
+        # # first line is to check that all fiducials drift in the same way
+        # # be aware that if uncommented you should change the signal type slot also
+        # # self.sendFittedDataSignal.emit(centers, error, timeaxis)
+        # self.sendFittedDataSignal.emit(centers, error_avg, timestamp)
+        # # store data to save drift vs time when the Lock and Track option is released
+        # if self.save_drift_data:
+        #     self.timeaxis_to_save.append(timestamp)
+        #     self.errors_to_save.append(error_avg)
+        return
+
     def call_pid(self):
         error = {}
         centers, timeaxis = self.fit_fiducials()
@@ -1063,6 +1195,7 @@ class Backend(QtCore.QObject):
         frontend.dataFiducialsSignal.connect(self.receive_roi_fiducials)
         frontend.savedriftSignal.connect(self.save_drift_curve)
         frontend.correctDriftSignal.connect(self.set_correct_drift_flag)
+        frontend.lockAndRecordSignal.connect(self.start_stop_recording)
         frontend.pidParamChangedSignal.connect(self.new_pid_params)
         frontend.correctionThresholdChangedSignal.connect(self.correction_threshold_changed)
         if self.connect_to_piezo_module:
@@ -1093,6 +1226,7 @@ if __name__ == '__main__':
     worker.viewTimer.moveToThread(workerThread)
     worker.tempTimer.moveToThread(workerThread)
     worker.trackingTimer.moveToThread(workerThread)
+    worker.recordingTimer.moveToThread(workerThread)
 
     # move piezo timers
     worker.piezoWorker.updateTimer.moveToThread(workerThread)
@@ -1104,6 +1238,7 @@ if __name__ == '__main__':
     worker.viewTimer.timeout.connect(worker.update_view, QtCore.Qt.QueuedConnection) 
     worker.tempTimer.timeout.connect(worker.update_temp)
     worker.trackingTimer.timeout.connect(worker.call_pid, QtCore.Qt.QueuedConnection) 
+    worker.recordingTimer.timeout.connect(worker.take_roi_image_and_intensity, QtCore.Qt.QueuedConnection) 
 
     # start timer when thread has started
     workerThread.started.connect(worker.piezoWorker.run)

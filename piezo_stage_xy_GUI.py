@@ -29,7 +29,7 @@ piezo_stage_xy = piezoTool.BPC303(deviceID_BPC303)
 # time period used to update stage position
 initial_updatePosition_period = 500 # in ms
 
-initialize_flag = True
+initialize_flag = False
 
 #=====================================
 
@@ -318,8 +318,6 @@ class Backend(QtCore.QObject):
         if initialize_flag:
             self.piezo_stage_xy.zero('x')
             self.piezo_stage_xy.zero('y')
-            tm.sleep(5)
-            self.move_absolute([10, 10])
         return
     
     @pyqtSlot()

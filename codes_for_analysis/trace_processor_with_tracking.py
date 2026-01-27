@@ -49,7 +49,7 @@ plot_flag = True
 step0, step1, step2 = 1, 0, 0
 step0, step1, step2 = 0, 1, 0
 # step0, step1, step2 = 0, 0, 0
-# step0, step1, step2 = 1, 1, 0
+step0, step1, step2 = 1, 1, 0
 
 ##############################################################################
 # START

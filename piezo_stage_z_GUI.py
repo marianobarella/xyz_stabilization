@@ -267,8 +267,6 @@ class Backend(QtCore.QObject):
         # perform zero routine for all axis
         if initialize_flag:
             self.piezo_stage_z.zero()
-            tm.sleep(5)
-            self.move_absolute(10)
         return
     
     @pyqtSlot()

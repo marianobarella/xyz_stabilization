@@ -25,10 +25,10 @@ import serial
 
 # definition of COM ports
 COM_valve = 'COM5' # valve 
-# COM_pump = 'COM4' # pump (the usual one) WORKING
-COM_pump = 'COM7' # pump (at TIRF lab, 50b)
-# COM_pump = 'COMX' # pump (first replacement POT lab, 50a)
-# COM_pump = 'COM11' # pump (second replacement POT lab, 50C) WORKING
+COM_pump = 'COM4' # pump (the usual one) WORKING
+# COM_pump = 'COM7' # pump (at TIRF lab, 50b) WORKING AGAIN
+# COM_pump = 'COM11' # pump (second replacement POT lab, 50c) WORKING
+# COM_pump = 'COMX' # pump (first replacement POT lab, 50a) USB Reset Failure. Not being recognized.
 
 # Channel definitions according to the tube connections
 waste_channel = 0 # physically in position 1
