@@ -1185,6 +1185,7 @@ if __name__ == '__main__':
     # move the timers of the xy and its main worker
     worker.xyWorker.viewTimer.moveToThread(workerThread)
     worker.xyWorker.trackingTimer.moveToThread(workerThread)
+    worker.xyWorker.recordingTimer.moveToThread(workerThread)
     worker.xyWorker.tempTimer.moveToThread(workerThread)
     worker.xyWorker.moveToThread(workerThread)
     # connect timers after moving them
@@ -1192,6 +1193,7 @@ if __name__ == '__main__':
     worker.xyWorker.viewTimer.timeout.connect(worker.xyWorker.update_view, QtCore.Qt.QueuedConnection) 
     worker.xyWorker.tempTimer.timeout.connect(worker.xyWorker.update_temp)
     worker.xyWorker.trackingTimer.timeout.connect(worker.xyWorker.call_pid, QtCore.Qt.QueuedConnection) 
+    worker.xyWorker.recordingTimer.timeout.connect(worker.xyWorker.take_roi_image, QtCore.Qt.QueuedConnection) 
 
     # move the timers of the z and its main worker
     worker.zWorker.trackingTimer.moveToThread(workerThread)
