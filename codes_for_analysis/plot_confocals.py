@@ -234,13 +234,13 @@ def plot_apd_traces(apd_traces_3d, output_dir, prefix, downsample=True, downsamp
     # Select representative traces from different spatial positions
     # Corners and center of the grid
     positions_to_plot = [
-        (0, 0),  # Top-left
-        (0, n_cols-1),  # Top-right
-        (n_rows-1, 0),  # Bottom-left
-        (n_rows-1, n_cols-1),  # Bottom-right
-        (n_rows//2, n_cols//2),  # Center
-        (n_rows//4, n_cols//4),  # Quarter point
-        (3*n_rows//4, 3*n_cols//4),  # Three-quarters point
+        (0, 0), 
+        (10, 0), 
+        (10, 6), 
+        (10, 10),  
+        (10, 13),  
+        (10, 16),  
+        (10, 19), 
     ]
     
     # Filter to valid positions
@@ -381,6 +381,7 @@ def plot_2d_scan_image_with_coords(image_data, coords, output_dir, prefix):
     n_rows, n_cols = image_data.shape
     
     # Get coordinate grids
+    # These are the centers of the pixels
     x_grid, y_grid = get_coordinate_grids(coords, (n_rows, n_cols))
     
     # Create figure
@@ -389,20 +390,18 @@ def plot_2d_scan_image_with_coords(image_data, coords, output_dir, prefix):
     # Use extent for imshow based on coordinate ranges
     x_min, x_max = x_grid.min(), x_grid.max()
     y_min, y_max = y_grid.min(), y_grid.max()
-
+    step_x = (x_max - x_min) / (n_cols - 1) if n_cols > 1 else 1
+    step_y = (y_max - y_min) / (n_rows - 1) if n_rows > 1 else 1
+    # Adjust extent to the edges of the pixels
+    x_min_edge = x_min - step_x / 2
+    x_max_edge = x_max + step_x / 2
+    y_min_edge = y_min - step_y / 2
+    y_max_edge = y_max + step_y / 2
+    extent = [x_min_edge, x_max_edge, y_min_edge, y_max_edge]
     # Set ticks (user can adjust as needed)
-    # Calculate pixel sizes (assuming uniform spacing)
-    # dx = (x_max - x_min) / n_cols if n_cols > 1 else 1
-    # dy = (y_max - y_min) / n_rows if n_rows > 1 else 1
-    # step_x = 2*dx 
-    # step_y = 2*dy
-    # x_label_list = np.arange(x_min + step_x, x_max, step_x)
-    # y_label_list = np.arange(y_min + step_y, y_max, step_y)
-    x_label_list = np.linspace(x_min, x_max, num=4)
-    y_label_list = np.linspace(y_min, y_max, num=4)
-    # Adjust extent to center pixels on coordinates
-    extent = [x_min, x_max, y_min, y_max]
-    
+    x_label_list = np.linspace(x_min_edge, x_max_edge, num=4)
+    y_label_list = np.linspace(y_min_edge, y_max_edge, num=4)
+
     # Plot with actual coordinates
     im = ax.imshow(image_data, cmap='viridis', aspect='equal', 
                     extent=extent, origin='upper')
@@ -468,22 +467,20 @@ def create_apd_statistics_maps_with_coords(apd_traces_3d, coords, output_dir, pr
     with np.errstate(divide='ignore', invalid='ignore'):
         snr_map = np.where(std_map != 0, mean_map / std_map, np.nan)
     
-    # Calculate extent for plotting
+     # Use extent for imshow based on coordinate ranges
     x_min, x_max = x_grid.min(), x_grid.max()
     y_min, y_max = y_grid.min(), y_grid.max()
-    
-    # Set ticks (user can adjust as needed)
-    # Calculate pixel sizes (assuming uniform spacing)
-    # dx = (x_max - x_min) / n_cols if n_cols > 1 else 1
-    # dy = (y_max - y_min) / n_rows if n_rows > 1 else 1
-    # step_x = 2*dx 
-    # step_y = 2*dy
-    # x_label_list = np.arange(x_min + step_x, x_max, step_x)
-    # y_label_list = np.arange(y_min + step_y, y_max, step_y)
-    x_label_list = np.linspace(x_min, x_max, num=4)
-    y_label_list = np.linspace(y_min, y_max, num=4)
-    # Adjust extent to center pixels on coordinates
-    extent = [x_min, x_max, y_min, y_max]
+    step_x = (x_max - x_min) / (n_cols - 1) if n_cols > 1 else 1
+    step_y = (y_max - y_min) / (n_rows - 1) if n_rows > 1 else 1
+    # Adjust extent to the edges of the pixels
+    x_min_edge = x_min - step_x / 2
+    x_max_edge = x_max + step_x / 2
+    y_min_edge = y_min - step_y / 2
+    y_max_edge = y_max + step_y / 2
+    extent = [x_min_edge, x_max_edge, y_min_edge, y_max_edge]
+    # # Set ticks (user can adjust as needed)
+    # x_label_list = np.linspace(x_min_edge, x_max_edge, num=4)
+    # y_label_list = np.linspace(y_min_edge, y_max_edge, num=4)
 
     # Create a figure with 3 subplots
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
@@ -557,7 +554,7 @@ def main():
     print("\nImages will use actual coordinates in microns from xy_coords file")
     
     # Start processing with default downsampling
-    process_confocal_data(downsample_timepoints=True, downsample_factor=100)
+    process_confocal_data(downsample_timepoints=False, downsample_factor=100)
 
 if __name__ == "__main__":
     main()
