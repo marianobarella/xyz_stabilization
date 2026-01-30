@@ -32,6 +32,7 @@ class Frontend(QtGui.QFrame):
     shutter488_signal = pyqtSignal(bool)
     shutter532_signal = pyqtSignal(bool)
     emission532_signal = pyqtSignal(bool)
+    LED_signal = pyqtSignal(bool)
     flipper_apd_signal = pyqtSignal(bool)
     flipper_spectrometer_path_signal = pyqtSignal(bool)
     flipper_trapping_laser_signal = pyqtSignal(bool)
@@ -116,6 +117,13 @@ class Frontend(QtGui.QFrame):
         self.power488_edit.editingFinished.connect(self.power488_changed_check)
         self.power488_edit.setValidator(QtGui.QDoubleValidator(0.00, 200.00, 2))
         
+        # LED
+        self.LEDbutton = QtGui.QCheckBox('LED')
+        self.LEDbutton.setStyleSheet("color: black; ")
+        self.LEDbutton.setChecked(True)
+        self.LEDbutton.clicked.connect(self.control_LED_check)   
+        self.LEDbutton.setToolTip('Turns ON/OFF LED illumination')     
+
         # LAYOUT
         # Minimalist
         self.minimalist_box = QtGui.QWidget()
@@ -125,6 +133,7 @@ class Frontend(QtGui.QFrame):
         minimalist_box_layout.addWidget(self.shutterTrappingLaserButton, 0, 0)
         minimalist_box_layout.addWidget(self.flipperTrappingLaserButton, 0, 1, 1, 21)
         minimalist_box_layout.addWidget(self.shutterSafetyLaserButton, 1, 0)
+        minimalist_box_layout.addWidget(self.LEDbutton, 1, 1)
         minimalist_box_layout.addWidget(self.shutter488button, 2, 0)
         minimalist_box_layout.addWidget(power488_label, 2, 1)
         minimalist_box_layout.addWidget(self.power488_edit, 2, 2)
@@ -248,6 +257,13 @@ class Frontend(QtGui.QFrame):
             self.emission532_signal.emit(False)
         return
 
+    def control_LED_check(self):
+        if self.LEDbutton.isChecked():
+            self.LED_signal.emit(True)
+        else:
+            self.LED_signal.emit(False)
+        return
+
     def update_params_button(self):
         self.updateParams_signal.emit()
         return
@@ -359,6 +375,16 @@ class Backend(QtCore.QObject):
         return
 
     @pyqtSlot(bool)
+    def LEDlight(self, lightbool):
+        if lightbool:
+            print('LED switched ON')
+            # self.LED.switch('on')
+        else:
+            print('LED switched OFF')
+            # self.LED.switch('off')
+        return
+
+    @pyqtSlot(bool)
     def flipper_apd_attenuation(self, flipperbool):
         if flipperbool:
             self.flippersObject.close_flipper('apd_attenuation') # filter IN
@@ -437,6 +463,7 @@ class Backend(QtCore.QObject):
         frontend.shutter488_signal.connect(self.shutter488)
         frontend.shutter532_signal.connect(self.shutter532)
         frontend.emission532_signal.connect(self.emission532)
+        frontend.LED_signal.connect(self.LEDlight)
         frontend.flipper_apd_signal.connect(self.flipper_apd_attenuation)
         frontend.flipper_spectrometer_path_signal.connect(self.flipper_select_spectrometer)
         frontend.flipper_trapping_laser_signal.connect(self.flipper_trapping_laser_attenuation)
