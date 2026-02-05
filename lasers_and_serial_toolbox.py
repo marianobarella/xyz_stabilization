@@ -589,7 +589,6 @@ class M2_laser(object):
 #         self.shutter('close')
 #         closeSerial(self.serialInstance)
 #         return
-    
 
 #======================================
 
