@@ -34,11 +34,11 @@ experiment_folder = "\\measurements_2025\\20250924_DNH_transmission_stability_wh
 data_folder = os.path.join(base_folder, experiment_folder)
 
 # Do downsampling?
-do_downsampling = False
+do_downsampling = True
 # Downsampling factor
 downsampling_factor = 100
 # Filtering parameters
-save_filtered_signal = True
+save_filtered_signal = False
 # Average filter window
 window_avg = 5
 # Gaussian filter parameters
@@ -305,7 +305,7 @@ if step1:
     # SET TIME LIMITS FOR PLOTTING
     # Set time limits
     # [t_min, t_max] = 0, 2.7 # in min Edona's data 20251002_Edonas_data_CS
-    [t_min, t_max] = 2.52, 3.39 # in min FERRITIN 20250516 A1_first_try
+    # [t_min, t_max] = 2.52, 3.39 # in min FERRITIN 20250516 A1_first_try
     # font size
     ff_size = 24
 
@@ -340,11 +340,12 @@ if step1:
 
         # Plotting the data
         # yaxis_transmission = [-0.035, 0.125] # Edona's data 20251002_Edonas_data_CS
-        yaxis_transmission = [-0.065, 0.095] # FERRITIN 20250516 A1_first_try
+        # yaxis_transmission = [-0.065, 0.095] # FERRITIN 20250516 A1_first_try
+        yaxis_transmission = [-0.065, 0.065] 
         ax1.plot(time_data, normalized_trans, color=color_array[0], linewidth=2, alpha=1, label='Original (100 kHz)')
         ax1.plot(time_data, filtered, color='#CB2424', linewidth=2, alpha=1, label='$f_{c}$=%d Hz' % cutoff_freq)
-        ax1.set_xlim([t_min, t_max])
-        ax1.set_ylim(yaxis_transmission)
+        # ax1.set_xlim([t_min, t_max])
+        # ax1.set_ylim(yaxis_transmission)
         ax1.set_ylabel('$\Delta$T/T$_{0}$', fontsize=ff_size)
         # ax1.set_ylabel('Transmission (V)', fontsize=ff_size)
         ax1.grid(True, alpha=0.3)
@@ -354,28 +355,28 @@ if step1:
                     alpha = 1, orientation='horizontal', density = True, linewidth=2, color=color_array[0])
         ax1hist.hist(filtered, bins=40, range = yaxis_transmission, rwidth = 0.8, histtype='bar', \
                     alpha = 1, orientation='horizontal', density = True, linewidth=2, color='#CB2424')
-        ax1hist.set_ylim(yaxis_transmission)
+        # ax1hist.set_ylim(yaxis_transmission)
         ax1hist.get_yaxis().set_visible(False)
         ax1hist.grid(True, alpha=0.3)
 
-        yaxis_power = [22.5, 23.25]
+        yaxis_power = [5.5, 7.5]
         # yaxis_power = [21.5, 23.25] # FERRITIN 20250516 A1_first_try
         ax2.plot(time_data, laser_power_trace, color=color_array[0], label='Laser')
         ax2.axhline(median_power, color='#CB2424', linestyle='--', linewidth=2, label='Mean')
-        ax2.set_xlim([t_min, t_max])
-        ax2.set_ylim(yaxis_power)
+        # ax2.set_xlim([t_min, t_max])
+        # ax2.set_ylim(yaxis_power)
         ax2.legend(loc='upper right', fontsize=ff_size, ncol=2)
         ax2.set_ylabel('Power (mW)', fontsize=ff_size)
         ax2.grid(True, alpha=0.3)
         # Add power histogram
         ax2hist.hist(laser_power_trace, bins=20, range = yaxis_power, rwidth = 0.8, histtype='bar', \
                     alpha = 1.0, orientation='horizontal', density = True, linewidth=2, color=color_array[0])
-        ax2hist.set_ylim(yaxis_power)
+        # ax2hist.set_ylim(yaxis_power)
         ax2hist.get_yaxis().set_visible(False)
         ax2hist.grid(True, alpha=0.3)
         # ax2hist.set_xscale('log')
 
-        ax1.set_xlabel('Time (min)', fontsize=ff_size)
+        ax2.set_xlabel('Time (min)', fontsize=ff_size)
 
         # Save figure
         figure_path = os.path.join(figures_folder, 'processed_trace_vs_time.png')

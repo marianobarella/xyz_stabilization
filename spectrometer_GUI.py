@@ -886,7 +886,7 @@ class Backend(QtCore.QObject):
         self.frame_time_ms = self.frame_time*1000
         print('Exposure time set to %.3f ms. Frame time: %.3f ms' % (exp_time*1000, self.frame_time_ms))
         # set frame timeout to +50% of the frame time
-        self.frame_timeout = self.frame_time*1.5
+        self.frame_timeout = 15 # self.frame_time*1.5 # in seconds
         if live_spec_bool:
             self.start_live_spec_view(self.exposure_time_ms)
         return
@@ -921,8 +921,8 @@ class Backend(QtCore.QObject):
     def update_liveview(self):
         # update spectrum while in live spectrum view mode
         # Observation: timeout prop returned error. Do not set it manually.
-        # self.myCamera.wait_for_frame(timeout = self.frame_timeout) 
-        self.myCamera.wait_for_frame()
+        self.myCamera.wait_for_frame(timeout = self.frame_timeout) 
+        # self.myCamera.wait_for_frame()
         spectrum = self.myCamera.read_newest_image() # numpy array of size (1, 1024) that is a 2D array
         ret_ok, return_object = self.determine_signal(spectrum)
         if ret_ok:
@@ -960,16 +960,16 @@ class Backend(QtCore.QObject):
         if self.number_of_acquisitions == 1:
             # numpy array of size (1, 1024) that is a 2D array
             # Observation: timeout prop returned error. Do not set it manually.
-            # spectrum = self.myCamera.snap(timeout = self.frame_timeout)
-            spectrum = self.myCamera.snap()
+            spectrum = self.myCamera.snap(timeout = self.frame_timeout)
+            # spectrum = self.myCamera.snap()
             self.set_shutter_state(CLOSE_SHUTTER)
             print('Acquisition stopped. A single frame was acquired.')
         elif self.number_of_acquisitions > 1:
             # numpy array of size (1, 1024) that is a 2D array
             # Observation: timeout prop returned error. Do not set it manually.
-            # spectra_list = self.myCamera.grab(nframes = self.number_of_acquisitions, \
-            #                                   frame_timeout = self.frame_timeout) 
-            spectra_list = self.myCamera.grab(nframes = self.number_of_acquisitions) 
+            spectra_list = self.myCamera.grab(nframes = self.number_of_acquisitions, \
+                                              frame_timeout = self.frame_timeout) 
+            # spectra_list = self.myCamera.grab(nframes = self.number_of_acquisitions) 
             self.set_shutter_state(CLOSE_SHUTTER)
             print('Acquisition stopped. %d frames were acquired.' % self.number_of_acquisitions)
             spectra_array = np.array(spectra_list)
