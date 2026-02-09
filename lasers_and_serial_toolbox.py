@@ -14,9 +14,6 @@ import serial
 import pywinusb.hid as hid
 import re
 import time as tm
-
-from torch import device
-from LED_control import USB_CFG_DEVICE_ID, USB_CFG_VENDOR_ID, get_report, read_relay_status
 from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper # for flipper
 from pylablib.devices import M2 # Ti:Sa laser module
 from timeit import default_timer as timer
@@ -197,7 +194,7 @@ class LED(object):
 
     def on_relay(self, relay_number):
         if self.write_row_data(buffer=[0, 0xFF, relay_number, 0, 0, 0, 0, 0, 1]):
-            return read_relay_status(relay_number)
+            return self.read_relay_status(relay_number)
         else:
             print("Cannot put ON relay number {}".format(relay_number))
             return False
@@ -205,7 +202,7 @@ class LED(object):
 
     def off_relay(self, relay_number):
         if self.write_row_data(buffer=[0, 0xFD, relay_number, 0, 0, 0, 0, 0, 1]):
-            return read_relay_status(relay_number)
+            return self.read_relay_status(relay_number)
         else:
             print("Cannot put OFF relay number {}".format(relay_number))
             return False
