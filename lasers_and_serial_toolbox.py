@@ -11,8 +11,12 @@ Fribourg, Switzerland
 import sys
 import glob
 import serial
+import pywinusb.hid as hid
 import re
 import time as tm
+
+from torch import device
+from LED_control import USB_CFG_DEVICE_ID, USB_CFG_VENDOR_ID, get_report, read_relay_status
 from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper # for flipper
 from pylablib.devices import M2 # Ti:Sa laser module
 from timeit import default_timer as timer
@@ -118,6 +122,100 @@ def closeSerial(serialInstance):
     serialInstance.close()
     tm.sleep(0.2) # wait until serial comm is closed
     return
+
+#=====================================
+
+# LED Class Definitions
+# Based on: https://www.instructables.com/USB-Relay-With-Python-How-to-Guide/
+#=====================================
+
+class LED(object):
+    def __init__(self):
+        self.USB_CFG_VENDOR_ID = 0x16c0  # Should suit, if not check ID with a tool like USBDeview
+        self.USB_CFG_DEVICE_ID = 0x05DF  # Should suit, if not check ID with a tool like USBDeview
+        # variables for USB relay control
+        self.report = None
+        self.last_row_status = None
+        # find the USB relay and open it
+        self.get_Hid_USBRelay()
+        self.open_device()
+        self.on_relay(1) # make sure the relay is off at the beginning
+        return
+    
+    def get_Hid_USBRelay(self):
+        self.filter = hid.HidDeviceFilter(vendor_id=self.USB_CFG_VENDOR_ID, product_id=self.USB_CFG_DEVICE_ID)
+        self.hid_device = self.filter.get_devices()
+        self.device = self.hid_device[0]
+        return
+
+    def open_device(self):
+        if self.device.is_active():
+            if not self.device.is_opened():
+                self.device.open()
+                self.report = self.get_report()
+                return True
+            else:
+                print("Device already opened")
+                return True
+        else:
+            print("Device is not active")
+        return False
+    
+    def close_device(self):
+        if self.device.is_active():
+            if self.device.is_opened():
+                self.device.close()
+                return True
+            else:
+                print("Device already closed")
+        else:
+            print("Device is not active")
+        return True
+    
+    def get_report(self):
+        if not self.device.is_active():
+            report = None
+        for rep in self.device.find_output_reports() + self.device.find_feature_reports():
+            report = rep
+        return report
+    
+    def read_status_row(self):
+        if self.report is None:
+            print("Cannot read report")
+            last_row_status = [0, 1, 0, 0, 0, 0, 0, 0, 3]
+        else:
+            last_row_status = self.report.get()
+        return last_row_status
+
+    def write_row_data(self, buffer):
+        if self.report is not None:
+            self.report.send(raw_data = buffer)
+            return True
+        else:
+            print("Cannot write in the report. check if your device is still plugged")
+            return False
+
+    def on_relay(self, relay_number):
+        if self.write_row_data(buffer=[0, 0xFF, relay_number, 0, 0, 0, 0, 0, 1]):
+            return read_relay_status(relay_number)
+        else:
+            print("Cannot put ON relay number {}".format(relay_number))
+            return False
+
+
+    def off_relay(self, relay_number):
+        if self.write_row_data(buffer=[0, 0xFD, relay_number, 0, 0, 0, 0, 0, 1]):
+            return read_relay_status(relay_number)
+        else:
+            print("Cannot put OFF relay number {}".format(relay_number))
+            return False
+
+    def read_relay_status(self, relay_number):
+        buffer = self.read_status_row()
+        return relay_number & buffer[8]
+
+    def is_relay_on(self, relay_number):
+        return self.read_relay_status(relay_number) > 0
 
 #=====================================
 

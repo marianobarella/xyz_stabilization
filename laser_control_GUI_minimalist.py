@@ -308,13 +308,7 @@ class Backend(QtCore.QObject):
         self.laser532 = laserToolbox.oxxius_laser(debug_mode = False)
         self.shuttersObject = laserToolbox.shutters(daq_board) # initialize shutter and closes them all
         self.flippersObject = laserToolbox.flippers(daq_board) # initialize flippers and closes them all
-        # build flippers objects
-        # self.flipperAPDFilter = laserToolbox.motorized_flipper(debug_mode = False, \
-        #                                                   serial_port = laserToolbox.COM_port_flipper_apd_Thorlabs)
-        # self.flipperSpectrometerPath = laserToolbox.motorized_flipper(debug_mode = False, \
-        #                                                   serial_port = laserToolbox.COM_port_flipper_spectrometer)
-        # self.flipperTrappingLaserFilter = laserToolbox.motorized_flipper(debug_mode = False, \
-                                                          # serial_port = laserToolbox.COM_port_flipper_trapping_laser_Thorlabs)
+        self.LED = laserToolbox.LED() # initialize LED
         tm.sleep(0.5)
         # set blue laser power
         self.change_power(initial_blue_power)
@@ -378,10 +372,10 @@ class Backend(QtCore.QObject):
     def LEDlight(self, lightbool):
         if lightbool:
             print('LED switched ON')
-            # self.LED.switch('on')
+            self.LED.on_relay(1)
         else:
             print('LED switched OFF')
-            # self.LED.switch('off')
+            self.LED.off_relay(1)
         return
 
     @pyqtSlot(bool)
@@ -447,6 +441,9 @@ class Backend(QtCore.QObject):
         print('Disconnecting lasers...')
         self.laser488.close()
         self.laser532.close()
+        print('Switching OFF LED...')
+        self.LED.off_relay(1) # make sure the LED is off at the end
+        self.LED.close_device()
         print('\nClosing all shutters...')
         # self.shutterTrappingLaser(False)
         self.shuttersObject.shutdown()
