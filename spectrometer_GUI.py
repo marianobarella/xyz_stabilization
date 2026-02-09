@@ -886,7 +886,7 @@ class Backend(QtCore.QObject):
         self.frame_time_ms = self.frame_time*1000
         print('Exposure time set to %.3f ms. Frame time: %.3f ms' % (exp_time*1000, self.frame_time_ms))
         # set frame timeout to +50% of the frame time
-        self.frame_timeout = 15 # self.frame_time*1.5 # in seconds
+        self.frame_timeout = 60 # self.frame_time*1.5 # in seconds
         if live_spec_bool:
             self.start_live_spec_view(self.exposure_time_ms)
         return
