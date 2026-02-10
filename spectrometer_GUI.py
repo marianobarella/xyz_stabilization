@@ -1049,10 +1049,10 @@ class Backend(QtCore.QObject):
             # remove bias if option has been chosen but do not if a bias is being acquired
             if self.remove_bias_bool and not bias_acq:
                 self.spectrum = self.spectrum - self.bias_spectrum
-                print('Bias subtracted.')
+                # print('Bias subtracted.')
             if self.remove_baseline_bool and not baseline_acq:
                 self.spectrum = self.spectrum - self.baseline_spectrum
-                print('Baseline subtracted.')
+                # print('Baseline subtracted.')
             self.spectrumSignal.emit(self.spectrum)
             # objects to return
             return_object = self.spectrum
@@ -1062,10 +1062,10 @@ class Backend(QtCore.QObject):
             # remove bias if option has been chosen
             if self.remove_bias_bool and not bias_acq:
                 self.image = self.image - self.bias_image
-                print('Bias subtracted.')
+                # print('Bias subtracted.')
             if self.remove_baseline_bool and not baseline_acq:
                 self.image = self.image - self.baseline_image
-                print('Baseline subtracted.')
+                # print('Baseline subtracted.')
             self.imageSignal.emit(self.image)
             # objects to return
             return_object = self.image

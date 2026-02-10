@@ -1104,11 +1104,16 @@ class Frontend(QtGui.QFrame):
         # Coefficient of Variation (CoV)
         self.CoV_apd = sd_value_apd/mean_value_apd*100 # to percetage
         self.CoV_monitor = sd_value_monitor/mean_value_monitor*100 # to percetage
+        # if APD Coeff. of Variation fluctuates like crazy because of zero-division...
         if np.abs(self.CoV_apd) < 100:
             self.signalCoV_apd.setText('{:.2f}'.format(self.CoV_apd))
         else:
             self.signalCoV_apd.setText('>100')
-        self.signalCoV_monitor.setText('{:.2f}'.format(self.CoV_monitor))
+        # if monitor Coeff. of Variation fluctuates like crazy because of zero-division...
+        if np.abs(self.CoV_monitor) < 100:
+            self.signalCoV_monitor.setText('{:.2f}'.format(self.CoV_monitor))
+        else:
+            self.signalCoV_monitor.setText('>100')
         # power value
         self.power_at_sample_plane = mean_value_monitor*self.power_calibration_factor + self.power_calibration_offset
         self.power_value.setText('{:.3f}'.format(self.power_at_sample_plane))

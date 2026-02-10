@@ -14,9 +14,6 @@ import serial
 import pywinusb.hid as hid
 import re
 import time as tm
-
-from torch import device
-from LED_control import USB_CFG_DEVICE_ID, USB_CFG_VENDOR_ID, get_report, read_relay_status
 from pylablib.devices.Thorlabs.kinesis import MFF as motoFlipper # for flipper
 from pylablib.devices import M2 # Ti:Sa laser module
 from timeit import default_timer as timer
