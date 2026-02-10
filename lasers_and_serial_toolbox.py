@@ -194,7 +194,7 @@ class LED(object):
 
     def on_relay(self, relay_number):
         if self.write_row_data(buffer=[0, 0xFF, relay_number, 0, 0, 0, 0, 0, 1]):
-            return read_relay_status(relay_number)
+            return self.read_relay_status(relay_number)
         else:
             print("Cannot put ON relay number {}".format(relay_number))
             return False
@@ -202,7 +202,7 @@ class LED(object):
 
     def off_relay(self, relay_number):
         if self.write_row_data(buffer=[0, 0xFD, relay_number, 0, 0, 0, 0, 0, 1]):
-            return read_relay_status(relay_number)
+            return self.read_relay_status(relay_number)
         else:
             print("Cannot put OFF relay number {}".format(relay_number))
             return False
