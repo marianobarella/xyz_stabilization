@@ -54,7 +54,7 @@ class Frontend(QtGui.QFrame):
         self.setWindowTitle('xyz two piezo stages control')
         self.setGeometry(850, 30, 200, 200) # x pos, y pos, width, height
         self.setUpGUI()
-        self.go_to_action()
+        # self.go_to_action()
         return
             
     def setUpGUI(self):
@@ -372,6 +372,7 @@ class Frontend(QtGui.QFrame):
     def make_connections(self, backend):
         backend.read_pos_signal.connect(self.read_pos_list)
         # backend.reference_signal.connect(self.get_go_to_reference)
+        return
 
 #=====================================
 
@@ -402,14 +403,14 @@ class Backend(QtCore.QObject):
         self.piezo_stage_xy.connect()
         self.piezo_stage_z.connect()
         # method to check if it's connected
-        if self.piezo_stage_xy.controller.IsConnected:
-            print('xy piezo stage succesfully connected.')
-        else:
-            print('Couldn\'t connect to xy piezo stage.')
-        if self.piezo_stage_z.controller.IsConnected:
-            print('z piezo stage succesfully connected.')
-        else:
-            print('Couldn\'t connect to z piezo stage.')
+        # if self.piezo_stage_xy.controller.IsConnected:
+        #     print('xy piezo stage succesfully connected.')
+        # else:
+        #     print('Couldn\'t connect to xy piezo stage.')
+        # if self.piezo_stage_z.controller.IsConnected:
+        #     print('z piezo stage succesfully connected.')
+        # else:
+        #     print('Couldn\'t connect to z piezo stage.')
         # get info
         print(self.piezo_stage_xy.get_info())
         print(self.piezo_stage_z.get_info())

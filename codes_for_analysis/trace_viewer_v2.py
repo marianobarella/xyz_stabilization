@@ -10,7 +10,6 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 from matplotlib.figure import Figure
 from matplotlib.widgets import RectangleSelector
 from matplotlib.patches import Rectangle
-from scipy.stats import pearsonr
 import re
 from datetime import datetime
 
@@ -36,7 +35,7 @@ class MainWindow(QMainWindow):
         form_layout = QFormLayout()
         self.sampling_rate_input = QLineEdit(self)
         self.sampling_rate_input.setPlaceholderText("Enter sampling rate in Hz (e.g., 1000)")
-        self.sampling_rate_input.setText("1000")  # Default value
+        self.sampling_rate_input.setText("100000")  # Default value
         self.sampling_rate_input.textChanged.connect(self.update_sampling_rate)  # Connect to update method
         form_layout.addRow("Sampling Rate (Hz):", self.sampling_rate_input)
         layout.addLayout(form_layout)
@@ -61,10 +60,15 @@ class MainWindow(QMainWindow):
         self.clear_roi_button.setEnabled(False)  # Disabled until an ROI is drawn
         button_layout.addWidget(self.clear_roi_button)
 
-        self.scatter_button = QPushButton("Show Scatter Plot", self)
-        self.scatter_button.clicked.connect(self.show_scatter_plot)
-        self.scatter_button.setEnabled(False)  # Disabled until an ROI is selected
-        button_layout.addWidget(self.scatter_button)
+        self.fft_button = QPushButton("Show PSD", self)
+        self.fft_button.clicked.connect(self.show_fft)
+        self.fft_button.setEnabled(False)  # Disabled until an ROI is selected
+        button_layout.addWidget(self.fft_button)
+
+        self.log_scale_button = QPushButton("Toggle Log/Linear Scale", self)
+        self.log_scale_button.clicked.connect(self.toggle_log_scale)
+        self.log_scale_button.setEnabled(False)  # Disabled until PSD is shown
+        button_layout.addWidget(self.log_scale_button)
 
         layout.addLayout(button_layout)
 
@@ -88,7 +92,7 @@ class MainWindow(QMainWindow):
         self.toolbar1 = NavigationToolbar(self.canvas1, self)
         layout.addWidget(self.toolbar1)
 
-        # Add a toolbar for the scatter plot
+        # Add a toolbar for the PSD plot
         self.toolbar3 = NavigationToolbar(self.canvas3, self)
         layout.addWidget(self.toolbar3)
 
@@ -113,7 +117,7 @@ class MainWindow(QMainWindow):
         self.ax3 = None
         self.selector1 = None
         self.selector2 = None
-        self.sampling_rate = 1000  # Default sampling rate
+        self.sampling_rate = 100000  # Default sampling rate
         self.time_axis1 = None
         self.time_axis2 = None
         self.measurement_counter = 0
@@ -122,6 +126,9 @@ class MainWindow(QMainWindow):
         self.roi_rect2 = None  # Rectangle for ROI in Trace 2
         self.roi_bounds = None  # Bounds of the selected ROI
         self.folder_path = None  # Path to the folder containing the selected file
+        self.log_scale = False  # Flag for log/linear scale
+        self.psd_data = None  # Store PSD data for toggling scale
+        self.freq_data = None  # Store frequency data for toggling scale
 
     def load_file(self, trace_number):
         """Open a file dialog to select a .npy file for the specified trace."""
@@ -364,9 +371,9 @@ class MainWindow(QMainWindow):
         # Draw the ROI rectangle on both plots
         self.draw_roi(x1, x2)
 
-        # Enable the "Clear ROI" and "Show Scatter Plot" buttons
+        # Enable the "Clear ROI" and "Show PSD" buttons
         self.clear_roi_button.setEnabled(True)
-        self.scatter_button.setEnabled(True)
+        self.fft_button.setEnabled(True)
 
     def draw_roi(self, x1, x2):
         """Draw a red rectangle to highlight the selected region."""
@@ -396,13 +403,14 @@ class MainWindow(QMainWindow):
             self.roi_rect2 = None
             self.canvas2.draw()
 
-        # Disable the "Clear ROI" and "Show Scatter Plot" buttons
+        # Disable the "Clear ROI", "Show PSD", and "Toggle Log/Linear Scale" buttons
         self.clear_roi_button.setEnabled(False)
-        self.scatter_button.setEnabled(False)
+        self.fft_button.setEnabled(False)
+        self.log_scale_button.setEnabled(False)
 
-    def show_scatter_plot(self):
-        """Show a scatter plot of Transmission vs Monitor values for the selected ROI."""
-        if self.roi_bounds is None or self.data1 is None or self.data2 is None:
+    def show_fft(self):
+        """Show the Power Spectral Density (PSD) of the Transmission signal for the selected ROI."""
+        if self.roi_bounds is None or self.data1 is None:
             return
 
         # Get the selected region bounds
@@ -412,29 +420,67 @@ class MainWindow(QMainWindow):
         sample1 = int(x1 * self.sampling_rate)
         sample2 = int(x2 * self.sampling_rate)
 
-        # Extract the selected region for both traces
+        # Extract the selected region for transmission trace
         selected_data1 = self.data1[sample1:sample2]
-        selected_data2 = self.data2[sample1:sample2]
 
-        # Calculate Pearson's correlation coefficient
-        correlation, _ = pearsonr(selected_data1, selected_data2)
+        # Calculate FFT
+        fft_values = np.fft.fft(selected_data1)
+
+        # Calculate Power Spectral Density (PSD)
+        # PSD = |FFT|^2 / (N * fs) where N is number of samples and fs is sampling rate
+        n_samples = len(selected_data1)
+        psd = (np.abs(fft_values) ** 2) / (n_samples * self.sampling_rate)
+
+        # Create frequency axis (only positive frequencies)
+        freq_axis = np.fft.fftfreq(n_samples, 1/self.sampling_rate)
+
+        # Get only positive frequencies (one-sided spectrum)
+        # For one-sided spectrum, multiply PSD by 2 (except DC and Nyquist)
+        positive_freq_idx = freq_axis > 0
+        freq_axis_positive = freq_axis[positive_freq_idx]
+        psd_positive = 2 * psd[positive_freq_idx]
+
+        # Store the data for toggling scale
+        self.freq_data = freq_axis_positive
+        self.psd_data = psd_positive
+
+        # Plot the PSD
+        self.plot_psd()
+
+        # Enable the log scale toggle button
+        self.log_scale_button.setEnabled(True)
+
+    def plot_psd(self):
+        """Plot the PSD with current scale setting."""
+        if self.freq_data is None or self.psd_data is None:
+            return
 
         # Clear the third plot
         self.figure3.clear()
         self.ax3 = self.figure3.add_subplot(111)
 
-        # Plot the scatter plot
-        self.ax3.scatter(selected_data1, selected_data2, color='green', alpha=0.5)
-        self.ax3.set_title(f"Scatter Plot (Correlation: {correlation:.4f})")
-        self.ax3.set_xlabel("Transmission Intensity")
-        self.ax3.set_ylabel("Monitor Intensity")
+        # Plot the PSD
+        self.ax3.plot(self.freq_data, self.psd_data, linewidth=0.5, color='purple')
+        self.ax3.set_title(f"Power Spectral Density of Transmission Signal")
+        self.ax3.set_xlabel("Frequency (Hz)")
 
-        # Autorange the scatter plot
-        self.ax3.set_xlim(np.min(selected_data1), np.max(selected_data1))
-        self.ax3.set_ylim(np.min(selected_data2), np.max(selected_data2))
+        # Set y-scale and label based on current mode
+        if self.log_scale:
+            self.ax3.set_yscale('log')
+            self.ax3.set_ylabel("PSD (log scale)")
+        else:
+            self.ax3.set_yscale('linear')
+            self.ax3.set_ylabel("PSD")
+
+        self.ax3.grid(True, alpha=0.3)
 
         # Refresh the canvas
         self.canvas3.draw()
+
+    def toggle_log_scale(self):
+        """Toggle between logarithmic and linear y-scale for PSD plot."""
+        self.log_scale = not self.log_scale
+        self.plot_psd()
 
     def synchronize_axes(self):
         """Synchronize the x-axis limits of both plots."""

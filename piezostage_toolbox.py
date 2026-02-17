@@ -67,7 +67,6 @@ from Thorlabs.MotionControl.Benchtop.PiezoCLI import BenchtopPiezo #analysis:ign
 
 #=====================================
 
-# 37004922 deviceID is the flipper
 # 71260444 deviceID is the benchtop controller BPC 303 for 3 axis
 # 41401114 deviceID is the benchtop controller BPC 301 for 1 axis
 
@@ -97,7 +96,6 @@ class BPC303:
     attributes xchannel, ychannel and zchannel -- channel instances
         (from Thorlabs .NET dll)
     method __init__(self, deviceID, axis_chan_mappign) --
-    method __enter__(self) -- special class, see doc
     method connect(self) -- initializes the physical instrument
     """
     def __init__(self, deviceID, axis_chan_mapping={'x': 1, 'y': 2, 'z': 3}):
@@ -117,9 +115,6 @@ class BPC303:
         for attrname in ("xchannel", "ychannel", "zchannel"):
             setattr(self, attrname, None)
         return 
-    
-    def __enter__(self):
-        return self
 
     def __get_chan(self, axis):
         """
@@ -407,7 +402,6 @@ class BPC301:
     attribute controller -- controller instance (from Thorlabs .NET dll)
     attributes zchannel -- channel instances (from Thorlabs .NET dll)
     method __init__(self, deviceID, axis_chan_mappign) --
-    method __enter__(self) -- special class, see doc
     method connect(self) -- initializes the physical instrument
     """
     def __init__(self, deviceID, axis_chan_mapping={'z': 1}):
@@ -428,9 +422,6 @@ class BPC301:
         attrname = "zchannel"
         setattr(self, attrname, None)
         return 
-    
-    def __enter__(self):
-        return self
 
     def __get_chan(self):
         """

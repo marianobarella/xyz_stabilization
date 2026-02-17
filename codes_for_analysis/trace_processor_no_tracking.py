@@ -34,22 +34,20 @@ experiment_folder = "\\measurements_2025\\20250924_DNH_transmission_stability_wh
 data_folder = os.path.join(base_folder, experiment_folder)
 
 # Do downsampling?
-do_downsampling = True
+do_downsampling = False
 # Downsampling factor
 downsampling_factor = 100
 # Filtering parameters
 save_filtered_signal = False
-# Average filter window
-window_avg = 5
 # Gaussian filter parameters
-cutoff_freq = 10 # in Hz
+cutoff_freq = 500 # in Hz
 # Plot?
 plot_flag = True
 
 step0, step1, step2 = 1, 0, 0
 step0, step1, step2 = 0, 1, 0
 # step0, step1, step2 = 0, 0, 0
-# step0, step1, step2 = 1, 1, 0
+step0, step1, step2 = 1, 1, 0
 
 ##############################################################################
 # START

@@ -29,7 +29,7 @@ piezo_stage_z = piezoTool.BPC301(deviceID_BPC301)
 # time period used to update stage position
 initial_updatePosition_period = 500 # in ms
 
-initialize_flag = True
+initialize_flag = False
 
 #=====================================
 
@@ -51,7 +51,7 @@ class Frontend(QtGui.QFrame):
         self.main_app = main_app
         self.setWindowTitle('z piezo stage control')
         self.setUpGUI()
-        self.go_to_action()
+        # self.go_to_action()
         return
             
     def setUpGUI(self):
@@ -256,11 +256,10 @@ class Backend(QtCore.QObject):
         # initialize (connect)
         self.piezo_stage_z.connect()
         # method to check if it's connected
-        if self.piezo_stage_z.controller.IsConnected:
-            print('z piezo stage succesfully connected.')
-        else:
-            print('Couldn\'t connect to z piezo stage.')
-
+        # if self.piezo_stage_z.controller.IsConnected:
+        #     print('z piezo stage succesfully connected.')
+        # else:
+        #     print('Couldn\'t connect to z piezo stage.')
         # get info
         print(self.piezo_stage_z.get_info())
         print('Zeroing the z piezo stage. This step takes around 30 s. Please wait...\n')

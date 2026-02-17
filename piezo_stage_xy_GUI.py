@@ -51,7 +51,7 @@ class Frontend(QtGui.QFrame):
         self.main_app = main_app
         self.setWindowTitle('xy piezo stage control')
         self.setUpGUI()
-        self.go_to_action()
+        # self.go_to_action()
         return
             
     def setUpGUI(self):
@@ -307,10 +307,10 @@ class Backend(QtCore.QObject):
         # initialize (connect)
         self.piezo_stage_xy.connect()
         # method to check if it's connected
-        if self.piezo_stage_xy.controller.IsConnected:
-            print('xy piezo stage succesfully connected.')
-        else:
-            print('Couldn\'t connect to xy piezo stage.')
+        # if self.piezo_stage_xy.controller.IsConnected:
+        #     print('xy piezo stage succesfully connected.')
+        # else:
+        #     print('Couldn\'t connect to xy piezo stage.')
         # get info
         print(self.piezo_stage_xy.get_info())
         print('Zeroing the xy piezo stage. This step takes around 30 s. Please wait...\n')
