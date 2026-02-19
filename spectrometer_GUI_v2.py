@@ -59,7 +59,7 @@ initial_focus_mirror_steps = 228 # found to be the best on 15/July/2025
 tempTimer_update = 30000 # in ms
 
 # Rotation mount
-ROT_MOUNT_PORT = 'COM3'
+ROT_MOUNT_PORT = 'COM7'
 initial_rotate_diffuser_bool = False
 
 # other inputs
@@ -173,7 +173,7 @@ class Frontend(QtGui.QFrame):
 
         ################################### ROTATION MOUNT
 
-        self.rotate_diffuser_tickbox = QtGui.QCheckBox('Cosmic ray removal filter? (Overrides accum/avg.)')
+        self.rotate_diffuser_tickbox = QtGui.QCheckBox('Rotate the diffuser during acq.')
         self.rotate_diffuser_tickbox.setChecked(initial_rotate_diffuser_bool)
         self.rotate_diffuser_tickbox.stateChanged.connect(self.set_rotating_diffuser)
 
@@ -981,7 +981,7 @@ class Backend(QtCore.QObject):
         else:
             self.set_shutter_state(OPEN_SHUTTER)
         if self.rotate_diffuser:
-            print('ROTATING DIFFUSER')
+            print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!ROTATING DIFFUSER')
         if self.number_of_acquisitions == 1:
             # numpy array of size (1, 1024) that is a 2D array
             # Observation: timeout prop returned error. Do not set it manually.

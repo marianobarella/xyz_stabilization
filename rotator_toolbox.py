@@ -17,7 +17,7 @@ import time
 from src import elliptec
 
 # Settings
-port = 'COM3'
+port = 'COM7'
 debug = False # set to True if you want print communication messages
 
 class Rotation_mount(object):
