@@ -41,7 +41,7 @@ import drift_correction_toolbox as drift
 import daq_board_toolbox as daq_toolbox
 
 # Initial raster scan parameters
-initial_scan_range_xy = 4 # in um
+initial_scan_range_xy = 2 # in um
 initial_scan_range_pixels_xy = 20 # number of pixels
 initial_scan_range_z = 16 # in um
 initial_scan_range_pixels_z = 64 # number of pixels
@@ -51,7 +51,7 @@ xv, yv = np.meshgrid(x_array, y_array)
 xy_tuple = (xv, yv)
 gaussian_example_spot = drift.gaussian_2D(xy_tuple, 1, 0.8, 1.5, 1, 1, 0)
 initial_confocal_image_np = gaussian_example_spot.reshape((initial_scan_range_pixels_xy, initial_scan_range_pixels_xy))
-initial_scan_step_time = 35 # in ms
+initial_scan_step_time = 25 # in ms
 initial_threshold = 0.8 # to filter the confocal image and find the CM
 initial_confocal_filepath = 'D:\\daily_data\\confocal_data' # save in SSD for fast and daily use
 initial_confocal_filename = 'confocal_scan'
@@ -1120,7 +1120,7 @@ class Backend(QtCore.QObject):
             workerThread.exit()
             laserControlThread.exit()
             data_processor.kill()
-            tm.sleep(5) # needed to close properly all modules
+            tm.sleep(3) # needed to close properly all modules
         return
     
     def make_modules_connections(self, frontend, data_processor):

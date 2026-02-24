@@ -437,10 +437,7 @@ class Backend(QtCore.QObject):
         return
 
     @pyqtSlot()
-    def close_backend(self):
-        print('Disconnecting lasers...')
-        self.laser488.close()
-        self.laser532.close()
+    def close_backend(self):        
         print('Switching OFF LED...')
         self.LED.off_relay(1) # make sure the LED is off at the end
         self.LED.close_device()
@@ -449,6 +446,9 @@ class Backend(QtCore.QObject):
         self.shuttersObject.shutdown()
         print('Closing flippers...')
         self.flippersObject.shutdown()
+        print('Disconnecting lasers...')
+        self.laser488.close()
+        self.laser532.close()
         print('Exiting thread...')
         workerThread.exit()
         return

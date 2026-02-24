@@ -49,19 +49,19 @@ initial_filename = 'image_z_drift'
 initial_image_np = 128*np.ones((1080, 1440, 3))
 dummy_image_np = initial_image_np
 # timing parameterss
-initial_tracking_period = 500 # in ms
-initial_exp_time = 150 # in ms
+initial_tracking_period = 200 # in ms
+initial_exp_time = 100 # in ms
 driftbox_length = 10.0 # in s
 initial_gain = 140 # int
 
 # inital ROI definition
-initial_vertical_pos = 300
+initial_vertical_pos = 360
 initial_horizontal_pos = 100
 initial_vertical_size = 300
 initial_horizontal_size = 1200
 
 # for center of mass estimation, float between 0.00 and 1.00
-initial_threshold = 0.5
+initial_threshold = 0.0
 
 # PID constants
 # tested with a 200 ms tracking period
@@ -78,7 +78,11 @@ initial_correction_threshold = 0.000
 # slope = -40.76 px/um so
 # conversion factor is 0.0245 (take the absolute value)
 # initial_conversion_factor = 0.0245 # um/px
-initial_conversion_factor = 0.0245 # um/px
+# calibration of 24/02/2026 gives (see origin file, int. threshold 0)
+# slope = -38.87 px/um so
+# conversion factor is 0.0245 (take the absolute value)
+# initial_conversion_factor = 0.0257 # um/px
+initial_conversion_factor = 0.0257 # um/px
 
 #=====================================
 
@@ -595,8 +599,8 @@ class Frontend(QtGui.QFrame):
         self.driftPlot.plot(x = self.time_to_plot, y = self.error_to_plot, \
                             pen = pg.mkPen('r', width = 1))
         self.driftPlot.setXRange(timestamp - driftbox_length, timestamp)
-        ymin = np.mean(self.error_to_plot) - 10*np.std(self.error_to_plot, ddof=1)
-        ymax = np.mean(self.error_to_plot) + 10*np.std(self.error_to_plot, ddof=1)
+        ymin = np.mean(self.error_to_plot) - 5*np.std(self.error_to_plot, ddof=1)
+        ymax = np.mean(self.error_to_plot) + 5*np.std(self.error_to_plot, ddof=1)
         self.driftPlot.setYRange(ymin, ymax)
         # draw center of refkectuib, convert um to pixels
         xy_pos_absolute = xy_pos_pixel_relative + (self.roi_list_previous[1], 

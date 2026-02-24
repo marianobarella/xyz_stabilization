@@ -51,7 +51,7 @@ initial_filename = 'image_pco'
 
 # timers
 tempTimer_update = 10000 # in ms
-initial_tracking_period = 500 # in ms
+initial_tracking_period = 200 # in ms
 initial_box_size = 11 # always odd number pixels
 initial_number_of_boxes = 8
 driftbox_length = 10.0 # in seconds
@@ -72,6 +72,10 @@ initial_kd = 0.005 # derivative factor of the PID
 # above this value (distance) the software starts to apply a correction
 # to compensate the drift
 initial_correction_threshold = 0.000
+
+# Position of the z stabilization laser beam on the camera sensor, in pixels
+x_pixel_stabilization_laser = 165 # column
+y_pixel_stabilization_laser = 291 # row
 
 #=====================================
 
@@ -143,6 +147,11 @@ class Frontend(QtGui.QFrame):
                                          symbol = 'o', brush = pg.mkBrush('r'))
         self.xy_fiducials.setZValue(2) # Ensure scatterPlotItem is always at top
         self.vb.addItem(self.xy_fiducials)
+        self.pos_z_stabilization_laser = pg.ScatterPlotItem(size = 10, pen = pg.mkPen('b', width = 1), 
+                                         symbol = 'x', brush = pg.mkBrush('b'))
+        self.pos_z_stabilization_laser.setZValue(3) # Ensure scatterPlotItem is always at top
+        self.vb.addItem(self.pos_z_stabilization_laser)
+        self.pos_z_stabilization_laser.setData(x = [x_pixel_stabilization_laser], y = [y_pixel_stabilization_laser])
         
         # autolevel of image instesity
         self.autolevel_tickbox = QtGui.QCheckBox('Autolevel')
@@ -443,7 +452,7 @@ class Frontend(QtGui.QFrame):
         hbox.addWidget(dockArea)
         self.setLayout(hbox)
         return
-    
+
     def pid_param_changed_check(self):
         kp = float(self.kp_value.text())
         ki = float(self.ki_value.text())
@@ -581,8 +590,9 @@ class Frontend(QtGui.QFrame):
         ymin = min(np.mean(self.error_to_plot, axis=1) - 5*np.std(self.error_to_plot, ddof=1, axis=1))
         ymax = max(np.mean(self.error_to_plot, axis=1) + 5*np.std(self.error_to_plot, ddof=1, axis=1))
         self.driftPlot.setYRange(ymin, ymax)
+        # draw center of fiducials, overlay on image
         for i in range(self.number_of_fiducials):
-            # draw center of fiducials, convert um to pixels
+            # convert um to pixels
             pixel_size_um = self.pixel_size/1000
             array_of_x_pos_pixels.append(xy_pos_pixel_relative[i][1]/pixel_size_um + pixel_size_um/2)
             array_of_y_pos_pixels.append(xy_pos_pixel_relative[i][0]/pixel_size_um + pixel_size_um/2)
