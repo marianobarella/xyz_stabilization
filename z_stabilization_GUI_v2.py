@@ -61,7 +61,8 @@ initial_vertical_size = 300
 initial_horizontal_size = 1200
 
 # for center of mass estimation, float between 0.00 and 1.00
-initial_threshold = 0.0
+# above 0.1 works better due to stray light from the NIR despite the filters
+initial_threshold = 0.1
 
 # PID constants
 # tested with a 200 ms tracking period
