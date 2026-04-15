@@ -40,7 +40,7 @@ cam = pco.pco_camera()
 # cam = pco.pco_camera(debug = 'extra verbose', timestamp_flag = 'on')
 initial_binning = 4
 initial_pixel_size = 260 # in nm (with 4x4 binning)
-initial_exp_time = 150.0 # in ms
+initial_exp_time = 50.0 # in ms
 initial_starting_col = 1 
 initial_starting_row = 1
 initial_final_col = 512 # with 4x4 binning
@@ -74,8 +74,11 @@ initial_kd = 0.005 # derivative factor of the PID
 initial_correction_threshold = 0.000
 
 # Position of the z stabilization laser beam on the camera sensor, in pixels
-x_pixel_stabilization_laser = 165 # column
-y_pixel_stabilization_laser = 291 # row
+x_pixel_stabilization_laser = 152 # column
+y_pixel_stabilization_laser = 294 # row
+# Position of the Trapping laser beam on the camera sensor, in pixels
+x_pixel_trapping_laser = 217 # column
+y_pixel_trapping_laser = 308 # row
 
 #=====================================
 
@@ -147,11 +150,18 @@ class Frontend(QtGui.QFrame):
                                          symbol = 'o', brush = pg.mkBrush('r'))
         self.xy_fiducials.setZValue(2) # Ensure scatterPlotItem is always at top
         self.vb.addItem(self.xy_fiducials)
+        # Add a cross to show where the Z stabilization laser is located
         self.pos_z_stabilization_laser = pg.ScatterPlotItem(size = 10, pen = pg.mkPen('b', width = 1), 
                                          symbol = 'x', brush = pg.mkBrush('b'))
         self.pos_z_stabilization_laser.setZValue(3) # Ensure scatterPlotItem is always at top
         self.vb.addItem(self.pos_z_stabilization_laser)
         self.pos_z_stabilization_laser.setData(x = [x_pixel_stabilization_laser], y = [y_pixel_stabilization_laser])
+        # Add a cross to show where the Trapping laser is located
+        self.pos_xy_trapping_laser = pg.ScatterPlotItem(size = 10, pen = pg.mkPen('b', width = 1), 
+                                         symbol = 'x', brush = pg.mkBrush('magenta'))
+        self.pos_xy_trapping_laser.setZValue(4) # Ensure scatterPlotItem is always at top
+        self.vb.addItem(self.pos_xy_trapping_laser)
+        self.pos_xy_trapping_laser.setData(x = [x_pixel_trapping_laser], y = [y_pixel_trapping_laser])
         
         # autolevel of image instesity
         self.autolevel_tickbox = QtGui.QCheckBox('Autolevel')

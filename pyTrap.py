@@ -894,6 +894,7 @@ class Backend(QtCore.QObject):
         # prepare for the scan
         self.prepare_confocal_scan()
         self.laserControlWorker.shutterTrappingLaser(True)
+        self.laserControlWorker.flipper_select_spectrometer(False)
         # set timer interval to avoid excesive and unnecessary calls
         self.confocalTimer.setInterval(self.scan_step_time) # in ms
         # set scan flag to True and start Timer

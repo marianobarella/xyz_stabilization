@@ -389,9 +389,9 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool)
     def flipper_select_spectrometer(self, flipperbool):
         if flipperbool:
-            self.flippersObject.close_flipper('spectrometer_selector') # filter IN
+            self.flippersObject.close_flipper('spectrometer_selector') # mirror IN
         else:
-            self.flippersObject.open_flipper('spectrometer_selector') # filter OUT
+            self.flippersObject.open_flipper('spectrometer_selector') # mirror OUT
         return
 
     @pyqtSlot(bool)

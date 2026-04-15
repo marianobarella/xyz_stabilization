@@ -57,6 +57,18 @@ def init_daq():
     print('DAQ board serial number: {}'.format(daq_board.dev_serial_num))
     return daq_board
 
+########################################
+
+# Piezo analog signal output
+
+########################################
+
+# def set_piezo_task(daq_board):
+
+
+#     return
+
+
 ##########################
 
 # Flippers
