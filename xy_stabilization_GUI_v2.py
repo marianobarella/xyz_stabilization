@@ -40,7 +40,7 @@ cam = pco.pco_camera()
 # cam = pco.pco_camera(debug = 'extra verbose', timestamp_flag = 'on')
 initial_binning = 4
 initial_pixel_size = 260 # in nm (with 4x4 binning)
-initial_exp_time = 50.0 # in ms
+initial_exp_time = 150.0 # in ms
 initial_starting_col = 1 
 initial_starting_row = 1
 initial_final_col = 512 # with 4x4 binning

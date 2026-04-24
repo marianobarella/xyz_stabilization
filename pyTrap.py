@@ -1122,6 +1122,7 @@ class Backend(QtCore.QObject):
             laserControlThread.exit()
             data_processor.kill()
             tm.sleep(3) # needed to close properly all modules
+        print('\n ----- Software successfully closed  ----- \n')
         return
     
     def make_modules_connections(self, frontend, data_processor):
@@ -1245,6 +1246,8 @@ if __name__ == '__main__':
     workerThread.start()
     laserControlThread.start()
     data_processor.start()
+
+    print('\n ----- Software ready -----\n')
 
     gui.show()
     app.exec()

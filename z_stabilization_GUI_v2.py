@@ -50,9 +50,9 @@ initial_image_np = 128*np.ones((1080, 1440, 3))
 dummy_image_np = initial_image_np
 # timing parameterss
 initial_tracking_period = 200 # in ms
-initial_exp_time = 50 # in ms
+initial_exp_time = 100 # in ms
 driftbox_length = 10.0 # in s
-initial_gain = 140 # int
+initial_gain = 0 # int
 
 # inital ROI definition
 initial_vertical_pos = 360
@@ -62,7 +62,7 @@ initial_horizontal_size = 1200
 
 # for center of mass estimation, float between 0.00 and 1.00
 # above 0.1 works better due to stray light from the NIR despite the filters
-initial_threshold = 0.1
+initial_threshold = 0.8
 
 # PID constants
 # tested with a 200 ms tracking period
