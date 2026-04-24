@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/datos_mariano/python_scripts/programas2026/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\BARELLAM\\OneDrive - Université de Fribourg\\DNA-PAINT Thermometry\\Codes",
+      "c:\\datos_mariano\\python_scripts\\programas2026"
+    ]
+  }
+}

@@ -152,12 +152,14 @@ def set_task(sampling_rate, samples_per_ch, min_rng, max_rng, mode, debug = Fals
     APD_task.ai_channels.add_ai_voltage_chan(
         physical_channel = 'Dev1/ai{}'.format(apd_ch), \
         name_to_assign_to_channel = 'APD_ch{}'.format(apd_ch), \
+        terminal_config = ctes.TerminalConfiguration.PRESUDO_DIFF, \ # options are: DIFF, NRSE, PRESUDO_DIFF, RSE
         min_val = min_rng, \
         max_val = max_rng)
     # add Monitor laser power task
     APD_task.ai_channels.add_ai_voltage_chan(
         physical_channel = 'Dev1/ai{}'.format(power_pd_ch), \
         name_to_assign_to_channel = 'monitor_ch{}'.format(power_pd_ch), \
+        terminal_config = ctes.TerminalConfiguration.PRESUDO_DIFF, \ # options are: DIFF, NRSE, PRESUDO_DIFF, RSE
         min_val = min_rng, \
         max_val = max_rng)
     # estimate timeout (time_to_finish) for the task
@@ -195,12 +197,14 @@ def set_confocal_task(sampling_rate, samples_per_ch, min_rng, max_rng, debug = F
     APD_task.ai_channels.add_ai_voltage_chan(
         physical_channel = 'Dev1/ai{}'.format(apd_copy_ch), \
         name_to_assign_to_channel = 'copy_of_APD_ch{}'.format(apd_copy_ch), \
+        terminal_config = ctes.TerminalConfiguration.PRESUDO_DIFF, \ # options are: DIFF, NRSE, PRESUDO_DIFF, RSE
         min_val = min_rng, \
         max_val = max_rng)
     # add Monitor laser power task
     APD_task.ai_channels.add_ai_voltage_chan(
         physical_channel = 'Dev1/ai{}'.format(power_pd_copy_ch), \
         name_to_assign_to_channel = 'monitor_ch{}'.format(power_pd_copy_ch), \
+        terminal_config = ctes.TerminalConfiguration.PRESUDO_DIFF, \ # options are: DIFF, NRSE, PRESUDO_DIFF, RSE
         min_val = min_rng, \
         max_val = max_rng)
     # estimate timeout (time_to_finish) for the task
