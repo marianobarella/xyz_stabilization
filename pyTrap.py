@@ -1109,11 +1109,11 @@ class Backend(QtCore.QObject):
     @pyqtSlot(bool)
     def close_all_backends(self, main_app = True):
         print('\nClosing all backends...')
+        self.laserControlWorker.close_backend(main_app = False)
         self.piezoWorker.close_backend(main_app = False)
         self.xyWorker.close_backend(main_app = False)
         self.zWorker.close_backend(main_app = False)
         self.apdTraceWorker.close_backend(main_app = False)
-        self.laserControlWorker.close_backend()
         print('Stopping QtTimers...')
         self.confocalTimer.stop()
         if main_app:
