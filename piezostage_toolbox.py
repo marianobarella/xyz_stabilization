@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """ 
 Created on Mon May 16, 2022
 Modified on Sun Jan 19, 2025
@@ -211,61 +211,165 @@ class BPC303:
             print("\t- axis invalid)")
         return
     
-    def set_position(self, x=None, y=None, z=None):  # define
+    def get_max_voltage(self, axis):
         """
-        Method setting the position in um if the channel is in
-        Closed Loop mode
-        """
-        pos = {"x": x, "y": y, "z": z}
-        for axis, pos in pos.items():
-            if pos is None:
-                pass
-            else:
-                self.__set_axis_position(axis, pos)
-        return
-        
-    def __set_axis_position(self, axis, pos):  # define
-        """
-        Internal method setting the position in um if the channel is in
-        Closed Loop mode
+        Method returning the maximum output voltage (float, in V) of an
+        specific axis/channel
         """
         if axis in ("x", "y", "z"):
-            # uncomment for debugging
-            # print("\t- moving %s axis piezo to %.3f um -->" % (axis, pos), end="")
             channel = self.__get_chan(axis)
-            channel.SetPosition(Decimal(pos))
+            max_voltage = channel.GetMaxOutputVoltage()
+            max_voltage_str = '{}'.format(max_voltage)
+            max_voltage_float = float(max_voltage_str)
+        else:
+            print('Error! Axis {} doesn\'t exist. Axis can only be x, y or z.'.format(axis))
+            max_voltage_float = None
+        return max_voltage_float
+
+    def set_voltage(self, x=None, y=None, z=None):
+        """
+        Method setting the output voltage in V if the channel is in
+        Open Loop mode
+        """
+        voltages = {"x": x, "y": y, "z": z}
+        for axis, voltage in voltages.items():
+            if voltage is None:
+                pass
+            else:
+                self.__set_axis_voltage(axis, voltage)
+        return
+        
+    def __set_axis_voltage(self, axis, voltage):
+        """
+        Internal method setting the output voltage in V if the channel is in
+        Open Loop mode
+        """
+        if axis in ("x", "y", "z"):
+            max_voltage = self.get_max_voltage(axis)
+            if voltage < 0 or voltage > max_voltage:
+                print("\t- voltage %.3f V out of range [0, %.1f] for %s axis" % (voltage, max_voltage, axis))
+                return
+            # uncomment for debugging
+            # print("\t- setting %s axis piezo to %.3f V -->" % (axis, voltage), end="")
+            channel = self.__get_chan(axis)
+            channel.SetOutputVoltage(Decimal(voltage))
             # uncomment for debugging
             # print(" done")
         else:
             print("\t- axis invalid)")
         return
 
-    def get_axis_position(self, axis):
+    def get_axis_voltage(self, axis):
         """
-        Method returning the position (float, in µm) of an specific axis/channel
+        Method returning the output voltage (float, in V) of an specific axis/channel
         """
         if axis in ("x", "y", "z"):
             channel = self.__get_chan(axis)
-            position = channel.GetPosition() # in um
-            position_str = '{}'.format(position)
-            position_float = float(position_str)
+            voltage = channel.GetOutputVoltage()  # in V
+            voltage_str = '{}'.format(voltage)
+            voltage_float = float(voltage_str)
+        else:
+            print('Error! Axis {} doesn\'t exist. Axis can only be x, y or z.'.format(axis))
+            voltage_float = None
+        return voltage_float
+    
+    def move_relative(self, axis, step):
+        """
+        Method setting the relative voltage in V if the channel is in
+        Open Loop mode
+        """
+        actual_voltage = self.get_axis_voltage(axis)
+        new_voltage = actual_voltage + step
+        # uncomment for debugging
+        # print("\t- piezo moving %.3f V on axis %s" % (step, axis))
+        self.__set_axis_voltage(axis, new_voltage)
+        return 
+    
+    # =====================================================================
+    # Position ↔ Voltage linear mapping
+    # Linear mapping: 0 µm ↔ 0 V, max_travel µm ↔ maxOutputVoltage V
+    # =====================================================================
+
+    max_travel = 20.0  # piezo travel range in µm
+
+    def position_to_voltage(self, axis, position_um):
+        """
+        Convert a position in µm to the corresponding output voltage in V
+        using a linear mapping: 0 µm → 0 V, max_travel µm → maxOutputVoltage V
+        """
+        max_voltage = self.get_max_voltage(axis)
+        voltage = position_um * max_voltage / self.max_travel
+        return voltage
+
+    def voltage_to_position(self, axis, voltage):
+        """
+        Convert an output voltage in V to the corresponding position in µm
+        using a linear mapping: 0 V → 0 µm, maxOutputVoltage V → max_travel µm
+        """
+        max_voltage = self.get_max_voltage(axis)
+        position_um = voltage * self.max_travel / max_voltage
+        return position_um
+
+    # =====================================================================
+    # Position-based interface (wraps voltage methods via linear mapping)
+    # These methods provide a transparent µm interface identical to the
+    # original closed-loop API.
+    # =====================================================================
+
+    def set_position(self, x=None, y=None, z=None):
+        """
+        Method setting the position in µm. Internally converts to voltage
+        using the linear position-to-voltage mapping and sets the output
+        voltage in Open Loop mode.
+        """
+        positions = {"x": x, "y": y, "z": z}
+        for axis, pos in positions.items():
+            if pos is None:
+                pass
+            else:
+                self.__set_axis_position(axis, pos)
+        return
+
+    def __set_axis_position(self, axis, pos):
+        """
+        Internal method setting the position in µm by converting to voltage
+        and calling the voltage setter.
+        """
+        if axis in ("x", "y", "z"):
+            if pos < 0 or pos > self.max_travel:
+                print("\t- position %.3f µm out of range [0, %.1f] for %s axis" % (pos, self.max_travel, axis))
+                return
+            voltage = self.position_to_voltage(axis, pos)
+            self.__set_axis_voltage(axis, voltage)
+        else:
+            print("\t- axis invalid)")
+        return
+
+    def get_axis_position(self, axis):
+        """
+        Method returning the position (float, in µm) of a specific axis/channel.
+        Reads the output voltage and converts it to position using the linear mapping.
+        """
+        if axis in ("x", "y", "z"):
+            voltage = self.get_axis_voltage(axis)
+            position_float = self.voltage_to_position(axis, voltage)
         else:
             print('Error! Axis {} doesn\'t exist. Axis can only be x, y or z.'.format(axis))
             position_float = None
         return position_float
-    
-    def move_relative(self, axis, step):
+
+    def move_relative_position(self, axis, step):
         """
-        Method setting the relative position in µm if the channel is in
-        Closed Loop mode
+        Method setting the relative position in µm. Reads the current position,
+        adds the step and sets the new position.
         """
         actual_position = self.get_axis_position(axis)
         new_position = actual_position + step
         # uncomment for debugging
-        # print("\t- piezo moving %.3f um on axis %s" % (step, axis))
+        # print("\t- piezo moving %.3f µm on axis %s" % (step, axis))
         self.__set_axis_position(axis, new_position)
-        return 
-    
+        return
+
     def get_info(self):
         """
         Method returning a string containing the info on the controller and
@@ -294,11 +398,12 @@ class BPC303:
 
     def estimate_precision(self, position_array, number_of_measurements = 100, delay = 0.5):
         """
-        Method to estimate the position precision in a close loop operation 
-        at a particular position. Method returns average position and standard 
-        deviation for the number of measurements using delay as time interval
+        Method to estimate the position precision in an open loop operation 
+        at a particular position (in µm). Internally converts to voltage.
+        Method returns average position and standard deviation for the number 
+        of measurements using delay as time interval.
         """
-        # set position
+        # set position (converted to voltage internally)
         x_pos, y_pos, z_pos = position_array
         self.set_position(x_pos, y_pos, z_pos)
         sleep(5) # for settling time
@@ -307,7 +412,7 @@ class BPC303:
         y_read_pos = np.zeros(number_of_measurements)
         z_read_pos = np.zeros(number_of_measurements)
         # read position several times
-        print('Starting feedback close loop position precision routine...')
+        print('Starting open loop position precision routine...')
         for i in range(number_of_measurements):
             x_read_pos[i] = self.get_axis_position('x')
             y_read_pos[i] = self.get_axis_position('y')
@@ -328,10 +433,8 @@ class BPC303:
 
     def response_time(self, axis, step):
         """
-        Method to estimate the settling time of the axis' piezo in a close loop 
-        operation. The method plots position vs time.
-        After testing all axis with different step sizes, 0.5 s seems a reasonable
-        settling time for step by step operation.
+        Method to estimate the settling time of the axis' piezo in an open loop 
+        operation. Step is in µm. The method plots position vs time.
         """
         number_of_measurements = 100
         # allocate
@@ -341,7 +444,7 @@ class BPC303:
         print('Testing response time...')
         # set position
         start_time = timer()
-        self.move_relative(axis, step)
+        self.move_relative_position(axis, step)
         for i in range(number_of_measurements):
             t[i] = timer()
             read_pos[i] = self.get_axis_position(axis)
@@ -503,61 +606,160 @@ class BPC301:
         channel.SetZero()
         return
     
-    def set_position(self, z=None): 
+    def get_max_voltage(self):
         """
-        Method setting the position in um if the channel is in
-        Closed Loop mode
+        Method returning the maximum output voltage (float, in V) of the channel
         """
-        pos = {"z": z}
-        for axis, pos in pos.items():
-            if pos is None:
+        channel = self.__get_chan()
+        max_voltage = channel.GetMaxOutputVoltage()
+        max_voltage_str = '{}'.format(max_voltage)
+        max_voltage_float = float(max_voltage_str)
+        return max_voltage_float
+
+    def set_voltage(self, z=None): 
+        """
+        Method setting the output voltage in V if the channel is in
+        Open Loop mode
+        """
+        voltages = {"z": z}
+        for axis, voltage in voltages.items():
+            if voltage is None:
                 pass
             else:
-                self.__set_axis_position(axis, pos)
+                self.__set_axis_voltage(axis, voltage)
         return
         
-    def __set_axis_position(self, axis, pos):  # define
+    def __set_axis_voltage(self, axis, voltage):
         """
-        Internal method setting the position in um if the channel is in
-        Closed Loop mode
+        Internal method setting the output voltage in V if the channel is in
+        Open Loop mode
         """
         if axis in ("z"):
+            max_voltage = self.get_max_voltage()
+            if voltage < 0 or voltage > max_voltage:
+                print("\t- voltage %.3f V out of range [0, %.1f] for %s axis" % (voltage, max_voltage, axis))
+                return
             # uncomment for debugging
-            # print("\t- moving %s axis piezo to %.3f um -->" % (axis, pos), end="")
+            # print("\t- setting %s axis piezo to %.3f V -->" % (axis, voltage), end="")
             channel = self.__get_chan()
-            channel.SetPosition(Decimal(pos))
+            channel.SetOutputVoltage(Decimal(voltage))
             # uncomment for debugging
             # print(" done")
         else:
             print("\t- axis invalid)")
         return
 
-    def get_axis_position(self, axis):
+    def get_axis_voltage(self, axis):
         """
-        Method returning the position (float, in µm) of an specific axis/channel
+        Method returning the output voltage (float, in V) of an specific axis/channel
         """
         if axis in ("z"):
             channel = self.__get_chan()
-            position = channel.GetPosition() # in um
-            position_str = '{}'.format(position)
-            position_float = float(position_str)
+            voltage = channel.GetOutputVoltage()  # in V
+            voltage_str = '{}'.format(voltage)
+            voltage_float = float(voltage_str)
+        else:
+            print('Error! Axis {} doesn\'t exist. Axis can only be z.'.format(axis))
+            voltage_float = None
+        return voltage_float
+    
+    def move_relative(self, axis, step):
+        """
+        Method setting the relative voltage in V if the channel is in
+        Open Loop mode
+        """
+        actual_voltage = self.get_axis_voltage(axis)
+        new_voltage = actual_voltage + step
+        # uncomment for debugging
+        # print("\t- piezo moving %.3f V on axis %s" % (step, axis))
+        self.__set_axis_voltage(axis, new_voltage)
+        return 
+    
+    # =====================================================================
+    # Position ↔ Voltage linear mapping
+    # Linear mapping: 0 µm ↔ 0 V, max_travel µm ↔ maxOutputVoltage V
+    # =====================================================================
+
+    max_travel = 20.0  # piezo travel range in µm
+
+    def position_to_voltage(self, position_um):
+        """
+        Convert a position in µm to the corresponding output voltage in V
+        using a linear mapping: 0 µm → 0 V, max_travel µm → maxOutputVoltage V
+        """
+        max_voltage = self.get_max_voltage()
+        voltage = position_um * max_voltage / self.max_travel
+        return voltage
+
+    def voltage_to_position(self, voltage):
+        """
+        Convert an output voltage in V to the corresponding position in µm
+        using a linear mapping: 0 V → 0 µm, maxOutputVoltage V → max_travel µm
+        """
+        max_voltage = self.get_max_voltage()
+        position_um = voltage * self.max_travel / max_voltage
+        return position_um
+
+    # =====================================================================
+    # Position-based interface (wraps voltage methods via linear mapping)
+    # These methods provide a transparent µm interface identical to the
+    # original closed-loop API.
+    # =====================================================================
+
+    def set_position(self, z=None):
+        """
+        Method setting the position in µm. Internally converts to voltage
+        using the linear position-to-voltage mapping and sets the output
+        voltage in Open Loop mode.
+        """
+        positions = {"z": z}
+        for axis, pos in positions.items():
+            if pos is None:
+                pass
+            else:
+                self.__set_axis_position(axis, pos)
+        return
+
+    def __set_axis_position(self, axis, pos):
+        """
+        Internal method setting the position in µm by converting to voltage
+        and calling the voltage setter.
+        """
+        if axis in ("z"):
+            if pos < 0 or pos > self.max_travel:
+                print("\t- position %.3f µm out of range [0, %.1f] for %s axis" % (pos, self.max_travel, axis))
+                return
+            voltage = self.position_to_voltage(pos)
+            self.__set_axis_voltage(axis, voltage)
+        else:
+            print("\t- axis invalid)")
+        return
+
+    def get_axis_position(self, axis):
+        """
+        Method returning the position (float, in µm) of a specific axis/channel.
+        Reads the output voltage and converts it to position using the linear mapping.
+        """
+        if axis in ("z"):
+            voltage = self.get_axis_voltage(axis)
+            position_float = self.voltage_to_position(voltage)
         else:
             print('Error! Axis {} doesn\'t exist. Axis can only be z.'.format(axis))
             position_float = None
         return position_float
-    
-    def move_relative(self, axis, step):
+
+    def move_relative_position(self, axis, step):
         """
-        Method setting the relative position in µm if the channel is in
-        Closed Loop mode
+        Method setting the relative position in µm. Reads the current position,
+        adds the step and sets the new position.
         """
         actual_position = self.get_axis_position(axis)
         new_position = actual_position + step
         # uncomment for debugging
-        # print("\t- piezo moving %.3f um on axis %s" % (step, axis))
+        # print("\t- piezo moving %.3f µm on axis %s" % (step, axis))
         self.__set_axis_position(axis, new_position)
-        return 
-    
+        return
+
     def get_info(self):
         """
         Method returning a string containing the info on the controller and
@@ -586,18 +788,19 @@ class BPC301:
 
     def estimate_precision(self, position_array, number_of_measurements = 100, delay = 0.5):
         """
-        Method to estimate the position precision in a close loop operation 
-        at a particular position. Method returns average position and standard 
-        deviation for the number of measurements using delay as time interval
+        Method to estimate the position precision in an open loop operation 
+        at a particular position (in µm). Internally converts to voltage.
+        Method returns average position and standard deviation for the number 
+        of measurements using delay as time interval.
         """
-        # set position
+        # set position (converted to voltage internally)
         z_pos = position_array
         self.set_position(z_pos)
         sleep(5) # for settling time
         # allocate
         z_read_pos = np.zeros(number_of_measurements)
         # read position several times
-        print('Starting feedback close loop position precision routine...')
+        print('Starting open loop position precision routine...')
         for i in range(number_of_measurements):
             z_read_pos[i] = self.get_axis_position('z')
             # print(z_read_pos[i])
@@ -612,10 +815,8 @@ class BPC301:
 
     def response_time(self, axis, step):
         """
-        Method to estimate the settling time of the axis' piezo in a close loop 
-        operation. The method plots position vs time.
-        After testing all axis with different step sizes, 0.5 s seems a reasonable
-        settling time for step by step operation.
+        Method to estimate the settling time of the axis' piezo in an open loop 
+        operation. Step is in µm. The method plots position vs time.
         """
         number_of_measurements = 100
         # allocate
@@ -625,7 +826,7 @@ class BPC301:
         print('Testing response time...')
         # set position
         start_time = timer()
-        self.move_relative(axis, step)
+        self.move_relative_position(axis, step)
         for i in range(number_of_measurements):
             t[i] = timer()
             read_pos[i] = self.get_axis_position(axis)
@@ -695,9 +896,9 @@ if __name__ == "__main__":
     # get info
     print(piezo_stage_xy.get_info())
     print(piezo_stage_z.get_info())
-    # set ON closed-loop operation
-    piezo_stage_xy.set_close_loop(True)
-    piezo_stage_z.set_close_loop(True)
+    # set ON open-loop operation (voltage control)
+    piezo_stage_xy.set_close_loop(False)
+    piezo_stage_z.set_close_loop(False)
     # perform zero routine for all axis
     piezo_stage_xy.zero('all')
     piezo_stage_z.zero()
@@ -727,5 +928,3 @@ if __name__ == "__main__":
     # disconnect        
     piezo_stage_xy.shutdown()
     piezo_stage_z.shutdown()
-    
-
