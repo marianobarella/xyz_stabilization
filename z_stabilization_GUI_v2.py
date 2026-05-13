@@ -50,7 +50,7 @@ initial_image_np = 128*np.ones((1080, 1440, 3))
 dummy_image_np = initial_image_np
 # timing parameterss
 initial_tracking_period = 200 # in ms
-initial_exp_time = 100 # in ms
+initial_exp_time = 150 # in ms
 driftbox_length = 10.0 # in s
 initial_gain = 0 # int
 
@@ -62,7 +62,7 @@ initial_horizontal_size = 1200
 
 # for center of mass estimation, float between 0.00 and 1.00
 # above 0.1 works better due to stray light from the NIR despite the filters
-initial_threshold = 0.8
+initial_threshold = 0.9
 
 # PID constants
 # tested with a 200 ms tracking period
@@ -544,8 +544,8 @@ class Frontend(QtGui.QFrame):
     def stabilize_status(self):
         if self.stabilize_z_button.isChecked():
             self.stabilize = True
-            self.stabilizationStatusChangedSignal.emit(self.stabilize)
             self.lock_and_track()
+            self.stabilizationStatusChangedSignal.emit(self.stabilize)
         else:
             self.stabilize = False
             self.stabilizationStatusChangedSignal.emit(self.stabilize)
@@ -564,12 +564,12 @@ class Frontend(QtGui.QFrame):
     def lock_and_track(self):
         if self.lock_z_position_button.isChecked():
             if self.create_ROI_button.isChecked():
-                self.roi_changed_check()
                 self.driftPlot.clear()
-                self.lockAndTrackSignal.emit(True)
+                self.roi_changed_check()
                 N = int(driftbox_length*1000/self.tracking_period)
                 self.error_to_plot = np.zeros(N)
                 self.time_to_plot = np.zeros(N)
+                self.lockAndTrackSignal.emit(True)
             else:
                 print('Warning! Lock and Track can only be used if the ROI has been created.')
         else:

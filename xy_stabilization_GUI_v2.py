@@ -60,14 +60,10 @@ intensitybox_length = 10.0 # in seconds
 
 # PID constants
 # DO NOT CHANGE
-initial_kp = 0.1 # proportinal factor of the PID
-initial_ki = 0.015 # integral factor of the PID
-initial_kd = 0.005 # derivative factor of the PID
+initial_kp = 0.3 # proportinal factor of the PID
+initial_ki = 0.0005 # integral factor of the PID
+initial_kd = 0.0005 # derivative factor of the PID
 # working values (tested with tracking periods of 100, 200, 300 and 500 ms)
-# the shorter the time, the longer the transitory period
-# initial_kp = 0.2 # proportinal factor of the PID
-# initial_ki = 0.03 # integral factor of the PID
-# initial_kd = 0.01 # derivative factor of the PID
 # correction threshold in um
 # above this value (distance) the software starts to apply a correction
 # to compensate the drift
@@ -546,12 +542,12 @@ class Frontend(QtGui.QFrame):
         if self.lock_ROIs_button.isChecked():
             if self.create_ROIs_button.isChecked():
                 self.driftPlot.clear()
-                self.lockAndTrackSignal.emit(True)
                 self.data_ROI = {}
                 self.coord_ROI = {}
                 N = int(driftbox_length*1000/self.tracking_period)
                 self.error_to_plot = np.zeros((N, 2))
                 self.time_to_plot = np.zeros(N)
+                self.lockAndTrackSignal.emit(True)
             else:
                 print('Warning! Lock and Track can only be used if fiducials\' ROIs have been created.')
         else:
@@ -564,8 +560,8 @@ class Frontend(QtGui.QFrame):
     def correct_drift_status(self):
         if self.correct_drift_button.isChecked():
             self.correct_drift_flag = True
-            self.correctDriftSignal.emit(self.correct_drift_flag)
             self.lock_and_track()
+            self.correctDriftSignal.emit(self.correct_drift_flag)
         else:
             self.correct_drift_flag = False
             self.correctDriftSignal.emit(self.correct_drift_flag)
