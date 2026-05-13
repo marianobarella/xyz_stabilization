@@ -560,8 +560,8 @@ class Frontend(QtGui.QFrame):
     def correct_drift_status(self):
         if self.correct_drift_button.isChecked():
             self.correct_drift_flag = True
-            self.lock_and_track()
             self.correctDriftSignal.emit(self.correct_drift_flag)
+            self.lock_and_track()
         else:
             self.correct_drift_flag = False
             self.correctDriftSignal.emit(self.correct_drift_flag)
@@ -593,8 +593,8 @@ class Frontend(QtGui.QFrame):
         self.driftPlot.plot(x = self.time_to_plot, y = self.error_to_plot[:, 1], \
                             pen = pg.mkPen('b'))
         self.driftPlot.setXRange(timestamp - driftbox_length, timestamp)
-        ymin = min(np.mean(self.error_to_plot, axis=1) - 5*np.std(self.error_to_plot, ddof=1, axis=1))
-        ymax = max(np.mean(self.error_to_plot, axis=1) + 5*np.std(self.error_to_plot, ddof=1, axis=1))
+        ymin = min(np.mean(self.error_to_plot, axis=1) - 3*np.std(self.error_to_plot, ddof=1, axis=1))
+        ymax = max(np.mean(self.error_to_plot, axis=1) + 3*np.std(self.error_to_plot, ddof=1, axis=1))
         self.driftPlot.setYRange(ymin, ymax)
         # draw center of fiducials, overlay on image
         for i in range(self.number_of_fiducials):
@@ -921,9 +921,10 @@ class Backend(QtCore.QObject):
             self.timeaxis = {}
             self.errors_to_save = []
             self.timeaxis_to_save = []
-            self.int_correction = 0
-            self.dev_correction = 0
-            self.last_error_avg = 0
+            self.prop_correction = 0.0
+            self.int_correction = 0.0
+            self.dev_correction = 0.0
+            self.last_error_avg = 0.0
             # t0 initial time
             self.start_tracking_time = timer()
             # ask for ROI data and coordinates
@@ -1068,6 +1069,7 @@ class Backend(QtCore.QObject):
             # calculate correction in um
             correction = self.prop_correction + self.int_correction + self.dev_correction
             # call function to correct
+            print(kp, ki, kd, error_avg, correction)
             self.correct_drift(error_avg, correction)
         return
     
@@ -1114,11 +1116,15 @@ class Backend(QtCore.QObject):
         # use the worker to send the instructions
         # only if the drift correction is larger than a threshold
         if abs(error_x) > self.correction_threshold:
-            # print('correction x %.0f nm ' % (correction_x*1000))
-            self.piezoWorker.move_relative('x', correction_x)
+            if abs(correction_x) > 0:
+                print('entre x')
+                # print('correction x %.0f nm ' % (correction_x*1000))
+                self.piezoWorker.move_relative('x', correction_x)
         if abs(error_y) > self.correction_threshold:
-            # print('correction y %.0f nm' % (correction_y*1000))
-            self.piezoWorker.move_relative('y', correction_y)
+            if abs(correction_y) > 0:
+                print('entre y')
+                # print('correction y %.0f nm' % (correction_y*1000))
+                self.piezoWorker.move_relative('y', correction_y)
         return
     
     @pyqtSlot(bool, float)

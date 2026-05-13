@@ -68,8 +68,8 @@ class Frontend(QtGui.QFrame):
         # self.set_ref_button.setToolTip('Set/lock the position')
 
         # feedback loop mode
-        self.feedback_loop_mode_tickbox = QtGui.QCheckBox('Close-loop mode')
-        self.initial_state_feedback_loop_mode = True
+        self.feedback_loop_mode_tickbox = QtGui.QCheckBox('Close/Open-loop mode')
+        self.initial_state_feedback_loop_mode = False
         self.feedback_loop_mode_tickbox.setChecked(self.initial_state_feedback_loop_mode)
         self.feedback_loop_mode_tickbox.stateChanged.connect(self.feedback_loop_mode_changed)
         self.feedback_loop_mode_tickbox.setToolTip('Tick = Close-loop mode / Untick = Open-loop mode.')
@@ -297,7 +297,7 @@ class Backend(QtCore.QObject):
         # print('z_pos', z_pos_before)
         # print('Asking for a %.3f step on %s axis' % (distance, axis) )
         if axis == 'z':
-            self.piezo_stage_z.move_relative(axis, distance)
+            self.piezo_stage_z.move_relative_position(axis, distance)
         else:
             print('Cannot do \"move relative\". Axis should be z.')
         # check piezo_toolbox.py\response_time function

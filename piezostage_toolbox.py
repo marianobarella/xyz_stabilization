@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿#*- coding: utf-8 -*-
 """ 
 Created on Mon May 16, 2022
 Modified on Sun Jan 19, 2025
@@ -340,6 +340,7 @@ class BPC303:
                 print("\t- position %.3f µm out of range [0, %.1f] for %s axis" % (pos, self.max_travel, axis))
                 return
             voltage = self.position_to_voltage(axis, pos)
+            print(axis, voltage)
             self.__set_axis_voltage(axis, voltage)
         else:
             print("\t- axis invalid)")
@@ -363,6 +364,7 @@ class BPC303:
         Method setting the relative position in µm. Reads the current position,
         adds the step and sets the new position.
         """
+        print('en relative toolbox')
         actual_position = self.get_axis_position(axis)
         new_position = actual_position + step
         # uncomment for debugging

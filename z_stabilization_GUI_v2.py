@@ -544,8 +544,8 @@ class Frontend(QtGui.QFrame):
     def stabilize_status(self):
         if self.stabilize_z_button.isChecked():
             self.stabilize = True
-            self.lock_and_track()
             self.stabilizationStatusChangedSignal.emit(self.stabilize)
+            self.lock_and_track()
         else:
             self.stabilize = False
             self.stabilizationStatusChangedSignal.emit(self.stabilize)
