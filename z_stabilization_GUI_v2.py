@@ -593,17 +593,17 @@ class Frontend(QtGui.QFrame):
         # plot xy position of fiducials vs time
         self.error_to_plot = np.roll(self.error_to_plot, -1, axis = 0)
         self.time_to_plot = np.roll(self.time_to_plot, -1)
-        # only plot x coordinate and convert to nm using calibration
+        # only plot x coordinate and convert to um using calibration
         self.error_to_plot[-1] = error[0]*self.conversion_factor
         self.time_to_plot[-1] = timestamp
         self.driftPlot.clear()
         self.driftPlot.plot(x = self.time_to_plot, y = self.error_to_plot, \
                             pen = pg.mkPen('r', width = 1))
         self.driftPlot.setXRange(timestamp - driftbox_length, timestamp)
-        ymin = np.mean(self.error_to_plot) - 5*np.std(self.error_to_plot, ddof=1)
-        ymax = np.mean(self.error_to_plot) + 5*np.std(self.error_to_plot, ddof=1)
+        ymin = np.mean(self.error_to_plot) - 3*np.std(self.error_to_plot, ddof=1)
+        ymax = np.mean(self.error_to_plot) + 3*np.std(self.error_to_plot, ddof=1)
         self.driftPlot.setYRange(ymin, ymax)
-        # draw center of refkectuib, convert um to pixels
+        # draw center of reflection, convert um to pixels
         xy_pos_absolute = xy_pos_pixel_relative + (self.roi_list_previous[1], 
                                                    self.roi_list_previous[0])
         self.z_reflection.setData(x = [xy_pos_absolute[0]], y = [xy_pos_absolute[1]])        
@@ -807,13 +807,18 @@ class Backend(QtCore.QObject):
         return
     
     def call_pid(self):
+        # calculate error using center of mass
         center, timestamp = self.calculate_center_of_mass()
         error_x_px = self.initial_center[0] - center[0]
         error_y_px = self.initial_center[1] - center[1]
         error_px =  np.array([error_x_px, error_y_px])
         error = error_px*self.conversion_factor # in um
+        # calculate error using unbalaced intensities
+        lateral_diff, timestamp = self.calculate_half_intensities()
+        error_lateral_diff = self.initial_lateral_diff - lateral_diff
         # send position of the reflection to Frontend
-        self.sendFittedDataSignal.emit(center, error_px, timestamp)
+        # self.sendFittedDataSignal.emit(center, error_px, timestamp)
+        self.sendFittedDataSignal.emit(lateral_diff, error_lateral_diff, timestamp)
         # store data to save drift vs time when the Lock and Track option is released
         if self.save_drift_data:
             self.timeaxis_to_save.append(timestamp)
@@ -886,13 +891,20 @@ class Backend(QtCore.QObject):
     def receive_roi_data(self, roi_coordinates, append_drift_bool):
         self.save_drift_data = append_drift_bool
         # set indexes for ROI
+        # horizontal
         self.x1 = int(roi_coordinates[0,0,0])
         self.x2 = int(roi_coordinates[0,-1,0]) + 1
+        # vertical
         self.y1 = int(roi_coordinates[1,0,0])
         self.y2 = int(roi_coordinates[1,0,-1]) + 1
+        # find the horizontal mid point of the image
+        self.half_position = int((self.y1 + self.y2)/2)
         # then frame_intensity is self.image_np[x1:x2, y1:y2]
-        print('Finding initial coordinates...')
-        self.initial_center, _ = self.calculate_center_of_mass()
+        print('Finding initial conditions...')
+        # Calculate center of mass
+        self.initial_center, timeaxis = self.calculate_center_of_mass()
+        # Calculate half intensities
+        self.initial_lateral_diff, timeaxis = self.calculate_half_intensities()
         print('Done.')
         return
     
@@ -904,8 +916,22 @@ class Backend(QtCore.QObject):
         cm_y, cm_x = ndimage.center_of_mass(frame_roi_th) # vertical, horizontal
         # print(cm_y, cm_x)
         center = np.array([cm_x, cm_y])
+        left_int, right_int, lateral_diff = self.calculate_half_intensities(frame_roi_th)
         timeaxis = timer() - self.start_tracking_time
         return center, timeaxis
+
+    def calculate_half_intensities(self):
+        # find half intensities
+        frame_roi_intensity = self.image_np[self.x1:self.x2, self.y1:self.y2]
+        roi_threshold = self.threshold*np.max(frame_roi_intensity)
+        frame_roi_th = np.where(frame_roi_intensity > roi_threshold, frame_roi_intensity, 0)
+        left_int = np.sum(frame_roi_th[:, 0:self.half_position], dtype='float')
+        right_int = np.sum(frame_roi_th[:, self.half_position:-1], dtype='float')
+        lateral_diff = right_int - left_int
+        # print(left_int, right_int, lateral_diff)
+        timeaxis = timer() - self.start_tracking_time
+        return lateral_diff, timeaxis
+
 
     @pyqtSlot(float)
     def new_threshold(self, new_threshold):

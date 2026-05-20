@@ -74,7 +74,7 @@ class ChildWindow(QDialog):
         self.setUpGUI()
         # set the title of the window
         self.setWindowTitle("Z scan profile")
-        self.setGeometry(150, 150, 1500, 600) # x pos, y pos, width, height
+        self.setGeometry(150, 150, 2500, 600) # x pos, y pos, width, height
         self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
         return
 
