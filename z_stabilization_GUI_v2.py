@@ -1063,8 +1063,10 @@ if __name__ == '__main__':
     worker.trackingTimer.moveToThread(workerThread)
     worker.viewTimer.moveToThread(workerThread)
     # configure the connection to allow queued executions to avoid interruption of previous calls
-    worker.viewTimer.timeout.connect(worker.update_view, QtCore.Qt.QueuedConnection)
-    worker.trackingTimer.timeout.connect(worker.call_pid, QtCore.Qt.QueuedConnection) 
+    # worker.viewTimer.timeout.connect(worker.update_view, QtCore.Qt.QueuedConnection)
+    # worker.trackingTimer.timeout.connect(worker.call_pid, QtCore.Qt.QueuedConnection) 
+    worker.viewTimer.timeout.connect(worker.update_view)
+    worker.trackingTimer.timeout.connect(worker.call_pid) 
     worker.piezoWorker.updateTimer.moveToThread(workerThread)
     worker.piezoWorker.updateTimer.timeout.connect(worker.piezoWorker.read_position)
     worker.piezoWorker.moveToThread(workerThread)
