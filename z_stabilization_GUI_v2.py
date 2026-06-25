@@ -62,7 +62,7 @@ initial_horizontal_size = 1200
 
 # for center of mass estimation, float between 0.00 and 1.00
 # above 0.1 works better due to stray light from the NIR despite the filters
-initial_threshold = 0.9
+initial_threshold = 0.2
 
 # PID constants
 # tested with a 200 ms tracking period
@@ -590,11 +590,32 @@ class Frontend(QtGui.QFrame):
     
     @pyqtSlot(np.ndarray, np.ndarray, float)
     def receive_cm_data(self, xy_pos_pixel_relative, error, timestamp):
-        # plot xy position of fiducials vs time
+        # # plot xy position of fiducials vs time
+        # self.error_to_plot = np.roll(self.error_to_plot, -1, axis = 0)
+        # self.time_to_plot = np.roll(self.time_to_plot, -1)
+        # # only plot x coordinate and convert to um using calibration
+        # self.error_to_plot[-1] = error[0]*self.conversion_factor
+        # self.time_to_plot[-1] = timestamp
+        # self.driftPlot.clear()
+        # self.driftPlot.plot(x = self.time_to_plot, y = self.error_to_plot, \
+        #                     pen = pg.mkPen('r', width = 1))
+        # self.driftPlot.setXRange(timestamp - driftbox_length, timestamp)
+        # ymin = np.mean(self.error_to_plot) - 3*np.std(self.error_to_plot, ddof=1)
+        # ymax = np.mean(self.error_to_plot) + 3*np.std(self.error_to_plot, ddof=1)
+        # self.driftPlot.setYRange(ymin, ymax)
+        # draw center of reflection, convert um to pixels
+        xy_pos_absolute = xy_pos_pixel_relative + (self.roi_list_previous[1], 
+                                                   self.roi_list_previous[0])
+        self.z_reflection.setData(x = [xy_pos_absolute[0]], y = [xy_pos_absolute[1]])        
+        return
+
+    @pyqtSlot(float, float, float)
+    def receive_half_int_data(self, lateral_diff, error_lateral_diff, timestamp):
+        # # plot xy position of fiducials vs time
         self.error_to_plot = np.roll(self.error_to_plot, -1, axis = 0)
         self.time_to_plot = np.roll(self.time_to_plot, -1)
         # only plot x coordinate and convert to um using calibration
-        self.error_to_plot[-1] = error[0]*self.conversion_factor
+        self.error_to_plot[-1] = error_lateral_diff #error[0]*self.conversion_factor
         self.time_to_plot[-1] = timestamp
         self.driftPlot.clear()
         self.driftPlot.plot(x = self.time_to_plot, y = self.error_to_plot, \
@@ -603,10 +624,10 @@ class Frontend(QtGui.QFrame):
         ymin = np.mean(self.error_to_plot) - 3*np.std(self.error_to_plot, ddof=1)
         ymax = np.mean(self.error_to_plot) + 3*np.std(self.error_to_plot, ddof=1)
         self.driftPlot.setYRange(ymin, ymax)
-        # draw center of reflection, convert um to pixels
-        xy_pos_absolute = xy_pos_pixel_relative + (self.roi_list_previous[1], 
-                                                   self.roi_list_previous[0])
-        self.z_reflection.setData(x = [xy_pos_absolute[0]], y = [xy_pos_absolute[1]])        
+        # # draw center of reflection, convert um to pixels
+        # xy_pos_absolute = xy_pos_pixel_relative + (self.roi_list_previous[1], 
+        #                                            self.roi_list_previous[0])
+        # self.z_reflection.setData(x = [xy_pos_absolute[0]], y = [xy_pos_absolute[1]])        
         return
     
     def pid_param_changed_check(self):
@@ -683,7 +704,8 @@ class Frontend(QtGui.QFrame):
         backend.imageSignal.connect(self.get_image)
         backend.filePathSignal.connect(self.get_file_path)
         backend.getReflectionDataSignal.connect(self.retrieve_reflection_data)
-        backend.sendFittedDataSignal.connect(self.receive_cm_data)
+        backend.sendFittedCMDataSignal.connect(self.receive_cm_data)
+        backend.sendFittedHalfIntDataSignal.connect(self.receive_half_int_data)    
         backend.liveview_stopped_signal.connect(self.liveview_stopped)
         backend.liveview_started_signal.connect(self.liveview_started)
         if self.connect_to_piezo_module:
@@ -701,7 +723,8 @@ class Backend(QtCore.QObject):
     imageSignal = pyqtSignal(np.ndarray)
     filePathSignal = pyqtSignal(str)
     getReflectionDataSignal = pyqtSignal()
-    sendFittedDataSignal = pyqtSignal(np.ndarray, np.ndarray, float)
+    sendFittedCMDataSignal = pyqtSignal(np.ndarray, np.ndarray, float)
+    sendFittedHalfIntDataSignal = pyqtSignal(float, float, float)
     liveview_stopped_signal = pyqtSignal()
     liveview_started_signal = pyqtSignal()
     
@@ -817,12 +840,13 @@ class Backend(QtCore.QObject):
         lateral_diff, timestamp = self.calculate_half_intensities()
         error_lateral_diff = self.initial_lateral_diff - lateral_diff
         # send position of the reflection to Frontend
-        # self.sendFittedDataSignal.emit(center, error_px, timestamp)
-        self.sendFittedDataSignal.emit(lateral_diff, error_lateral_diff, timestamp)
+        self.sendFittedCMDataSignal.emit(center, error_px, timestamp)
+        self.sendFittedHalfIntDataSignal.emit(lateral_diff, error_lateral_diff, timestamp)
         # store data to save drift vs time when the Lock and Track option is released
         if self.save_drift_data:
             self.timeaxis_to_save.append(timestamp)
-            self.errors_to_save.append(error)
+            # self.errors_to_save.append(error)
+            self.errors_to_save.append(error_lateral_diff)
         # now correct drift if button is checked
         if self.stabilization_flag:
             # PID calculation
@@ -905,6 +929,7 @@ class Backend(QtCore.QObject):
         self.initial_center, timeaxis = self.calculate_center_of_mass()
         # Calculate half intensities
         self.initial_lateral_diff, timeaxis = self.calculate_half_intensities()
+        print('Intial lateral difference:', self.initial_lateral_diff)
         print('Done.')
         return
     
@@ -916,7 +941,6 @@ class Backend(QtCore.QObject):
         cm_y, cm_x = ndimage.center_of_mass(frame_roi_th) # vertical, horizontal
         # print(cm_y, cm_x)
         center = np.array([cm_x, cm_y])
-        left_int, right_int, lateral_diff = self.calculate_half_intensities(frame_roi_th)
         timeaxis = timer() - self.start_tracking_time
         return center, timeaxis
 
@@ -931,7 +955,6 @@ class Backend(QtCore.QObject):
         # print(left_int, right_int, lateral_diff)
         timeaxis = timer() - self.start_tracking_time
         return lateral_diff, timeaxis
-
 
     @pyqtSlot(float)
     def new_threshold(self, new_threshold):
@@ -949,7 +972,7 @@ class Backend(QtCore.QObject):
         M = np.array(self.timeaxis_to_save).shape[0]
         data_to_save = np.zeros((M, 3))
         data_to_save[:, 0] = np.array(self.timeaxis_to_save)
-        data_to_save[:, 1:] = np.array(self.errors_to_save)
+        data_to_save[:, 1] = np.array(self.errors_to_save)
         # create filename
         timestr = datetime.today().strftime('%Y-%m-%d_%H-%M-%S')
         filename = "drift_curve_z_" + timestr + ".dat"

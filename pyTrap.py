@@ -74,8 +74,8 @@ class ChildWindow(QDialog):
         self.setUpGUI()
         # set the title of the window
         self.setWindowTitle("Z scan profile")
-        self.setGeometry(150, 150, 2500, 600) # x pos, y pos, width, height
-        self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
+        self.setGeometry(150, 150, 1500, 600) # x pos, y pos, width, height
+        # self.setWindowFlag(QtCore.Qt.WindowStaysOnTopHint, True)
         return
 
     def setUpGUI(self):
@@ -152,7 +152,7 @@ class Frontend(QtGui.QMainWindow):
         self.cwidget = QtGui.QWidget()
         self.setCentralWidget(self.cwidget)
         self.setWindowTitle('pyTrap')
-        self.setGeometry(5, 30, 1900, 850) # x pos, y pos, width, height
+        self.setGeometry(5, 30, 2530, 950) # x pos, y pos, width, height
         self.main_app = main_app
         # import frontend modules
         # piezo widget (frontend) must be imported in the main
@@ -698,6 +698,7 @@ class Backend(QtCore.QObject):
         self.confocal_filepath = initial_confocal_filepath
         self.save_counter = 0
         self.enable_connection_to_laser_module = enable_connection_to_laser_module
+        self.extra_settling_time = 10 # in ms
         return
 
     @pyqtSlot(list)
@@ -739,7 +740,7 @@ class Backend(QtCore.QObject):
                 self.apdTraceWorker.play_pause(False)
             self.start_z_scan()
         else:
-            self.stop_z_scan()
+            self.stop_z_scan(only_stop = True)
         return 
 
     def start_z_scan(self):
@@ -747,7 +748,8 @@ class Backend(QtCore.QObject):
         self.prepare_z_scan()
         self.laserControlWorker.shutterTrappingLaser(True)
         # set timer interval to avoid excesive and unnecessary calls
-        self.zTimer.setInterval(self.scan_step_time) # in ms
+        self.z_scan_timer_interval = self.scan_step_time + self.extra_settling_time
+        self.zTimer.setInterval(self.z_scan_timer_interval) # in ms
         # set scan flag to True and start Timer
         self.zTimer.start()
         self.z_scan_flag = True
@@ -780,7 +782,7 @@ class Backend(QtCore.QObject):
         return
 
     @pyqtSlot()
-    def stop_z_scan(self):
+    def stop_z_scan(self, only_stop = False):
         self.total_time = timer() - self.init_time
         # stop timer signal
         self.zTimer.stop()
@@ -796,17 +798,22 @@ class Backend(QtCore.QObject):
         # either to the last (initial) position or the CM
         # emit signal scan has ended
         self.zScanStopped.emit()
-        if self.go_to_z_max_auto_flag:
-            try:
-                self.move_to_max_z()
-            except:
+        # if not stopped by the user, calculate CM, move and save if needed
+        if not only_stop:
+            if self.go_to_z_max_auto_flag:
+                try:
+                    self.move_to_max_z()
+                except:
+                    # back to initial position
+                    self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z_pos])
+            else:
                 # back to initial position
                 self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z_pos])
+            if self.save_scan_flag:
+                self.save_z_scan()
         else:
             # back to initial position
             self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z_pos])
-        if self.save_scan_flag:
-            self.save_z_scan()
         return
 
     def execute_z_scan(self):
@@ -816,7 +823,7 @@ class Backend(QtCore.QObject):
                 current_z_pos = self.z_scan_array[self.counter_z_steps]
                 # print(self.counter_z_steps, current_z_pos)
                 self.piezoWorker.move_absolute([self.x_pos, self.y_pos, current_z_pos])
-                tm.sleep(0.005) # wait to settle (in seconds)
+                # tm.sleep(0.005) # wait to settle (in seconds)
                 # acquire first
                 point_trace_data = self.apdTraceWorker.acquire_confocal_trace()
                 point_trace_data_apd = point_trace_data[0]
@@ -887,7 +894,7 @@ class Backend(QtCore.QObject):
                 self.apdTraceWorker.play_pause(False)
             self.start_confocal_scan()
         else:
-            self.stop_confocal_scan()
+            self.stop_confocal_scan(only_stop = True)
         return 
 
     def start_confocal_scan(self):
@@ -896,11 +903,12 @@ class Backend(QtCore.QObject):
         self.laserControlWorker.shutterTrappingLaser(True)
         self.laserControlWorker.flipper_select_spectrometer(False)
         # set timer interval to avoid excesive and unnecessary calls
-        self.confocalTimer.setInterval(self.scan_step_time) # in ms
+        self.raster_scan_timer_interval = self.scan_step_time + self.extra_settling_time
+        self.confocalTimer.setInterval(self.raster_scan_timer_interval) # in ms
         # set scan flag to True and start Timer
-        self.confocalTimer.start()
         self.confocal_scan_flag = True
         self.init_time = timer()
+        self.confocalTimer.start()
         print('\nConfocal scan started at {}'.format(self.init_time))
         return
 
@@ -943,7 +951,7 @@ class Backend(QtCore.QObject):
         return
 
     @pyqtSlot()
-    def stop_confocal_scan(self):
+    def stop_confocal_scan(self, only_stop = False):
         self.total_time = timer() - self.init_time
         # stop timer signal
         self.confocalTimer.stop()
@@ -953,25 +961,33 @@ class Backend(QtCore.QObject):
         self.laserControlWorker.shutterTrappingLaser(False)
         print('\nConfocal scan stopped at {}'.format(timer()))
         print('Total time scanning: {:.3f} s'.format(self.total_time))
-        # close confocal's APD task 
-        self.apdTraceWorker.disarm_confocal_task()
+        # close confocal's APD task
+        try:
+            self.apdTraceWorker.disarm_confocal_task()
+        except:
+            print("Could not disarm the confocal task")
         # move before exiting the function
         # either to the last (initial) position or the CM
         # emit signal scan has ended
         self.confocalScanStopped.emit()
-        # calculate center of mass and update the GUI
-        cm_position_list = self.calculate_cm()
-        if self.go_to_cm_auto_flag:
-            try:
-                self.move_to_cm()
-            except:
+        # if not stopped by the user, calculate CM, move and save if needed
+        if not only_stop:
+            # calculate center of mass and update the GUI
+            cm_position_list = self.calculate_cm()
+            if self.go_to_cm_auto_flag:
+                try:
+                    self.move_to_cm()
+                except:
+                    # back to initial position
+                    self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z_pos])
+            else:
                 # back to initial position
                 self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z_pos])
+            if self.save_scan_flag:
+                self.save_confocal()
         else:
             # back to initial position
             self.piezoWorker.move_absolute([self.x_pos, self.y_pos, self.z_pos])
-        if self.save_scan_flag:
-            self.save_confocal()
         return
 
     def execute_confocal_scan(self):
@@ -983,32 +999,45 @@ class Backend(QtCore.QObject):
                     # move to the target position
                     # define indeces for the scan arrays and images
                     y_index = self.counter_y_steps
-                    # x index depends on the row parity
-                    if y_index % 2 == 0:
-                        # even row, scan from left to right
-                        x_index = self.counter_x_steps
-                    else:
-                        # odd row, scan from right to left
-                        x_index = self.scan_range_pixels_x - 1 - self.counter_x_steps
+                    x_index = self.counter_x_steps
+                    # DEPREDICATED: snake-like pattern shows artifacts due to hysteresis
+                    # ONLY use in closed-loop mode (but it is NOT available anymore)
+                    # # x index depends on the row parity
+                    # if y_index % 2 == 0:
+                    #     # even row, scan from left to right
+                    #     x_index = self.counter_x_steps
+                    # else:
+                    #     # odd row, scan from right to left
+                    #     x_index = self.scan_range_pixels_x - 1 - self.counter_x_steps
                     current_x_pos = self.x_scan_array[x_index]
                     current_y_pos = self.y_scan_array[y_index]
                     # print(y_index, x_index, current_x_pos, current_y_pos)
                     self.piezoWorker.move_absolute([current_x_pos, current_y_pos, self.z_pos])
+                    # tm.sleep(0.002) # wait to settle (in seconds)
                     # acquire first
                     pixel_data = self.apdTraceWorker.acquire_confocal_trace()
                     pixel_apd_data = pixel_data[0]
                     pixel_monitor_data = pixel_data[1]
                     # assign the mean value to a pixel in the image
                     self.confocal_image[y_index, x_index] = np.mean(pixel_apd_data)
+                    self.sendConfocalImageSignal.emit(self.confocal_image)
                     self.apd_traces_array[y_index, x_index, :] = pixel_apd_data
                     self.monitor_traces_array[y_index, x_index, :] = pixel_monitor_data
-                    self.sendConfocalImageSignal.emit(self.confocal_image)
                     # move step in x
                     self.counter_x_steps += 1
                 else:
                     # a row has been scanned, re-initialize the x counter
                     self.counter_x_steps = 0
                     self.counter_y_steps += 1
+                    # move already to the next line
+                    x_index = self.counter_x_steps
+                    y_index = self.counter_y_steps
+                    current_x_pos = self.x_scan_array[x_index]
+                    current_y_pos = self.y_scan_array[y_index]
+                    self.piezoWorker.move_absolute([current_x_pos - 2*self.pixel_size_x, \
+                                                    current_y_pos, \
+                                                    self.z_pos])
+                    # tm.sleep((self.extra_settling_time-5)/1000) # wait to settle (in seconds)
             else:
                 # stop confocal scan
                 self.confocalScanStoppedInnerSignal.emit()

@@ -114,6 +114,8 @@ class BPC303:
             raise DeviceNotReadyException
         for attrname in ("xchannel", "ychannel", "zchannel"):
             setattr(self, attrname, None)
+        # piezo max travel range in µm
+        self.max_travel = {'x': 20.0, 'y': 20.0, 'z': 20.0}
         return 
 
     def __get_chan(self, axis):
@@ -150,6 +152,11 @@ class BPC303:
             channel.StartPolling(100)
             channel.EnableDevice()
             print(" done" if channel.IsConnected else "failed")
+        self.max_voltage = {'x': 75.0, 'y': 75.0, 'z': 75.0}
+        self.max_voltage['x'] = self.get_max_voltage('x')
+        self.max_voltage['y'] = self.get_max_voltage('y')
+        self.max_voltage['z'] = self.get_max_voltage('z')
+        print('Max voltage:', self.max_voltage)
         return
     
     def identify(self, axis):
@@ -290,15 +297,12 @@ class BPC303:
     # Linear mapping: 0 µm ↔ 0 V, max_travel µm ↔ maxOutputVoltage V
     # =====================================================================
 
-    max_travel = 20.0  # piezo travel range in µm
-
     def position_to_voltage(self, axis, position_um):
         """
         Convert a position in µm to the corresponding output voltage in V
         using a linear mapping: 0 µm → 0 V, max_travel µm → maxOutputVoltage V
         """
-        max_voltage = self.get_max_voltage(axis)
-        voltage = position_um * max_voltage / self.max_travel
+        voltage = position_um * self.max_voltage[axis] / self.max_travel[axis]
         return voltage
 
     def voltage_to_position(self, axis, voltage):
@@ -306,8 +310,7 @@ class BPC303:
         Convert an output voltage in V to the corresponding position in µm
         using a linear mapping: 0 V → 0 µm, maxOutputVoltage V → max_travel µm
         """
-        max_voltage = self.get_max_voltage(axis)
-        position_um = voltage * self.max_travel / max_voltage
+        position_um = voltage * self.max_travel[axis] / self.max_voltage[axis]
         return position_um
 
     # =====================================================================
@@ -336,11 +339,11 @@ class BPC303:
         and calling the voltage setter.
         """
         if axis in ("x", "y", "z"):
-            if pos < 0 or pos > self.max_travel:
-                print("\t- position %.3f µm out of range [0, %.1f] for %s axis" % (pos, self.max_travel, axis))
+            if pos < 0 or pos > self.max_travel[axis]:
+                print("\t- position %.3f µm out of range [0, %.1f] for %s axis" % (pos, self.max_travel[axis], axis))
                 return
             voltage = self.position_to_voltage(axis, pos)
-            print(axis, voltage)
+            # print(axis, voltage)
             self.__set_axis_voltage(axis, voltage)
         else:
             print("\t- axis invalid)")
@@ -364,7 +367,6 @@ class BPC303:
         Method setting the relative position in µm. Reads the current position,
         adds the step and sets the new position.
         """
-        print('en relative toolbox')
         actual_position = self.get_axis_position(axis)
         new_position = actual_position + step
         # uncomment for debugging
@@ -526,6 +528,7 @@ class BPC301:
             raise DeviceNotReadyException
         attrname = "zchannel"
         setattr(self, attrname, None)
+        self.max_travel_z = 20.0  # piezo travel range in µm
         return 
 
     def __get_chan(self):
@@ -561,6 +564,8 @@ class BPC301:
         channel.StartPolling(100)
         channel.EnableDevice()
         print(" done" if channel.IsConnected else "failed")
+        self.max_voltage = self.get_max_voltage()
+        print('Max voltage:', self.max_voltage)
         return
     
     def identify(self):
@@ -637,9 +642,8 @@ class BPC301:
         Open Loop mode
         """
         if axis in ("z"):
-            max_voltage = self.get_max_voltage()
-            if voltage < 0 or voltage > max_voltage:
-                print("\t- voltage %.3f V out of range [0, %.1f] for %s axis" % (voltage, max_voltage, axis))
+            if voltage < 0 or voltage > self.max_voltage:
+                print("\t- voltage %.3f V out of range [0, %.1f] for %s axis" % (voltage, self.max_voltage, axis))
                 return
             # uncomment for debugging
             # print("\t- setting %s axis piezo to %.3f V -->" % (axis, voltage), end="")
@@ -682,15 +686,12 @@ class BPC301:
     # Linear mapping: 0 µm ↔ 0 V, max_travel µm ↔ maxOutputVoltage V
     # =====================================================================
 
-    max_travel = 20.0  # piezo travel range in µm
-
     def position_to_voltage(self, position_um):
         """
         Convert a position in µm to the corresponding output voltage in V
         using a linear mapping: 0 µm → 0 V, max_travel µm → maxOutputVoltage V
         """
-        max_voltage = self.get_max_voltage()
-        voltage = position_um * max_voltage / self.max_travel
+        voltage = position_um * self.max_voltage / self.max_travel_z
         return voltage
 
     def voltage_to_position(self, voltage):
@@ -698,8 +699,7 @@ class BPC301:
         Convert an output voltage in V to the corresponding position in µm
         using a linear mapping: 0 V → 0 µm, maxOutputVoltage V → max_travel µm
         """
-        max_voltage = self.get_max_voltage()
-        position_um = voltage * self.max_travel / max_voltage
+        position_um = voltage * self.max_travel_z / self.max_voltage
         return position_um
 
     # =====================================================================
@@ -728,8 +728,8 @@ class BPC301:
         and calling the voltage setter.
         """
         if axis in ("z"):
-            if pos < 0 or pos > self.max_travel:
-                print("\t- position %.3f µm out of range [0, %.1f] for %s axis" % (pos, self.max_travel, axis))
+            if pos < 0 or pos > self.max_travel_z:
+                print("\t- position %.3f µm out of range [0, %.1f] for %s axis" % (pos, self.max_travel_z, axis))
                 return
             voltage = self.position_to_voltage(pos)
             self.__set_axis_voltage(axis, voltage)

@@ -45,6 +45,8 @@ initial_filepath = 'D:\\daily_data\\inspection_cam' # save in SSD for fast and d
 initial_filename = 'image_Thorcam'
 initial_gain = 240 # int
 initial_autolevel_state = True
+x_cursor_initial = 837
+y_cursor_initial = 586
 
 # initial fake image
 initial_image_np = 128*np.ones((1080, 1440, 3))
@@ -167,13 +169,13 @@ class Frontend(QtGui.QFrame):
                                              symbol = 'crosshair', 
                                              pen = 'r',
                                              brush = None)
-        self.point_graph_cursor.setData([int(max_y_cursor/2)], [int(max_x_cursor/2)])
+        self.point_graph_cursor.setData([int(y_cursor_initial)], [int(x_cursor_initial)])
         self.vb.addItem(self.point_graph_cursor)
 
         self.mov_x_sl = QtGui.QSlider(QtCore.Qt.Horizontal)
         self.mov_x_sl.setMinimum(1)
         self.mov_x_sl.setMaximum(max_x_cursor)
-        self.mov_x_sl.setValue(int(max_x_cursor/2))
+        self.mov_x_sl.setValue(int(x_cursor_initial))
         self.mov_x_sl.setTickPosition(QtGui.QSlider.TicksBelow)
         self.mov_x_sl.setTickInterval(1)
         self.mov_x_sl.valueChanged.connect(self.set_mov_x)
@@ -181,7 +183,7 @@ class Frontend(QtGui.QFrame):
         self.mov_y_sl = QtGui.QSlider(QtCore.Qt.Horizontal)
         self.mov_y_sl.setMinimum(1)
         self.mov_y_sl.setMaximum(max_y_cursor)
-        self.mov_y_sl.setValue(int(max_y_cursor/2))
+        self.mov_y_sl.setValue(int(y_cursor_initial))
         self.mov_y_sl.setTickPosition(QtGui.QSlider.TicksBelow)
         self.mov_y_sl.setTickInterval(1)
         self.mov_y_sl.valueChanged.connect(self.set_mov_y)
@@ -434,8 +436,8 @@ class Backend(QtCore.QObject):
         return
     
     def go_initial_cursor(self):
-        x_cursor_initial = self.total_pixel_x/2
-        y_cursor_initial = self.total_pixel_y/2
+        x_cursor_initial = x_cursor_initial
+        y_cursor_initial = y_cursor_initial
         self.datacursorSignal.emit([x_cursor_initial , y_cursor_initial])
         return
     

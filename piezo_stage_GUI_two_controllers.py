@@ -216,7 +216,7 @@ class Frontend(QtGui.QFrame):
 
         # Read pos
         readPosDock = Dock('Position', size=(1, 2))
-        readPosDock.setOrientation('horizontal')
+        readPosDock.setOrientation('vertical')
         readPosDock.addWidget(self.read_pos_widget)
         dockArea.addDock(readPosDock)
         # Positioner
@@ -225,7 +225,7 @@ class Frontend(QtGui.QFrame):
         dockArea.addDock(posDock, 'top', readPosDock)
         # Go to  
         gotoDock = Dock('Go to', size=(1, 2))
-        gotoDock.setOrientation('horizontal')
+        gotoDock.setOrientation('vertical')
         gotoDock.addWidget(self.gotoWidget)
         dockArea.addDock(gotoDock, 'left', readPosDock)
         
@@ -493,16 +493,15 @@ class Backend(QtCore.QObject):
                                          y = position[1], \
                                          z = 0)
         self.piezo_stage_z.set_position(z = position[2])
-        self.read_position() 
         return
     
     @pyqtSlot(bool)
-    def switch_feedback_loop_mode(self, close_flag):
+    def switch_feedback_loop_mode(self, feedback_loop_mode):
         """ 
         Set (True) or Unset (False) feedback loop mode
         """
-        self.piezo_stage_xy.set_close_loop(close_flag)
-        self.piezo_stage_z.set_close_loop(close_flag)
+        self.piezo_stage_xy.set_close_loop(feedback_loop_mode)
+        self.piezo_stage_z.set_close_loop(feedback_loop_mode)
         return
 
     @pyqtSlot()

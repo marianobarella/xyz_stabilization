@@ -70,11 +70,11 @@ initial_kd = 0.0005 # derivative factor of the PID
 initial_correction_threshold = 0.000
 
 # Position of the z stabilization laser beam on the camera sensor, in pixels
-x_pixel_stabilization_laser = 152 # column
-y_pixel_stabilization_laser = 294 # row
+x_pixel_stabilization_laser = 93 # column
+y_pixel_stabilization_laser = 280 # row
 # Position of the Trapping laser beam on the camera sensor, in pixels
-x_pixel_trapping_laser = 217 # column
-y_pixel_trapping_laser = 308 # row
+x_pixel_trapping_laser = 233 # column
+y_pixel_trapping_laser = 288 # row
 
 #=====================================
 
