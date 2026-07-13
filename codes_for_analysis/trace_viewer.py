@@ -114,6 +114,18 @@ class MainWindow(QMainWindow):
         self.log_scale_button.setEnabled(False)
         button_layout.addWidget(self.log_scale_button)
 
+        button_layout.addSpacing(20)
+        button_layout.addWidget(QLabel("Downsample 1/N:", self))
+        self.downsample_input = QLineEdit(self)
+        self.downsample_input.setPlaceholderText("1")
+        self.downsample_input.setText("1")
+        self.downsample_input.setFixedWidth(60)
+        button_layout.addWidget(self.downsample_input)
+        self.downsample_button = QPushButton("Apply Downsampling", self)
+        self.downsample_button.clicked.connect(self.apply_downsampling)
+        self.downsample_button.setEnabled(False)
+        button_layout.addWidget(self.downsample_button)
+
         button_layout.addStretch()
         controls_col.addLayout(button_layout)
 
@@ -232,6 +244,11 @@ class MainWindow(QMainWindow):
         self.figure1 = Figure()
         self.canvas1 = FigureCanvas(self.figure1)
         self.toolbar1 = NavigationToolbar(self.canvas1, self)
+        # Interactive wheel-zoom and right-drag pan on the transmission plot
+        self.canvas1.mpl_connect('scroll_event', self.on_scroll_zoom)
+        self.canvas1.mpl_connect('button_press_event', self.on_pan_press)
+        self.canvas1.mpl_connect('motion_notify_event', self.on_pan_motion)
+        self.canvas1.mpl_connect('button_release_event', self.on_pan_release)
         left_plot_col = QVBoxLayout()
         left_plot_col.addWidget(self.canvas1)
         left_plot_col.addWidget(self.toolbar1)
@@ -285,10 +302,18 @@ class MainWindow(QMainWindow):
         # Colors / handles
         self.raw_color = 'gray'           # color of the raw transmission trace (matches dropdown default)
         self.raw_line1 = None             # Line2D handle of the raw transmission trace
+        self.raw_line2 = None             # Line2D handle of the raw monitor trace
+        self.display_step = 1             # display decimation: plot every Nth point (1 = full res)
         # Filter colors come from self.filter1_color_combo / self.filter2_color_combo
 
         # Filtering state
         self.filter_lines = []  # matplotlib Line2D handles of filter overlays on ax1
+
+        # Interactive pan state (right-drag on the transmission plot)
+        self._pan_active = False
+        self._pan_px = None
+        self._pan_xlim = None
+        self._pan_ylim = None
 
         # Naming state (used to propose export filenames)
         self.current_id = None  # source stem, used as a suffix on saved files
@@ -364,6 +389,7 @@ class MainWindow(QMainWindow):
         elif trace_number == 2:
             self.figure2.clear()
             self.ax2 = None
+            self.raw_line2 = None
             if self.selector2:
                 self.selector2.set_active(False)
                 self.selector2 = None
@@ -402,30 +428,30 @@ class MainWindow(QMainWindow):
                 self.data1 = data
                 self.time_axis1 = np.arange(len(self.data1)) / self.sampling_rate
                 self.ax1 = self.figure1.add_subplot(111)
+                step = max(1, self.display_step)
                 (self.raw_line1,) = self.ax1.plot(
-                    self.time_axis1, self.data1, linewidth=0.5, color=self.raw_color, alpha=0.7, label="Original")
+                    self.time_axis1[::step], self.data1[::step],
+                    linewidth=0.5, color=self.raw_color, alpha=0.7, label="Original")
                 self.ax1.set_title(f"Trace 1 (Transmission) - File {filenumber} - {datetime_str}")
                 self.ax1.set_xlabel("Time (seconds)")
                 self.ax1.set_ylabel("Transmission (V)")
-                self.selector1 = RectangleSelector(
-                    self.ax1,
-                    lambda eclick, erelease: self.on_select(eclick, erelease),
-                    useblit=True, button=[1], minspanx=5, spancoords='pixels', interactive=True
-                )
+                self.ax1.grid(True, linewidth=0.5, alpha=0.4)
+                self.ax1.set_axisbelow(True)  # gridlines below the trace
+                self.selector1 = self._make_selector(self.ax1)
                 self.canvas1.draw()
             elif trace_number == 2:
                 self.data2 = data
                 self.time_axis2 = np.arange(len(self.data2)) / self.sampling_rate
                 self.ax2 = self.figure2.add_subplot(111)
-                self.ax2.plot(self.time_axis2, self.data2, linewidth=0.5, color='orange')
+                step = max(1, self.display_step)
+                (self.raw_line2,) = self.ax2.plot(
+                    self.time_axis2[::step], self.data2[::step], linewidth=0.5, color='orange')
                 self.ax2.set_title(f"Trace 2 (Monitor) - File {filenumber} - {datetime_str}")
                 self.ax2.set_xlabel("Time (seconds)")
                 self.ax2.set_ylabel("Monitor signal (V)")
-                self.selector2 = RectangleSelector(
-                    self.ax2,
-                    lambda eclick, erelease: self.on_select(eclick, erelease),
-                    useblit=True, button=[1], minspanx=5, spancoords='pixels', interactive=True
-                )
+                self.ax2.grid(True, linewidth=0.5, alpha=0.4)
+                self.ax2.set_axisbelow(True)  # gridlines below the trace
+                self.selector2 = self._make_selector(self.ax2)
                 self.canvas2.draw()
 
             if self.data1 is not None or self.data2 is not None:
@@ -436,6 +462,7 @@ class MainWindow(QMainWindow):
                 self.export_tra_png_button.setEnabled(True)
                 self.export_report_png_button.setEnabled(True)
                 self.export_npy_button.setEnabled(True)
+                self.downsample_button.setEnabled(True)
             if self.data2 is not None:
                 self.export_mon_png_button.setEnabled(True)
 
@@ -480,13 +507,17 @@ class MainWindow(QMainWindow):
             self.label.setText("Error: Invalid sampling rate. Please enter a positive number.")
             return
 
+        step = max(1, self.display_step)
         if self.data1 is not None and self.ax1 is not None:
             self.time_axis1 = np.arange(len(self.data1)) / self.sampling_rate
             self.ax1.clear()
             (self.raw_line1,) = self.ax1.plot(
-                self.time_axis1, self.data1, linewidth=0.5, color=self.raw_color, alpha=0.7, label="Original")
+                self.time_axis1[::step], self.data1[::step],
+                linewidth=0.5, color=self.raw_color, alpha=0.7, label="Original")
             self.ax1.set_xlabel("Time (seconds)")
             self.ax1.set_ylabel("Transmission (V)")
+            self.ax1.grid(True, linewidth=0.5, alpha=0.4)
+            self.ax1.set_axisbelow(True)
             # Filter overlays were removed by ax1.clear()
             self.filter_lines = []
             self.clear_filter_button.setEnabled(False)
@@ -495,9 +526,12 @@ class MainWindow(QMainWindow):
         if self.data2 is not None and self.ax2 is not None:
             self.time_axis2 = np.arange(len(self.data2)) / self.sampling_rate
             self.ax2.clear()
-            self.ax2.plot(self.time_axis2, self.data2, linewidth=0.5, color='orange')
+            (self.raw_line2,) = self.ax2.plot(
+                self.time_axis2[::step], self.data2[::step], linewidth=0.5, color='orange')
             self.ax2.set_xlabel("Time (seconds)")
             self.ax2.set_ylabel("Monitor signal (V)")
+            self.ax2.grid(True, linewidth=0.5, alpha=0.4)
+            self.ax2.set_axisbelow(True)
             self.canvas2.draw()
 
     def update_raw_color(self):
@@ -506,6 +540,38 @@ class MainWindow(QMainWindow):
         if self.raw_line1 is not None:
             self.raw_line1.set_color(self.raw_color)
             self.canvas1.draw()
+
+    def apply_downsampling(self):
+        """Re-plot the raw traces keeping every Nth point (display only).
+        Full-resolution data is preserved for stats, filters, PSD, and exports."""
+        text = self.downsample_input.text().strip()
+        try:
+            n = int(float(text))
+        except (ValueError, TypeError):
+            self.label.setText("Downsampling: enter a positive integer N.")
+            return
+        if n < 1:
+            self.label.setText("Downsampling: N must be >= 1 (1 = full resolution).")
+            return
+        self.display_step = n
+        self.replot_raw_display()
+        if n == 1:
+            msg = "Display set to full resolution (N = 1)."
+        else:
+            msg = "Display downsampled to every %d-th point (analysis still full resolution)." % n
+        self.label.setText(msg)
+        self.text_box.append(msg + "\n")
+
+    def replot_raw_display(self):
+        """Update the raw line data to the current decimation without disturbing
+        the view, overlays, or ROI (uses set_data for speed)."""
+        step = max(1, self.display_step)
+        if self.raw_line1 is not None and self.data1 is not None:
+            self.raw_line1.set_data(self.time_axis1[::step], self.data1[::step])
+            self.canvas1.draw_idle()
+        if self.raw_line2 is not None and self.data2 is not None:
+            self.raw_line2.set_data(self.time_axis2[::step], self.data2[::step])
+            self.canvas2.draw_idle()
 
     def on_select(self, eclick, erelease):
         # Get the selected region bounds in time (seconds)
@@ -546,9 +612,17 @@ class MainWindow(QMainWindow):
         self.clear_roi_button.setEnabled(True)
         self.fft_button.setEnabled(True)
 
+    def _make_selector(self, ax):
+        """Create a fresh RectangleSelector bound to on_select for the given axis."""
+        return RectangleSelector(
+            ax,
+            lambda eclick, erelease: self.on_select(eclick, erelease),
+            useblit=True, button=[1], minspanx=5, spancoords='pixels', interactive=True
+        )
+
     def draw_roi(self, x1, x2):
         """Draw a red rectangle to highlight the selected region."""
-        self.clear_roi()
+        self._remove_roi_patches()
 
         if self.ax1:
             self.roi_rect1 = Rectangle((x1, self.ax1.get_ylim()[0]), x2 - x1, self.ax1.get_ylim()[1] - self.ax1.get_ylim()[0],
@@ -561,16 +635,48 @@ class MainWindow(QMainWindow):
             self.ax2.add_patch(self.roi_rect2)
             self.canvas2.draw()
 
-    def clear_roi(self):
-        """Remove the ROI rectangles from both plots."""
+    def _remove_roi_patches(self):
+        """Remove only the red ROI rectangles we draw (not the selector widget)."""
         if self.roi_rect1:
             self.roi_rect1.remove()
             self.roi_rect1 = None
-            self.canvas1.draw()
         if self.roi_rect2:
             self.roi_rect2.remove()
             self.roi_rect2 = None
-            self.canvas2.draw()
+
+    def clear_roi(self):
+        """Remove both the red ROI rectangles and the RectangleSelector's own
+        interactive selection rectangle from both plots."""
+        self._remove_roi_patches()
+
+        # Clear the interactive selector rectangle by replacing each selector
+        # with a fresh one (deterministic across matplotlib versions).
+        if self.ax1 is not None:
+            if self.selector1 is not None:
+                try:
+                    self.selector1.set_visible(False)
+                except Exception:
+                    pass
+                try:
+                    self.selector1.disconnect_events()
+                except Exception:
+                    pass
+            self.selector1 = self._make_selector(self.ax1)
+        if self.ax2 is not None:
+            if self.selector2 is not None:
+                try:
+                    self.selector2.set_visible(False)
+                except Exception:
+                    pass
+                try:
+                    self.selector2.disconnect_events()
+                except Exception:
+                    pass
+            self.selector2 = self._make_selector(self.ax2)
+
+        self.roi_bounds = None
+        self.canvas1.draw()
+        self.canvas2.draw()
 
         self.clear_roi_button.setEnabled(False)
         self.fft_button.setEnabled(False)
@@ -602,6 +708,12 @@ class MainWindow(QMainWindow):
         self.log_scale_button.setEnabled(True)
         # Bring the PSD tab to the front so the result is visible
         self.plot_tabs.setCurrentIndex(self.psd_tab_index)
+
+        freq_res = self.sampling_rate / n_samples if n_samples else 0.0
+        self.text_box.append(
+            "PSD calculated on transmission over [%.4f s, %.4f s] "
+            "(%d points, resolution %.2f Hz).\n" % (x1, x2, n_samples, freq_res)
+        )
 
     def plot_psd(self):
         """Plot the PSD with current scale setting."""
@@ -669,6 +781,69 @@ class MainWindow(QMainWindow):
                     ax.set_ylim(y_min - padding, y_max + padding)
         self.canvas1.draw()
         self.canvas2.draw()
+
+    ##########################################################################
+    # INTERACTIVE ZOOM / PAN (transmission plot)
+    ##########################################################################
+    def on_scroll_zoom(self, event):
+        """Mouse-wheel zoom on the transmission plot, centered on the cursor.
+        Plain wheel zooms the x-axis (time); Ctrl+wheel zooms the y-axis."""
+        if self.ax1 is None or event.inaxes is not self.ax1:
+            return
+        base = 1.2
+        if event.button == 'up':      # wheel up -> zoom in
+            scale = 1.0 / base
+        elif event.button == 'down':  # wheel down -> zoom out
+            scale = base
+        else:
+            return
+
+        zoom_y = (event.key == 'control')
+        if zoom_y:
+            ydata = event.ydata
+            if ydata is None:
+                return
+            ymin, ymax = self.ax1.get_ylim()
+            self.ax1.set_ylim(ydata - (ydata - ymin) * scale,
+                              ydata + (ymax - ydata) * scale)
+        else:
+            xdata = event.xdata
+            if xdata is None:
+                return
+            xmin, xmax = self.ax1.get_xlim()
+            self.ax1.set_xlim(xdata - (xdata - xmin) * scale,
+                              xdata + (xmax - xdata) * scale)
+        self.canvas1.draw_idle()
+
+    def on_pan_press(self, event):
+        """Start a right-drag pan (left button stays reserved for ROI selection)."""
+        if self.ax1 is None or event.inaxes is not self.ax1:
+            return
+        if event.button == 3:  # right button
+            self._pan_active = True
+            self._pan_px = (event.x, event.y)
+            self._pan_xlim = self.ax1.get_xlim()
+            self._pan_ylim = self.ax1.get_ylim()
+
+    def on_pan_motion(self, event):
+        """Translate the axes while right-dragging (pixel-based, drift-free)."""
+        if not self._pan_active or self.ax1 is None or event.x is None:
+            return
+        bbox = self.ax1.get_window_extent()
+        if bbox.width == 0 or bbox.height == 0:
+            return
+        x0px, y0px = self._pan_px
+        xmin, xmax = self._pan_xlim
+        ymin, ymax = self._pan_ylim
+        ddx = -(event.x - x0px) * (xmax - xmin) / bbox.width
+        ddy = -(event.y - y0px) * (ymax - ymin) / bbox.height
+        self.ax1.set_xlim(xmin + ddx, xmax + ddx)
+        self.ax1.set_ylim(ymin + ddy, ymax + ddy)
+        self.canvas1.draw_idle()
+
+    def on_pan_release(self, event):
+        """End the right-drag pan."""
+        self._pan_active = False
 
     ##########################################################################
     # FILTERING (Gaussian, transmission trace, current x-range only)
@@ -848,6 +1023,7 @@ class MainWindow(QMainWindow):
         try:
             fig.savefig(path, dpi=300, bbox_inches='tight')
             self.label.setText("Saved: %s" % path)
+            self.text_box.append("Exported plot: %s\n" % path)
             return path
         except Exception as e:
             self.label.setText("Error saving image: %s" % str(e))
@@ -998,6 +1174,8 @@ class MainWindow(QMainWindow):
                 saved.append(os.path.basename(fname))
 
             self.label.setText("Saved: " + ", ".join(saved))
+            self.text_box.append("Exported data (%d files) to %s:\n  %s\n"
+                                 % (len(saved), os.path.dirname(base) or ".", ", ".join(saved)))
         except Exception as e:
             self.label.setText("Error saving NPY: %s" % str(e))
 
